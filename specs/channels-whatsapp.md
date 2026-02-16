@@ -20,7 +20,11 @@ The WhatsApp channel connects Omega to WhatsApp using the WhatsApp Web protocol 
 | `whatsapp-rust` | WhatsApp Web protocol client |
 | `whatsapp-rust-tokio-transport` | Tokio-based WebSocket transport |
 | `whatsapp-rust-ureq-http-client` | HTTP client for WhatsApp API calls |
-| `wacore` | Core types (Event, Jid, Message) |
+| `wacore` | Core types (Event, MessageSource, store traits) |
+| `wacore-binary` | Jid type (`wacore_binary::jid::Jid`) |
+| `waproto` | Protobuf message types |
+| `sqlx` | SQLite session storage backend |
+| `bincode` | Binary serialization for Device struct |
 | `qrcode` | QR code generation (terminal + image) |
 | `image` | PNG encoding for QR images |
 
@@ -53,10 +57,12 @@ pub struct WhatsAppChannel {
     config: WhatsAppConfig,
     data_dir: String,
     client: Arc<Mutex<Option<Arc<Client>>>>,
+    sent_ids: Arc<Mutex<HashSet<String>>>,
 }
 ```
 
-The `client` field is set during the `Connected` event and cleared on disconnect/logout.
+- `client` — set during the `Connected` event and cleared on disconnect/logout.
+- `sent_ids` — tracks sent message IDs to prevent echo loops in self-chat.
 
 ---
 
@@ -81,7 +87,16 @@ The `client` field is set during the `Connected` event and cleared on disconnect
 | `Connected` | Stores `Arc<Client>` for sending |
 | `Disconnected` | Clears client reference |
 | `LoggedOut` | Clears client reference, warns about invalidated session |
-| `Message(msg, info)` | Extracts text from `conversation` or `extended_text_message.text`, applies auth filter, forwards to gateway |
+| `Message(msg, info)` | Self-chat filter, echo prevention, message unwrapping, text extraction, auth check, forward to gateway |
+
+### Message Processing Pipeline
+
+1. **Self-chat filter**: Skip if `!info.source.is_from_me` or `sender.user != chat.user`
+2. **Echo prevention**: Check `sent_ids` set — if message ID matches a sent message, skip it
+3. **Auth check**: Verify sender phone is in `allowed_users` (or list is empty)
+4. **Unwrap wrappers**: Extract inner message from `DeviceSentMessage`, `EphemeralMessage`, or `ViewOnceMessage` containers
+5. **Text extraction**: Read from `conversation` or `extended_text_message.text`
+6. **Forward**: Send `IncomingMessage` to gateway via mpsc channel
 
 ---
 
@@ -139,10 +154,15 @@ Text is sent as `wa::Message { conversation: Some(text) }`. Messages over 4096 c
 
 ## Session Persistence
 
-The `whatsapp-rust` crate's `SqliteStore` handles session persistence automatically. The session database at `{data_dir}/whatsapp_session/whatsapp.db` stores:
-- Device identity keys
-- Prekey bundles
-- Session state
-- App state
+A custom `SqlxWhatsAppStore` (`crates/omega-channels/src/whatsapp_store.rs`) implements the wacore store traits (`SignalStore`, `AppSyncStore`, `ProtocolStore`, `DeviceStore`). The session database at `{data_dir}/whatsapp_session/whatsapp.db` stores:
+- Device identity (serialized with `bincode`, stored as BLOB)
+- Signal protocol keys (identity, prekeys, sessions, sender keys)
+- App state (hash state as JSON, sync mutations as BLOB)
+- LID mappings and device lists
 
 On restart, the bot reconnects using the persisted session without requiring a new QR scan.
+
+### Store Notes
+- `Device` struct uses custom serde (`key_pair_serde`, `BigArray`) requiring binary serialization — `serde_json` cannot handle it; `bincode` is used instead.
+- `HashState` and `DeviceListRecord` are stored as JSON TEXT (standard serde works for these).
+- The `create()` method returns `Ok(1)` without inserting data — the device is populated during pairing via `save()`.

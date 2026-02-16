@@ -69,13 +69,19 @@ On restart, Omega reconnects using the persisted session — no re-scan needed. 
 
 ## How It Works
 
+WhatsApp is a **personal channel** — it only processes messages from your self-chat (messages to yourself). It does not act as a chatbot for other people's messages.
+
 1. **Pairing**: The `whatsapp-rust` library initiates a WebSocket connection to WhatsApp servers and generates QR codes. The user scans one with their phone (WhatsApp > Linked Devices > Link a Device).
 
-2. **Receiving messages**: The bot's event handler receives `Event::Message` events. Text is extracted from `msg.conversation` or `msg.extended_text_message.text`. Non-text messages are skipped.
+2. **Receiving messages**: The bot's event handler receives `Event::Message` events. Only self-chat messages are processed (`is_from_me` + sender matches chat JID). Messages from other chats are silently ignored.
 
-3. **Sending messages**: Text is sent as `wa::Message { conversation: Some(text) }` via `client.send_message()`. Messages over 4096 characters are automatically chunked.
+3. **Message unwrapping**: Self-chat messages are often wrapped in `DeviceSentMessage`, `EphemeralMessage`, or `ViewOnceMessage` containers. The handler unwraps these before extracting text from `conversation` or `extended_text_message.text`. Non-text messages are skipped.
 
-4. **Typing indicators**: The `send_typing()` method sends "composing" presence via `client.chatstate().send_composing()`.
+4. **Echo prevention**: Sent message IDs are tracked in a `HashSet`. When the bot sends a reply, the message ID is recorded. When the echo arrives back as an incoming event, the ID is matched and the message is skipped, preventing infinite loops.
+
+5. **Sending messages**: Text is sent as `wa::Message { conversation: Some(text) }` via `client.send_message()`. Messages over 4096 characters are automatically chunked.
+
+6. **Typing indicators**: The `send_typing()` method sends "composing" presence via `client.chatstate().send_composing()`.
 
 ---
 
@@ -128,7 +134,8 @@ omega init  # or /whatsapp from Telegram
 Check that the `whatsapp-rust` dependencies are correctly installed. The library needs network access to WhatsApp servers.
 
 ### Messages not received
-- Check `allowed_users` in config — the sender's phone number must be listed (or leave empty for all)
+- WhatsApp only processes self-chat messages (messages you send to yourself). It will not respond to messages from other people.
+- Check `allowed_users` in config — your phone number must be listed (or leave empty for all)
 - Verify the session is still valid (check logs for "WhatsApp connected" or "logged out")
 
 ---
