@@ -37,7 +37,13 @@ All our architecture must be monolithic and modular, like Legos.
    git add -A && git commit -m "<type>(<scope>): <description>"
 ```
 
-3. **Output Filtering**: Always filter verbose output:
+3. **Feature Testing**: Every new or modified functionality **MUST** include a test that verifies it works as expected. No feature is considered complete without a passing test. This applies to:
+   - New functions or methods → unit test
+   - New API endpoints or bot commands → integration test
+   - Bug fixes → regression test that reproduces the bug and confirms the fix
+   - Changed behavior → updated existing tests to match new expectations
+
+4. **Output Filtering**: Always filter verbose output:
 Apply always outour redirection to a /tmp/ folder to avoid polluting the console to later apply filters.
   command > /tmp/cmd_output.log 2>&1 && grep -iE "error|warn|fail|pass" /tmp/cmd_output.log | head -20
 
@@ -63,7 +69,7 @@ Background loops (spawned in `gateway::run()`):
 - **Scheduler**: polls `scheduled_tasks` table every 60s, delivers due reminders via channel
 - **Heartbeat**: periodic provider check-in (default 30min), suppresses `HEARTBEAT_OK`, alerts otherwise
 
-Bot commands: `/help`, `/forget`, `/tasks`, `/cancel <id>`, `/language`
+Bot commands: `/help`, `/forget`, `/tasks`, `/cancel <id>`, `/language`, `/skills`
 
 ## Build & Test
 
@@ -101,6 +107,7 @@ cargo build --release        # Optimized binary
 - Database: `~/.omega/memory.db`
 - Prompts: `~/.omega/SYSTEM_PROMPT.md` (optional, `## Section` headers, read at startup)
 - Welcome messages: `~/.omega/WELCOME.toml` (optional, `[messages]` table keyed by language, read at startup)
+- Skills: `~/.omega/skills/*.md` (optional, TOML frontmatter + instructions, scanned at startup)
 - Heartbeat checklist: `~/.omega/HEARTBEAT.md` (optional, read by heartbeat loop)
 - Logs: `~/.omega/omega.log`
 - Service: `~/Library/LaunchAgents/com.omega-cortex.omega.plist`
