@@ -1,6 +1,12 @@
+mod gateway;
+
 use clap::{Parser, Subcommand};
+use omega_channels::telegram::TelegramChannel;
 use omega_core::{config, context::Context, traits::Provider};
+use omega_memory::Store;
 use omega_providers::claude_code::ClaudeCodeProvider;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(
@@ -42,10 +48,59 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    // Refuse to run as root — claude CLI rejects root for security.
+    if unsafe { libc::geteuid() } == 0 {
+        anyhow::bail!(
+            "Omega must not run as root. Use a LaunchAgent (~/Library/LaunchAgents/) \
+             instead of a LaunchDaemon (/Library/LaunchDaemons/)."
+        );
+    }
+
     match cli.command {
         Commands::Start => {
+            let cfg = config::load(&cli.config)?;
+
+            // Build provider.
+            let provider = build_provider(&cfg)?;
+
+            if !provider.is_available().await {
+                anyhow::bail!("provider '{}' is not available", provider.name());
+            }
+
+            // Build channels.
+            let mut channels: HashMap<String, Arc<dyn omega_core::traits::Channel>> =
+                HashMap::new();
+
+            if let Some(ref tg) = cfg.channel.telegram {
+                if tg.enabled {
+                    if tg.bot_token.is_empty() {
+                        anyhow::bail!(
+                            "Telegram is enabled but bot_token is empty. \
+                             Set it in config.toml or TELEGRAM_BOT_TOKEN env var."
+                        );
+                    }
+                    let channel = TelegramChannel::new(tg.clone());
+                    channels.insert("telegram".to_string(), Arc::new(channel));
+                }
+            }
+
+            if channels.is_empty() {
+                anyhow::bail!("No channels enabled. Enable at least one channel in config.toml.");
+            }
+
+            // Build memory.
+            let memory = Store::new(&cfg.memory).await?;
+
+            // Build and run gateway.
             println!("Ω Omega — Starting agent...");
-            println!("(Not yet implemented. Use `omega ask` for now.)");
+            let gw = gateway::Gateway::new(
+                provider,
+                channels,
+                memory,
+                cfg.auth.clone(),
+                cfg.channel.clone(),
+            );
+            gw.run().await?;
         }
         Commands::Status => {
             let cfg = config::load(&cli.config)?;
@@ -54,12 +109,28 @@ async fn main() -> anyhow::Result<()> {
             println!("Default provider: {}", cfg.provider.default);
             println!();
 
-            // Check Claude Code CLI availability.
             let available = ClaudeCodeProvider::check_cli().await;
             println!(
                 "  claude-code: {}",
                 if available { "available" } else { "not found" }
             );
+            println!();
+
+            // Check channels.
+            if let Some(ref tg) = cfg.channel.telegram {
+                println!(
+                    "  telegram: {}",
+                    if tg.enabled && !tg.bot_token.is_empty() {
+                        "configured"
+                    } else if tg.enabled {
+                        "enabled but missing bot_token"
+                    } else {
+                        "disabled"
+                    }
+                );
+            } else {
+                println!("  telegram: not configured");
+            }
         }
         Commands::Ask { message } => {
             if message.is_empty() {
@@ -68,7 +139,6 @@ async fn main() -> anyhow::Result<()> {
 
             let prompt = message.join(" ");
             let cfg = config::load(&cli.config)?;
-
             let provider = build_provider(&cfg)?;
 
             if !provider.is_available().await {
@@ -80,7 +150,6 @@ async fn main() -> anyhow::Result<()> {
 
             let context = Context::new(&prompt);
             let response = provider.complete(&context).await?;
-
             println!("{}", response.text);
         }
     }

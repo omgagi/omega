@@ -18,6 +18,9 @@ pub struct IncomingMessage {
     /// If this is a reply, the ID of the original message.
     pub reply_to: Option<Uuid>,
     pub attachments: Vec<Attachment>,
+    /// Platform-specific target for routing the response (e.g. Telegram chat_id).
+    #[serde(default)]
+    pub reply_target: Option<String>,
 }
 
 /// An outgoing message to send back through a channel.
@@ -25,6 +28,9 @@ pub struct IncomingMessage {
 pub struct OutgoingMessage {
     pub text: String,
     pub metadata: MessageMetadata,
+    /// Platform-specific target for routing (e.g. Telegram chat_id).
+    #[serde(default)]
+    pub reply_target: Option<String>,
 }
 
 /// Metadata about how a message was generated.

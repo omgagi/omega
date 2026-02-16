@@ -1197,6 +1197,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "libc",
  "omega-channels",
  "omega-core",
  "omega-memory",
@@ -1215,6 +1216,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "omega-core",
  "reqwest",
  "serde",
@@ -1222,6 +1224,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

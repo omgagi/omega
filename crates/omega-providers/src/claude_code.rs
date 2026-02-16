@@ -29,8 +29,17 @@ pub struct ClaudeCodeProvider {
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct ClaudeCliResponse {
+    /// "result"
+    #[serde(default, rename = "type")]
+    response_type: Option<String>,
+    /// "success", "error_max_turns", etc.
+    #[serde(default)]
+    subtype: Option<String>,
+    /// The actual text response.
     #[serde(default)]
     result: Option<String>,
+    #[serde(default)]
+    is_error: bool,
     #[serde(default)]
     cost_usd: Option<f64>,
     #[serde(default)]
@@ -140,9 +149,26 @@ impl Provider for ClaudeCodeProvider {
         // Try to parse structured JSON response.
         let (text, model) = match serde_json::from_str::<ClaudeCliResponse>(&stdout) {
             Ok(resp) => {
-                let text = resp.result.unwrap_or_else(|| stdout.to_string());
-                let model = resp.model;
-                (text, model)
+                // Handle error_max_turns — still extract whatever result exists.
+                if resp.subtype.as_deref() == Some("error_max_turns") {
+                    warn!("claude hit max_turns limit ({} turns)", self.max_turns);
+                }
+
+                let text = match resp.result {
+                    Some(r) if !r.is_empty() => r,
+                    _ => {
+                        // No result text — provide a meaningful fallback.
+                        if resp.is_error {
+                            format!(
+                                "Error from Claude: {}",
+                                resp.subtype.as_deref().unwrap_or("unknown")
+                            )
+                        } else {
+                            "(No response text returned)".to_string()
+                        }
+                    }
+                };
+                (text, resp.model)
             }
             Err(e) => {
                 // Fall back to raw text if JSON parsing fails.
@@ -159,6 +185,7 @@ impl Provider for ClaudeCodeProvider {
                 processing_time_ms: elapsed_ms,
                 model,
             },
+            reply_target: None,
         })
     }
 

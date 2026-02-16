@@ -8,6 +8,8 @@ use crate::error::OmegaError;
 pub struct Config {
     pub omega: OmegaConfig,
     #[serde(default)]
+    pub auth: AuthConfig,
+    #[serde(default)]
     pub provider: ProviderConfig,
     #[serde(default)]
     pub channel: ChannelConfig,
@@ -15,6 +17,18 @@ pub struct Config {
     pub memory: MemoryConfig,
     #[serde(default)]
     pub sandbox: SandboxConfig,
+}
+
+/// Authentication configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AuthConfig {
+    /// Whether auth is enforced (default: true).
+    /// When true and no allowed_users are set on any channel, ALL messages are rejected.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Message sent to unauthorized users.
+    #[serde(default = "default_deny_message")]
+    pub deny_message: String,
 }
 
 /// General agent settings.
@@ -212,6 +226,9 @@ fn default_provider() -> String {
 fn default_true() -> bool {
     true
 }
+fn default_deny_message() -> String {
+    "Access denied. You are not authorized to use this agent.".to_string()
+}
 fn default_max_turns() -> u32 {
     10
 }
@@ -261,6 +278,7 @@ pub fn load(path: &str) -> Result<Config, OmegaError> {
         );
         return Ok(Config {
             omega: OmegaConfig::default(),
+            auth: AuthConfig::default(),
             provider: ProviderConfig {
                 default: default_provider(),
                 claude_code: Some(ClaudeCodeConfig::default()),

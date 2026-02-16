@@ -3,6 +3,12 @@ name = "Omega"
 data_dir = "~/.omega"
 log_level = "info"
 
+# --- Auth ---
+
+[auth]
+enabled = true
+deny_message = "Access denied. You are not authorized to use this agent."
+
 [provider]
 default = "claude-code"
 
@@ -41,8 +47,8 @@ model = "anthropic/claude-sonnet-4-20250514"
 
 [channel.telegram]
 enabled = false
-bot_token = ""  # Or env: TELEGRAM_BOT_TOKEN
-allowed_users = []
+bot_token = ""              # Or env: TELEGRAM_BOT_TOKEN
+allowed_users = []          # Empty = allow all. Add Telegram user IDs to restrict.
 
 [channel.whatsapp]
 enabled = false
