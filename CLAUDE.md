@@ -19,7 +19,7 @@ All our architecture must be monolithic and modular, like Legos.
 1. **Environment**: All commands **MUST** run via Nix:
    `nix --extra-experimental-features "nix-command flakes" develop --command bash -c "<command>"`
 
-    After any development for the Rust parts, run cargo build with nix to ensure it compiles, then cargo clippy to clean up any lint errors.
+    After any development for the Rust parts, run cargo build with nix to ensure it compiles, then cargo clippy to clean up any lint errors. Release the binary, stop and restart my service.
 
 2. **Pre-Commit Gate** (Execute in order, all steps mandatory):
    

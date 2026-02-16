@@ -475,6 +475,10 @@ impl Store {
             .search_messages(&incoming.text, &conv_id, &incoming.sender_id, 5)
             .await
             .unwrap_or_default();
+        let pending_tasks = self
+            .get_tasks_for_sender(&incoming.sender_id)
+            .await
+            .unwrap_or_default();
 
         // Resolve language: stored preference > auto-detect > English.
         let language =
@@ -488,7 +492,8 @@ impl Store {
                 detected
             };
 
-        let system_prompt = build_system_prompt(&facts, &summaries, &recall, &language);
+        let system_prompt =
+            build_system_prompt(&facts, &summaries, &recall, &pending_tasks, &language);
 
         Ok(Context {
             system_prompt,
@@ -728,6 +733,7 @@ fn build_system_prompt(
     facts: &[(String, String)],
     summaries: &[(String, String)],
     recall: &[(String, String, String)],
+    pending_tasks: &[(String, String, String, Option<String>)],
     language: &str,
 ) -> String {
     let mut prompt = String::from(
@@ -764,6 +770,14 @@ fn build_system_prompt(
                 content.clone()
             };
             prompt.push_str(&format!("\n- [{timestamp}] User: {truncated}"));
+        }
+    }
+
+    if !pending_tasks.is_empty() {
+        prompt.push_str("\n\nUser's scheduled tasks:");
+        for (id, desc, due_at, repeat) in pending_tasks {
+            let r = repeat.as_deref().unwrap_or("once");
+            prompt.push_str(&format!("\n- [{id_short}] {desc} (due: {due_at}, {r})", id_short = &id[..8.min(id.len())]));
         }
     }
 
