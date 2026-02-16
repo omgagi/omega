@@ -892,8 +892,11 @@ pub fn detect_language(text: &str) -> &'static str {
         }
     }
 
-    // Require at least 2 matches to override English default.
-    if best_score >= 2 {
+    // Short messages (≤3 words): 1 match suffices (e.g. "hola", "bonjour").
+    // Longer messages: require 2+ to avoid false positives.
+    let word_count = lower.split_whitespace().count();
+    let threshold = if word_count <= 3 { 1 } else { 2 };
+    if best_score >= threshold {
         best
     } else {
         "English"
