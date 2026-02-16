@@ -476,7 +476,19 @@ impl Store {
             .await
             .unwrap_or_default();
 
-        let system_prompt = build_system_prompt(&facts, &summaries, &recall, &incoming.text);
+        // Resolve language: stored preference > auto-detect > English.
+        let language =
+            if let Some((_, lang)) = facts.iter().find(|(k, _)| k == "preferred_language") {
+                lang.clone()
+            } else {
+                let detected = detect_language(&incoming.text).to_string();
+                let _ = self
+                    .store_fact(&incoming.sender_id, "preferred_language", &detected)
+                    .await;
+                detected
+            };
+
+        let system_prompt = build_system_prompt(&facts, &summaries, &recall, &language);
 
         Ok(Context {
             system_prompt,
@@ -716,7 +728,7 @@ fn build_system_prompt(
     facts: &[(String, String)],
     summaries: &[(String, String)],
     recall: &[(String, String, String)],
-    current_message: &str,
+    language: &str,
 ) -> String {
     let mut prompt = String::from(
         "You are Omega, a personal AI agent running on the owner's infrastructure.\n\
@@ -755,9 +767,13 @@ fn build_system_prompt(
         }
     }
 
-    if likely_spanish(current_message) {
-        prompt.push_str("\n\nRespond in Spanish.");
-    }
+    prompt.push_str(&format!("\n\nIMPORTANT: Always respond in {language}."));
+
+    prompt.push_str(
+        "\n\nIf the user explicitly asks you to change language (e.g. 'speak in French'), \
+         respond in the requested language. Include LANG_SWITCH: <language> on its own line \
+         at the END of your response.",
+    );
 
     prompt.push_str(
         "\n\nWhen the user asks to schedule, remind, or set a recurring task, \
@@ -770,16 +786,92 @@ fn build_system_prompt(
     prompt
 }
 
-/// Simple heuristic to detect if a message is likely in Spanish.
-fn likely_spanish(text: &str) -> bool {
+/// Detect the most likely language of a text using stop-word heuristics.
+/// Returns a language name like "English", "Spanish", etc.
+fn detect_language(text: &str) -> &'static str {
     let lower = text.to_lowercase();
-    let markers = [
-        " que ", " por ", " para ", " como ", " con ", " una ", " los ", " las ", " del ",
-        " tiene ", " hace ", " esto ", " esta ", " pero ", "hola", "gracias", "buenos", "buenas",
-        "dime", "necesito", "quiero", "puedes", "puedo",
+
+    let languages: &[(&str, &[&str])] = &[
+        (
+            "Spanish",
+            &[
+                " que ", " por ", " para ", " como ", " con ", " una ", " los ", " las ", " del ",
+                " pero ", "hola", "gracias", "necesito", "quiero", "puedes",
+            ],
+        ),
+        (
+            "Portuguese",
+            &[
+                " que ", " com ", " para ", " uma ", " dos ", " das ", " não ", " mais ", " tem ",
+                " isso ", "olá", "obrigado", "preciso", "você",
+            ],
+        ),
+        (
+            "French",
+            &[
+                " que ", " les ", " des ", " une ", " est ", " pas ", " pour ", " dans ", " avec ",
+                " sur ", "bonjour", "merci", " je ", " nous ",
+            ],
+        ),
+        (
+            "German",
+            &[
+                " und ", " der ", " die ", " das ", " ist ", " nicht ", " ein ", " eine ", " ich ",
+                " auf ", " mit ", " für ", " den ", "hallo",
+            ],
+        ),
+        (
+            "Italian",
+            &[
+                " che ", " per ", " con ", " una ", " gli ", " non ", " sono ", " della ", " nel ",
+                " questo ", "ciao", "grazie", " io ", " anche ",
+            ],
+        ),
+        (
+            "Dutch",
+            &[
+                " de ", " het ", " een ", " van ", " en ", " niet ", " dat ", " met ", " voor ",
+                " zijn ", " ook ", " maar ", "hallo", " ik ",
+            ],
+        ),
+        (
+            "Russian",
+            &[
+                " и ",
+                " в ",
+                " не ",
+                " на ",
+                " что ",
+                " это ",
+                " как ",
+                " но ",
+                " от ",
+                " по ",
+                "привет",
+                "спасибо",
+                " мне ",
+                " для ",
+            ],
+        ),
     ];
-    let count = markers.iter().filter(|m| lower.contains(**m)).count();
-    count >= 3
+
+    let mut best = "English";
+    let mut best_score = 0usize;
+
+    for (lang, words) in languages {
+        let score = words.iter().filter(|w| lower.contains(**w)).count();
+        if score > best_score {
+            best_score = score;
+            best = lang;
+        }
+    }
+
+    // Require at least 2 matches to override English default.
+    if best_score >= 2 {
+        best
+    } else {
+        "English"
+    }
 }
 
 #[cfg(test)]

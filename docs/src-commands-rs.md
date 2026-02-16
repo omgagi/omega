@@ -202,6 +202,33 @@ Usage: /cancel <task-id>
 
 ---
 
+### `/language` (or `/lang`) — Language Preference
+
+**What It Does:** Shows or sets your preferred response language. Omega auto-detects your language on your first message, but you can override it at any time.
+
+**Response Example (Show Current):**
+```
+Language: Spanish
+Usage: /language <language>
+```
+
+**Response Example (Set New):**
+```
+Language set to: French
+```
+
+**Use Cases:**
+- Override the auto-detected language
+- Switch Omega's response language without asking in-chat
+- Check what language Omega currently uses for you
+
+**How It Works:**
+- On your first message, Omega detects your language and stores it as a preference.
+- All future conversations use that preference until you change it.
+- You can also ask Omega to "speak in French" in a regular message, and it will switch automatically.
+
+---
+
 ### `/help` — Command Help
 
 **What It Does:** Displays a quick reference guide of all available commands with brief descriptions.
@@ -210,14 +237,15 @@ Usage: /cancel <task-id>
 ```
 Omega Commands
 
-/status  — Uptime, provider, database info
-/memory  — Your conversation and facts stats
-/history — Last 5 conversation summaries
-/facts   — List known facts about you
-/forget  — Clear current conversation
-/tasks   — List your scheduled tasks
-/cancel  — Cancel a task by ID
-/help    — This message
+/status   — Uptime, provider, database info
+/memory   — Your conversation and facts stats
+/history  — Last 5 conversation summaries
+/facts    — List known facts about you
+/forget   — Clear current conversation
+/tasks    — List your scheduled tasks
+/cancel   — Cancel a task by ID
+/language — Show or set your language
+/help     — This message
 ```
 
 **Use Cases:**

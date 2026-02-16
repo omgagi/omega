@@ -576,6 +576,20 @@ impl Gateway {
             response.text = strip_schedule_marker(&response.text);
         }
 
+        // --- 5c. EXTRACT LANG_SWITCH MARKER ---
+        if let Some(lang) = extract_lang_switch(&response.text) {
+            if let Err(e) = self
+                .memory
+                .store_fact(&incoming.sender_id, "preferred_language", &lang)
+                .await
+            {
+                error!("failed to store language preference: {e}");
+            } else {
+                info!("language switched to '{lang}' for {}", incoming.sender_id);
+            }
+            response.text = strip_lang_switch(&response.text);
+        }
+
         // --- 6. STORE IN MEMORY ---
         if let Err(e) = self.memory.store_exchange(&incoming, &response).await {
             error!("failed to store exchange: {e}");
@@ -681,6 +695,30 @@ fn parse_schedule_line(line: &str) -> Option<(String, String, String)> {
     Some((desc, due_at, repeat))
 }
 
+/// Extract the language from a `LANG_SWITCH:` line in response text.
+fn extract_lang_switch(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| line.trim().starts_with("LANG_SWITCH:"))
+        .and_then(|line| {
+            let lang = line.trim().strip_prefix("LANG_SWITCH:")?.trim().to_string();
+            if lang.is_empty() {
+                None
+            } else {
+                Some(lang)
+            }
+        })
+}
+
+/// Strip all `LANG_SWITCH:` lines from response text.
+fn strip_lang_switch(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim().starts_with("LANG_SWITCH:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
 /// Strip all `SCHEDULE:` lines from response text.
 fn strip_schedule_marker(text: &str) -> String {
     text.lines()
@@ -770,6 +808,23 @@ mod tests {
         let text = "Line 1\nLine 2\nSCHEDULE: test | 2026-01-01T00:00:00 | once\nLine 3";
         let result = strip_schedule_marker(text);
         assert_eq!(result, "Line 1\nLine 2\nLine 3");
+    }
+
+    #[test]
+    fn test_extract_lang_switch() {
+        let text = "Sure, I'll speak French now.\nLANG_SWITCH: French";
+        assert_eq!(extract_lang_switch(text), Some("French".to_string()));
+    }
+
+    #[test]
+    fn test_extract_lang_switch_none() {
+        assert!(extract_lang_switch("Just a normal response.").is_none());
+    }
+
+    #[test]
+    fn test_strip_lang_switch() {
+        let text = "Sure, I'll speak French now.\nLANG_SWITCH: French";
+        assert_eq!(strip_lang_switch(text), "Sure, I'll speak French now.");
     }
 
     #[test]

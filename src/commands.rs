@@ -12,6 +12,7 @@ pub enum Command {
     Forget,
     Tasks,
     Cancel,
+    Language,
     Help,
 }
 
@@ -28,6 +29,7 @@ impl Command {
             "/forget" => Some(Self::Forget),
             "/tasks" => Some(Self::Tasks),
             "/cancel" => Some(Self::Cancel),
+            "/language" | "/lang" => Some(Self::Language),
             "/help" => Some(Self::Help),
             _ => None,
         }
@@ -52,6 +54,7 @@ pub async fn handle(
         Command::Forget => handle_forget(store, channel, sender_id).await,
         Command::Tasks => handle_tasks(store, sender_id).await,
         Command::Cancel => handle_cancel(store, sender_id, text).await,
+        Command::Language => handle_language(store, sender_id, text).await,
         Command::Help => handle_help(),
     }
 }
@@ -156,17 +159,48 @@ async fn handle_cancel(store: &Store, sender_id: &str, text: &str) -> String {
     }
 }
 
+async fn handle_language(store: &Store, sender_id: &str, text: &str) -> String {
+    let arg = text
+        .split_whitespace()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if arg.is_empty() {
+        // Show current preference.
+        match store.get_facts(sender_id).await {
+            Ok(facts) => {
+                let lang = facts
+                    .iter()
+                    .find(|(k, _)| k == "preferred_language")
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("not set");
+                format!("Language: {lang}\nUsage: /language <language>")
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    } else {
+        match store
+            .store_fact(sender_id, "preferred_language", &arg)
+            .await
+        {
+            Ok(()) => format!("Language set to: {arg}"),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+}
+
 fn handle_help() -> String {
     "\
 Omega Commands\n\n\
-/status  — Uptime, provider, database info\n\
-/memory  — Your conversation and facts stats\n\
-/history — Last 5 conversation summaries\n\
-/facts   — List known facts about you\n\
-/forget  — Clear current conversation\n\
-/tasks   — List your scheduled tasks\n\
-/cancel  — Cancel a task by ID\n\
-/help    — This message"
+/status   — Uptime, provider, database info\n\
+/memory   — Your conversation and facts stats\n\
+/history  — Last 5 conversation summaries\n\
+/facts    — List known facts about you\n\
+/forget   — Clear current conversation\n\
+/tasks    — List your scheduled tasks\n\
+/cancel   — Cancel a task by ID\n\
+/language — Show or set your language\n\
+/help     — This message"
         .to_string()
 }
 

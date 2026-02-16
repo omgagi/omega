@@ -204,10 +204,10 @@ Related past context:
 - [2024-01-10 16:00:00] User: I need to set up nginx reverse proxy for port 8080...
 - [2024-01-08 11:30:00] User: The SSL cert is at /etc/letsencrypt/live/example.com...
 
-Respond in Spanish.
+IMPORTANT: Always respond in Spanish.
 ```
 
-The "Known facts", "Recent conversation history", and "Related past context" sections are only included when data is available. Recalled messages are truncated to 200 characters to avoid bloating the prompt. The "Respond in Spanish" directive is added only when the current message appears to be in Spanish (detected by a simple keyword heuristic).
+The "Known facts", "Recent conversation history", and "Related past context" sections are only included when data is available. Recalled messages are truncated to 200 characters to avoid bloating the prompt. The language directive (e.g., "IMPORTANT: Always respond in Spanish.") is always present, using the user's stored `preferred_language` fact or auto-detecting from the first message via stop-word heuristics for 7 languages (Spanish, Portuguese, French, German, Italian, Dutch, Russian), defaulting to English.
 
 ### Resilience
 
@@ -473,6 +473,6 @@ Facts evolve over time. A user might mention their timezone once and then correc
 
 UUIDs avoid the need for auto-increment sequences and make it trivial to generate IDs in application code without a database round-trip. They also ensure global uniqueness even if data is ever merged from multiple sources.
 
-### Why is the Spanish Detection a Heuristic?
+### Why is Language Detection a Heuristic?
 
-A proper language detection library would add a dependency for a feature that is only used to append a single directive to the system prompt. The simple keyword heuristic (3+ Spanish markers = Spanish) is good enough for the owner's bilingual use case and adds zero dependencies.
+A proper language detection library would add a dependency for a feature that is only used to set a user preference on first contact. The simple stop-word counting heuristic (2+ matches = detected language) is good enough for multilingual users and adds zero dependencies. If the heuristic guesses wrong, the user can always correct it with `/language <lang>` or by asking Omega to "speak in French" in a regular message.

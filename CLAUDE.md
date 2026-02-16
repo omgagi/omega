@@ -19,6 +19,8 @@ All our architecture must be monolithic and modular, like Legos.
 1. **Environment**: All commands **MUST** run via Nix:
    `nix --extra-experimental-features "nix-command flakes" develop --command bash -c "<command>"`
 
+    After any development for the Rust parts, run cargo build with nix to ensure it compiles, then cargo clippy to clean up any lint errors.
+
 2. **Pre-Commit Gate** (Execute in order, all steps mandatory):
    
    | Step | Action | Condition |
@@ -61,7 +63,7 @@ Background loops (spawned in `gateway::run()`):
 - **Scheduler**: polls `scheduled_tasks` table every 60s, delivers due reminders via channel
 - **Heartbeat**: periodic provider check-in (default 30min), suppresses `HEARTBEAT_OK`, alerts otherwise
 
-Bot commands: `/help`, `/forget`, `/tasks`, `/cancel <id>`
+Bot commands: `/help`, `/forget`, `/tasks`, `/cancel <id>`, `/language`
 
 ## Build & Test
 

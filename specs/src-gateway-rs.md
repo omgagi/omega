@@ -317,7 +317,7 @@ pub struct Gateway {
   - Send error message.
   - Return.
 
-**Stage 5b: SCHEDULE Marker Extraction (Lines 545-577)**
+**Stage 5b: SCHEDULE Marker Extraction**
 - After receiving the provider response and aborting the typing indicator:
 - Call `extract_schedule_marker(&response.text)` to find a `SCHEDULE:` line.
 - If found, call `parse_schedule_line()` to extract `(description, due_at, repeat)`.
@@ -326,6 +326,14 @@ pub struct Gateway {
   - Call `self.memory.create_task()` with channel, sender_id, reply_target, description, due_at, repeat.
   - Log the created task ID on success, or log error on failure.
 - Call `strip_schedule_marker(&response.text)` to remove the `SCHEDULE:` line from the response before sending to the user.
+
+**Stage 5c: LANG_SWITCH Marker Extraction**
+- After SCHEDULE extraction:
+- Call `extract_lang_switch(&response.text)` to find a `LANG_SWITCH:` line.
+- If found:
+  - Call `self.memory.store_fact(&incoming.sender_id, "preferred_language", &lang)` to persist the language change.
+  - Log the language switch on success, or log error on failure.
+  - Call `strip_lang_switch(&response.text)` to remove the `LANG_SWITCH:` line from the response before sending to the user.
 
 **Stage 6: Store Exchange in Memory (Lines 579-582)**
 - Call `self.memory.store_exchange(&incoming, &response)` to save the exchange.
@@ -428,6 +436,16 @@ pub struct Gateway {
 **Purpose:** Remove all `SCHEDULE:` lines from response text so the marker is not shown to the user.
 
 **Logic:** Filters out any line whose trimmed form starts with `"SCHEDULE:"`, then joins remaining lines and trims the result.
+
+### `fn extract_lang_switch(text: &str) -> Option<String>`
+**Purpose:** Extract the language name from a `LANG_SWITCH:` line in response text.
+
+**Logic:** Iterates through lines, finds the first line whose trimmed form starts with `"LANG_SWITCH:"`, strips the prefix, trims, and returns the language name. Returns `None` if not found or if language is empty.
+
+### `fn strip_lang_switch(text: &str) -> String`
+**Purpose:** Remove all `LANG_SWITCH:` lines from response text so the marker is not shown to the user.
+
+**Logic:** Filters out any line whose trimmed form starts with `"LANG_SWITCH:"`, then joins remaining lines and trims the result.
 
 ### `fn read_heartbeat_file() -> Option<String>`
 **Purpose:** Read `~/.omega/HEARTBEAT.md` if it exists, for use as a heartbeat checklist.
@@ -690,6 +708,7 @@ All interactions are logged to SQLite with:
 8. Typing indicator is aborted when response is sent or on error.
 9. On shutdown, all active conversations are summarized, all background tasks are aborted, and all channels are stopped.
 10. SCHEDULE: markers are stripped from the response before sending to the user.
-11. Scheduler loop only runs when `scheduler_config.enabled` is true.
-12. Heartbeat loop only runs when `heartbeat_config.enabled` is true.
-13. Heartbeat alerts are suppressed when the provider response contains `HEARTBEAT_OK`.
+11. LANG_SWITCH: markers are stripped from the response before sending to the user. The extracted language is persisted as a `preferred_language` fact.
+12. Scheduler loop only runs when `scheduler_config.enabled` is true.
+13. Heartbeat loop only runs when `heartbeat_config.enabled` is true.
+14. Heartbeat alerts are suppressed when the provider response contains `HEARTBEAT_OK`.

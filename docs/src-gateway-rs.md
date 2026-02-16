@@ -209,6 +209,26 @@ The provider is responsible for understanding the user's natural language ("remi
 **Error Handling:**
 If the marker is malformed (wrong number of fields, empty description), it is silently ignored. If the database insert fails, the error is logged but the response is still sent. The user always sees their response, even if scheduling fails.
 
+### Stage 6c: Language Switch Extraction
+
+**What happens:** After schedule extraction, the gateway scans the response for a `LANG_SWITCH:` marker. If found, it persists the user's new language preference and strips the marker from the response.
+
+**Implementation:**
+- Calls `extract_lang_switch(&response.text)` to find the first line starting with `LANG_SWITCH:`.
+- If found, stores the language as a `preferred_language` fact via `store.store_fact()`.
+- Calls `strip_lang_switch()` to remove the `LANG_SWITCH:` line from the response.
+
+**Marker Format:**
+```
+LANG_SWITCH: French
+```
+
+**Why This Exists:**
+When a user says "speak in French" in a regular message, the AI detects the intent and switches language. The `LANG_SWITCH:` marker tells the gateway to persist this preference so all future conversations use the new language.
+
+**Error Handling:**
+If the store fails to persist the language, the error is logged but the response is still sent.
+
 ### Stage 7: Memory Storage
 
 **What happens:** The exchange (user input + AI response) is saved to the SQLite database.
@@ -307,6 +327,11 @@ User sends message on Telegram
 │ Stage 6b: extract_schedule_marker()     │
 │  • Scan response for SCHEDULE: line     │
 │  ✓ Found? → Create task, strip marker   │
+│  ✗ Not found? → Continue                │
+│                                          │
+│ Stage 6c: extract_lang_switch()         │
+│  • Scan response for LANG_SWITCH: line  │
+│  ✓ Found? → Store pref, strip marker    │
 │  ✗ Not found? → Continue                │
 │                                          │
 │ Stage 7: memory.store_exchange()        │

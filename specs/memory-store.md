@@ -644,8 +644,11 @@ LIMIT ?
 3. Fetch all facts for the sender (errors suppressed, default to empty).
 4. Fetch the 3 most recent closed conversation summaries (errors suppressed, default to empty).
 5. Search past messages via FTS5 for cross-conversation recall (errors suppressed, default to empty).
-6. Build a dynamic system prompt via `build_system_prompt()`.
-7. Return a `Context` with the system prompt, history, and current message.
+6. Resolve language preference:
+   - If a `preferred_language` fact exists in the fetched facts, use it.
+   - Otherwise, call `detect_language(&incoming.text)` and store the result as a `preferred_language` fact.
+7. Build a dynamic system prompt via `build_system_prompt()`, passing the resolved language.
+8. Return a `Context` with the system prompt, history, and current message.
 
 **SQL (step 2):**
 ```sql
@@ -671,8 +674,13 @@ SELECT messages                          get_facts(sender_id)
     |                                         v
     |                                   search_messages(text, conv_id, sender_id, 5)
     |                                         |
+    |                                         v
+    |                                   resolve language:
+    |                                     preferred_language fact? → use it
+    |                                     else → detect_language(text) + store fact
+    |                                         |
     v                                         v
-history: Vec<ContextEntry>     build_system_prompt(facts, summaries, recall, text)
+history: Vec<ContextEntry>     build_system_prompt(facts, summaries, recall, language)
     |                                         |
     v                                         v
     └──────────────┬─────────────────────────┘
@@ -982,9 +990,9 @@ same ID  new ID
 
 ---
 
-### `fn build_system_prompt(facts: &[(String, String)], summaries: &[(String, String)], recall: &[(String, String, String)], current_message: &str) -> String`
+### `fn build_system_prompt(facts: &[(String, String)], summaries: &[(String, String)], recall: &[(String, String, String)], language: &str) -> String`
 
-**Purpose:** Build a dynamic system prompt enriched with user facts, conversation summaries, recalled past messages, and language detection.
+**Purpose:** Build a dynamic system prompt enriched with user facts, conversation summaries, recalled past messages, and explicit language instruction.
 
 **Parameters:**
 
@@ -993,7 +1001,7 @@ same ID  new ID
 | `facts` | `&[(String, String)]` | User facts as `(key, value)` pairs. |
 | `summaries` | `&[(String, String)]` | Recent conversation summaries as `(summary, timestamp)` pairs. |
 | `recall` | `&[(String, String, String)]` | Recalled past messages as `(role, content, timestamp)` tuples. |
-| `current_message` | `&str` | The user's current message (used for language detection). |
+| `language` | `&str` | The user's preferred language (e.g., `"English"`, `"Spanish"`). |
 
 **Returns:** `String` -- the complete system prompt.
 
@@ -1021,7 +1029,11 @@ Related past context:                 ← (only if recall is non-empty)
 - [2024-01-10 16:00:00] User: How do I use tokio::spawn for background tasks...
 - [2024-01-08 11:30:00] User: I need to set up nginx reverse proxy for port 8080...
 
-Respond in Spanish.                   ← (only if likely_spanish() returns true)
+IMPORTANT: Always respond in Spanish.  ← (always present, uses language parameter)
+
+If the user explicitly asks you to change language (e.g. 'speak in French'),
+respond in the requested language. Include LANG_SWITCH: <language> on its own line
+at the END of your response.
 
 When the user asks to schedule, remind, or set a recurring task,
 include this marker on its own line at the END of your response:
@@ -1034,14 +1046,15 @@ Only include the marker if the user explicitly asks for a reminder or scheduled 
 - Facts section: appended only if `facts` is non-empty.
 - Summaries section: appended only if `summaries` is non-empty.
 - Recall section: appended only if `recall` is non-empty. Each message is truncated to 200 characters.
-- Spanish directive: appended only if `likely_spanish(current_message)` returns true.
+- Language directive: always appended (unconditional). Uses the `language` parameter.
+- LANG_SWITCH instruction: always appended (unconditional). Tells the provider to include a `LANG_SWITCH:` marker when the user explicitly asks to change language.
 - SCHEDULE marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE:` marker line when the user explicitly requests a reminder or scheduled task.
 
 ---
 
-### `fn likely_spanish(text: &str) -> bool`
+### `fn detect_language(text: &str) -> &'static str`
 
-**Purpose:** Simple heuristic to detect if a message is likely in Spanish.
+**Purpose:** Detect the most likely language of a text using stop-word heuristics.
 
 **Parameters:**
 
@@ -1049,18 +1062,25 @@ Only include the marker if the user explicitly asks for a reminder or scheduled 
 |-----------|------|-------------|
 | `text` | `&str` | The text to analyze. |
 
-**Returns:** `bool` -- `true` if 3 or more Spanish markers are found.
+**Returns:** `&'static str` -- language name (e.g., `"English"`, `"Spanish"`, `"French"`).
 
 **Logic:**
 1. Convert text to lowercase.
-2. Check against a list of 21 Spanish marker words/phrases:
-   - ` que `, ` por `, ` para `, ` como `, ` con `, ` una `, ` los `, ` las `, ` del `
-   - ` tiene `, ` hace `, ` esto `, ` esta `, ` pero `
-   - `hola`, `gracias`, `buenos`, `buenas`, `dime`, `necesito`, `quiero`, `puedes`, `puedo`
-3. Count how many markers appear in the text.
-4. Return `true` if count >= 3.
+2. For each supported language, count how many stop-words appear in the text.
+3. The language with the highest count wins.
+4. Require at least 2 matches to override the English default.
+5. Return `"English"` if no language scores >= 2.
 
-**Note:** This is a simple heuristic, not a language detection library. It may produce false positives for Portuguese or other Romance languages, and false negatives for short Spanish messages.
+**Supported languages:**
+- Spanish (15 stop-words)
+- Portuguese (14 stop-words)
+- French (14 stop-words)
+- German (14 stop-words)
+- Italian (14 stop-words)
+- Dutch (14 stop-words)
+- Russian (14 stop-words)
+
+**Note:** This is a simple heuristic, not a language detection library. Some stop-words overlap between Romance languages. The user can always override with `/language <lang>`.
 
 ## Context Building Flow Diagram
 
@@ -1246,3 +1266,5 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 15. Recurring tasks stay in `'pending'` status with an advanced `due_at`; one-shot tasks transition to `'delivered'`.
 16. Task cancellation requires sender_id ownership check (users can only cancel their own tasks).
 17. The SCHEDULE marker instruction is always included in the system prompt.
+18. The language directive is always included in the system prompt (uses resolved `preferred_language` fact or auto-detected language).
+19. The LANG_SWITCH marker instruction is always included in the system prompt.

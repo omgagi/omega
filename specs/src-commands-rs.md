@@ -23,20 +23,22 @@ pub enum Command {
     Forget,
     Tasks,
     Cancel,
+    Language,
     Help,
 }
 ```
 
-| Command | Line | Purpose |
-|---------|------|---------|
-| `Status` | 8 | System uptime, active provider, and database size |
-| `Memory` | 9 | User-specific stats: conversations, messages, facts count |
-| `History` | 10 | Last 5 conversation summaries with timestamps |
-| `Facts` | 11 | List of known facts about the user |
-| `Forget` | 12 | Close and clear the current active conversation |
-| `Tasks` | 13 | List pending scheduled tasks for the user |
-| `Cancel` | 14 | Cancel a scheduled task by ID prefix |
-| `Help` | 15 | Display all available commands |
+| Command | Purpose |
+|---------|---------|
+| `Status` | System uptime, active provider, and database size |
+| `Memory` | User-specific stats: conversations, messages, facts count |
+| `History` | Last 5 conversation summaries with timestamps |
+| `Facts` | List of known facts about the user |
+| `Forget` | Close and clear the current active conversation |
+| `Tasks` | List pending scheduled tasks for the user |
+| `Cancel` | Cancel a scheduled task by ID prefix |
+| `Language` | Show or set the user's preferred response language |
+| `Help` | Display all available commands |
 
 ---
 
@@ -60,6 +62,7 @@ pub enum Command {
 - `/forget` → `Command::Forget`
 - `/tasks` → `Command::Tasks`
 - `/cancel` → `Command::Cancel`
+- `/language` or `/lang` → `Command::Language`
 - `/help` → `Command::Help`
 
 **Example Behavior:**
@@ -301,27 +304,55 @@ Error: [error description]
 
 ---
 
+### /language — `handle_language(store, sender_id, text)`
+
+**Behavior:**
+- Collects all whitespace-delimited tokens after `/language` as the language argument.
+- **No argument:** Looks up the `preferred_language` fact for the user via `store.get_facts()`. Displays the current language or "not set" if absent. Shows usage hint.
+- **With argument:** Stores the language as a `preferred_language` fact via `store.store_fact()`. Confirms the change.
+
+**Aliases:** `/language`, `/lang`
+
+**Response Format (Show Current):**
+```
+Language: Spanish
+Usage: /language <language>
+```
+
+**Response Format (Set New):**
+```
+Language set to: French
+```
+
+**Response Format (Error):**
+```
+Error: [error description]
+```
+
+---
+
 ### /help — `handle_help()`
 
 **Location:** Lines 159–171
 
 **Behavior:**
 - No async operations or external calls
-- Returns hardcoded help text with all eight commands and brief descriptions
+- Returns hardcoded help text with all nine commands and brief descriptions
 - Single-threaded, pure function
 
 **Response Format:**
 ```
 Omega Commands
 
-/status  — Uptime, provider, database info
-/memory  — Your conversation and facts stats
-/history — Last 5 conversation summaries
-/facts   — List known facts about you
-/forget  — Clear current conversation
-/tasks   — List your scheduled tasks
-/cancel  — Cancel a task by ID
-/help    — This message
+/status   — Uptime, provider, database info
+/memory   — Your conversation and facts stats
+/history  — Last 5 conversation summaries
+/facts    — List known facts about you
+/forget   — Clear current conversation
+/tasks    — List your scheduled tasks
+/cancel   — Cancel a task by ID
+/language — Show or set your language
+/help     — This message
 ```
 
 ---
@@ -359,6 +390,8 @@ All command handlers interact with the `omega_memory::Store` trait/type:
 | `handle_forget()` | `store.close_current_conversation(channel, sender_id)` | `Result<bool>` | Close active conversation |
 | `handle_tasks()` | `store.get_tasks_for_sender(sender_id)` | `Result<Vec<(String, String, String, Option<String>)>>` | Fetch pending tasks for user |
 | `handle_cancel()` | `store.cancel_task(id_prefix, sender_id)` | `Result<bool>` | Cancel a task by ID prefix |
+| `handle_language()` | `store.get_facts(sender_id)` | `Result<Vec<(String, String)>>` | Look up current preferred_language fact |
+| `handle_language()` | `store.store_fact(sender_id, key, value)` | `Result<()>` | Set preferred_language fact |
 
 All store operations are async and return `Result` types with proper error handling.
 
@@ -406,7 +439,7 @@ All handlers are `async` even though most only interact with local SQLite. This 
 - Command names are hardcoded; no dynamic command registration system
 - All commands are synchronous from user perspective (no long-running operations)
 - Commands are scoped to user + channel (e.g., `/forget` clears only the user's conversation in that channel)
-- No command aliases or variations (e.g., `/help` and `/h` are different; only `/help` is recognized)
+- `/language` has an alias `/lang`; all other commands have no aliases
 - Fact keys and values are opaque strings managed by the memory system
 - `/cancel` uses ID prefix matching (first 8+ characters of UUID) for user convenience
 - `/tasks` only shows tasks with status `'pending'`; delivered and cancelled tasks are hidden
