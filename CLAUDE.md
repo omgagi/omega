@@ -99,6 +99,8 @@ cargo build --release        # Optimized binary
 
 - Config: `config.toml` (gitignored), `config.example.toml` (committed)
 - Database: `~/.omega/memory.db`
+- Prompts: `~/.omega/SYSTEM_PROMPT.md` (optional, `## Section` headers, read at startup)
+- Welcome messages: `~/.omega/WELCOME.toml` (optional, `[messages]` table keyed by language, read at startup)
 - Heartbeat checklist: `~/.omega/HEARTBEAT.md` (optional, read by heartbeat loop)
 - Logs: `~/.omega/omega.log`
 - Service: `~/Library/LaunchAgents/com.omega-cortex.omega.plist`

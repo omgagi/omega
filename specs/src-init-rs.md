@@ -362,7 +362,10 @@ The `shellexpand()` utility is imported from `omega_core::shellexpand` (defined 
 ```
 ~/.omega/
   ├── memory.db          # Created on first `omega start`
-  └── omega.log          # Created when logging starts
+  ├── omega.log          # Created when logging starts
+  ├── SYSTEM_PROMPT.md   # Optional: externalized AI prompts (read at startup)
+  ├── WELCOME.toml       # Optional: welcome messages per language (read at startup)
+  └── HEARTBEAT.md       # Optional: heartbeat checklist (read by heartbeat loop)
 ```
 
 **Permissions:** Default user permissions (typically `700` for home subdirectories)
