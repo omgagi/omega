@@ -25,8 +25,8 @@
       devShells = forAllSystems ({ pkgs, system }: {
         default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            # Rust toolchain (stable, with clippy + rustfmt).
-            (rust-bin.stable.latest.default.override {
+            # Rust toolchain (nightly, required by whatsapp-rust's portable_simd).
+            (rust-bin.nightly."2025-12-01".default.override {
               extensions = [ "rust-src" "rust-analyzer" ];
             })
 

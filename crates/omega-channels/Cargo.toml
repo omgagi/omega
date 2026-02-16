@@ -18,3 +18,13 @@ async-trait = { workspace = true }
 reqwest = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+whatsapp-rust = { version = "0.2", default-features = false, features = ["tokio-transport", "ureq-client", "tokio-native"] }
+whatsapp-rust-tokio-transport = "0.2"
+whatsapp-rust-ureq-http-client = "0.2"
+wacore = "0.2"
+wacore-binary = "0.2"
+waproto = "0.2"
+sqlx = { workspace = true }
+bincode = "1"
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }

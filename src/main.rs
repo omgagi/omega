@@ -5,6 +5,7 @@ mod selfcheck;
 
 use clap::{Parser, Subcommand};
 use omega_channels::telegram::TelegramChannel;
+use omega_channels::whatsapp::WhatsAppChannel;
 use omega_core::{
     config::{self, Prompts},
     context::Context,
@@ -94,6 +95,13 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
+            if let Some(ref wa) = cfg.channel.whatsapp {
+                if wa.enabled {
+                    let channel = WhatsAppChannel::new(wa.clone(), &cfg.omega.data_dir);
+                    channels.insert("whatsapp".to_string(), Arc::new(channel));
+                }
+            }
+
             if channels.is_empty() {
                 anyhow::bail!("No channels enabled. Enable at least one channel in config.toml.");
             }
@@ -117,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
                 cfg.heartbeat.clone(),
                 cfg.scheduler.clone(),
                 prompts,
+                cfg.omega.data_dir.clone(),
             );
             gw.run().await?;
         }
@@ -148,6 +157,15 @@ async fn main() -> anyhow::Result<()> {
                 );
             } else {
                 println!("  telegram: not configured");
+            }
+
+            if let Some(ref wa) = cfg.channel.whatsapp {
+                println!(
+                    "  whatsapp: {}",
+                    if wa.enabled { "enabled" } else { "disabled" }
+                );
+            } else {
+                println!("  whatsapp: not configured");
             }
         }
         Commands::Ask { message } => {

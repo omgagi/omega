@@ -121,6 +121,41 @@ impl TelegramChannel {
         Ok(())
     }
 
+    /// Send a photo (PNG bytes) with a caption to a chat.
+    async fn send_photo_bytes(
+        &self,
+        chat_id: i64,
+        image: &[u8],
+        caption: &str,
+    ) -> Result<(), OmegaError> {
+        let url = format!("{}/sendPhoto", self.base_url);
+
+        let part = reqwest::multipart::Part::bytes(image.to_vec())
+            .file_name("qr.png")
+            .mime_str("image/png")
+            .map_err(|e| OmegaError::Channel(format!("mime error: {e}")))?;
+
+        let form = reqwest::multipart::Form::new()
+            .text("chat_id", chat_id.to_string())
+            .text("caption", caption.to_string())
+            .part("photo", part);
+
+        let resp = self
+            .client
+            .post(&url)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| OmegaError::Channel(format!("telegram sendPhoto failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            let error_text = resp.text().await.unwrap_or_default();
+            warn!("telegram sendPhoto error: {error_text}");
+        }
+
+        Ok(())
+    }
+
     /// Send a chat action (e.g. "typing") to a chat.
     async fn send_chat_action(&self, chat_id: i64, action: &str) -> Result<(), OmegaError> {
         let url = format!("{}/sendChatAction", self.base_url);
@@ -270,6 +305,18 @@ impl Channel for TelegramChannel {
             OmegaError::Channel(format!("invalid telegram chat_id '{target}': {e}"))
         })?;
         self.send_chat_action(chat_id, "typing").await
+    }
+
+    async fn send_photo(
+        &self,
+        target: &str,
+        image: &[u8],
+        caption: &str,
+    ) -> Result<(), OmegaError> {
+        let chat_id: i64 = target.parse().map_err(|e| {
+            OmegaError::Channel(format!("invalid telegram chat_id '{target}': {e}"))
+        })?;
+        self.send_photo_bytes(chat_id, image, caption).await
     }
 
     async fn send(&self, message: OutgoingMessage) -> Result<(), OmegaError> {

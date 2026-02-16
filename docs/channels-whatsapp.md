@@ -1,215 +1,144 @@
 # WhatsApp Channel -- Developer Documentation
 
-## Current Status
+## Overview
 
-The WhatsApp channel is a **placeholder**. The file `crates/omega-channels/src/whatsapp.rs` contains only a module-level doc comment:
+The WhatsApp channel connects Omega to WhatsApp using a pure Rust implementation of the WhatsApp Web protocol. No external bridge, no Meta Business account needed. Users pair by scanning a QR code, just like WhatsApp Web.
 
-```rust
-//! WhatsApp bridge channel (placeholder).
-```
+**Crate:** `whatsapp-rust` (via `whatsapp-rust` crate on crates.io)
 
-There is no struct, no trait implementation, and no logic yet. However, the surrounding infrastructure is already in place:
-
-- The module is declared in `crates/omega-channels/src/lib.rs` as `mod whatsapp;`.
-- A `WhatsAppConfig` struct exists in `crates/omega-core/src/config.rs` with `enabled`, `bridge_url`, and `phone_number` fields.
-- A `[channel.whatsapp]` section is present in `config.example.toml`.
-
-This is a Phase 4 task on the Omega roadmap.
+**Important:** This is an unofficial implementation. Using custom WhatsApp clients may violate Meta's Terms of Service. Use at your own risk.
 
 ---
 
-## What the Channel Trait Requires
+## Quick Setup
 
-Every messaging platform in Omega must implement the `Channel` trait (defined in `crates/omega-core/src/traits.rs`). Here is what a WhatsApp implementation needs to provide:
+### Via CLI (`omega init`)
 
-### `fn name(&self) -> &str`
+```
+$ omega init
 
-Return `"whatsapp"`. This string is used to identify the channel in logs, the gateway routing table, and message metadata.
+  WhatsApp Setup
+  --------------
+  Would you like to connect WhatsApp? [y/N]: y
 
-### `async fn start(&self) -> Result<Receiver<IncomingMessage>, OmegaError>`
+  Starting WhatsApp pairing...
+  Open WhatsApp on your phone > Linked Devices > Link a Device
 
-This is the heart of the channel. It must set up a mechanism to receive incoming WhatsApp messages and feed them into a `tokio::sync::mpsc` channel. The gateway calls this once at startup and then reads from the returned receiver in a loop.
+  Scan this QR code with WhatsApp:
 
-For Telegram, this is done via long polling against the Bot API. For WhatsApp, the approach depends on the integration method chosen (see the section on architecture choices below).
+  ██████████████████████
+  ██ ▄▄▄▄▄ █ ...
+  ...
 
-### `async fn send(&self, message: OutgoingMessage) -> Result<(), OmegaError>`
+  Waiting for scan... Connected!
+  WhatsApp linked successfully.
+```
 
-Send a text response back to the user. The `OutgoingMessage` includes a `reply_target` field that should contain whatever identifier is needed to route the message (e.g., the recipient's phone number or a chat ID from the bridge).
+### Via Telegram (`/whatsapp`)
 
-### `async fn send_typing(&self, target: &str) -> Result<(), OmegaError>`
+Send `/whatsapp` to your Omega bot on Telegram. The bot sends a QR code image. Scan it with your phone.
 
-Send a typing or "composing" indicator. The WhatsApp Business API supports this via the `/messages` endpoint with `type: "reaction"` or status read receipts. A bridge may have its own mechanism. This method has a default no-op implementation, so it is optional to override.
+### Via Conversation
 
-### `async fn stop(&self) -> Result<(), OmegaError>`
-
-Graceful shutdown. Close any webhook server, clean up connections, log that the channel has stopped.
+Ask Omega to "connect WhatsApp" or "set up WhatsApp" in a Telegram chat. The AI responds with a `WHATSAPP_QR` marker, which the gateway intercepts and triggers the QR flow automatically.
 
 ---
 
-## Architecture Choices
+## Configuration
 
-The `WhatsAppConfig` has a `bridge_url` field, which suggests the original design intent was to use a **bridge** rather than the WhatsApp Business API directly. There are several viable approaches:
+```toml
+[channel.whatsapp]
+enabled = false
+allowed_users = []   # Phone numbers. Empty = allow all.
+```
 
-### Option A: WhatsApp Business API (Cloud API)
-
-Meta's official Cloud API. Requires a Meta Business account, a verified phone number, and a webhook endpoint for incoming messages.
-
-- **Pros:** Official, well-documented, reliable, supports all message types.
-- **Cons:** Requires a publicly reachable webhook URL (or a tunnel like ngrok), Meta business verification, and costs money for conversation-based pricing.
-- **Incoming messages:** Received via webhook POST to your server.
-- **Outgoing messages:** Sent via `POST https://graph.facebook.com/v18.0/{phone_number_id}/messages`.
-- **Auth token:** A long-lived system user token or a temporary token from the Meta dashboard.
-
-### Option B: WhatsApp Bridge (e.g., whatsapp-web.js, Baileys, or a self-hosted bridge)
-
-A bridge server that connects to WhatsApp Web and exposes a local HTTP API.
-
-- **Pros:** No Meta business account needed, works with a personal WhatsApp number, no webhook URL required.
-- **Cons:** Unofficial, may break when WhatsApp updates their protocol, potential ToS violations, requires maintaining the bridge process.
-- **Incoming messages:** Polled or pushed from the bridge's API (depends on the bridge implementation).
-- **Outgoing messages:** Sent via the bridge's HTTP API.
-
-### Option C: Hybrid
-
-Use the bridge for development and testing, and the official Business API for production. The `bridge_url` config field can serve as the base URL for either backend.
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Whether the WhatsApp channel is active |
+| `allowed_users` | `Vec<String>` | `[]` | Allowed phone numbers. Empty = allow all. |
 
 ---
 
-## Implementation Guide
+## Session Persistence
 
-Here is a step-by-step outline for implementing the WhatsApp channel:
+Session data is stored at `~/.omega/whatsapp_session/whatsapp.db`. This SQLite database contains device identity keys, prekey bundles, and session state.
 
-### 1. Define the struct
-
-```rust
-pub struct WhatsAppChannel {
-    config: WhatsAppConfig,
-    client: reqwest::Client,
-}
-```
-
-### 2. Add a constructor
-
-```rust
-impl WhatsAppChannel {
-    pub fn new(config: WhatsAppConfig) -> Self {
-        Self {
-            config,
-            client: reqwest::Client::new(),
-        }
-    }
-}
-```
-
-### 3. Implement the Channel trait
-
-Follow the Telegram implementation in `crates/omega-channels/src/telegram.rs` as a reference. The key differences will be:
-
-- **`start()`**: Instead of long-polling the Telegram Bot API, you will either:
-  - Start an HTTP server to receive webhooks (for the Business API), or
-  - Poll a bridge's API endpoint for new messages.
-- **`send()`**: POST to the WhatsApp API or bridge to deliver the response.
-- **`send_typing()`**: Send a composing presence indicator if the API/bridge supports it.
-
-### 4. Expand the config
-
-The current `WhatsAppConfig` is minimal. You will likely need to add:
-
-| Field | Purpose |
-|-------|---------|
-| `api_token` | Authentication token for the Business API or bridge |
-| `phone_number_id` | The WhatsApp Business phone number ID (for Cloud API) |
-| `verify_token` | Webhook verification token (for Cloud API) |
-| `allowed_users` | List of allowed phone numbers for auth enforcement |
-| `webhook_port` | Local port for the webhook server |
-
-### 5. Make the module public
-
-Change `mod whatsapp;` to `pub mod whatsapp;` in `crates/omega-channels/src/lib.rs` so the gateway can access `WhatsAppChannel`.
-
-### 6. Wire it into the gateway
-
-In `src/gateway.rs`, add logic to instantiate `WhatsAppChannel` when `config.channel.whatsapp` is `Some(cfg)` and `cfg.enabled` is `true`, then register it alongside the Telegram channel.
-
-### 7. Handle message formatting
-
-WhatsApp has a 4096-character limit for text messages. You will need a `split_message()` function similar to the one in the Telegram channel. WhatsApp also supports its own flavor of formatting (bold with `*`, italic with `_`, strikethrough with `~`, monospace with `` ``` ``).
-
-### 8. Add authentication
-
-The Telegram channel filters messages by `allowed_users` (a list of Telegram user IDs). The WhatsApp equivalent would be a list of allowed phone numbers. Add an `allowed_users: Vec<String>` field to `WhatsAppConfig` and filter incoming messages in `start()`.
+On restart, Omega reconnects using the persisted session — no re-scan needed. If the session is invalidated (e.g., logged out from phone), a new QR scan is required.
 
 ---
 
-## WhatsApp Business API Integration Points
+## How It Works
 
-If using the official Cloud API, these are the key endpoints:
+1. **Pairing**: The `whatsapp-rust` library initiates a WebSocket connection to WhatsApp servers and generates QR codes. The user scans one with their phone (WhatsApp > Linked Devices > Link a Device).
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/v18.0/{phone_number_id}/messages` | POST | Send a text message, media, or template |
-| `/v18.0/{phone_number_id}/messages` | POST | Send typing indicator (via `messaging_product: "whatsapp"`, `status: "read"`) |
-| Webhook URL (your server) | POST | Receive incoming messages and status updates |
-| Webhook URL (your server) | GET | Webhook verification handshake from Meta |
+2. **Receiving messages**: The bot's event handler receives `Event::Message` events. Text is extracted from `msg.conversation` or `msg.extended_text_message.text`. Non-text messages are skipped.
 
-### Webhook Payload Structure (Incoming Message)
+3. **Sending messages**: Text is sent as `wa::Message { conversation: Some(text) }` via `client.send_message()`. Messages over 4096 characters are automatically chunked.
 
-```json
-{
-  "object": "whatsapp_business_account",
-  "entry": [{
-    "id": "BUSINESS_ACCOUNT_ID",
-    "changes": [{
-      "value": {
-        "messaging_product": "whatsapp",
-        "metadata": {
-          "display_phone_number": "15550001234",
-          "phone_number_id": "PHONE_NUMBER_ID"
-        },
-        "contacts": [{
-          "profile": { "name": "Sender Name" },
-          "wa_id": "15550005678"
-        }],
-        "messages": [{
-          "from": "15550005678",
-          "id": "wamid.xxx",
-          "timestamp": "1677000000",
-          "text": { "body": "Hello Omega" },
-          "type": "text"
-        }]
-      },
-      "field": "messages"
-    }]
-  }]
-}
-```
-
-### Send Message Payload
-
-```json
-{
-  "messaging_product": "whatsapp",
-  "to": "15550005678",
-  "type": "text",
-  "text": { "body": "Response from Omega" }
-}
-```
+4. **Typing indicators**: The `send_typing()` method sends "composing" presence via `client.chatstate().send_composing()`.
 
 ---
 
-## Testing Strategy
+## Authentication
 
-- **Unit tests:** Test message parsing, chunking, and config loading.
-- **Integration tests:** Use a mock HTTP server (e.g., `wiremock`) to simulate the WhatsApp API or bridge.
-- **Manual testing:** Use a bridge in development, or the Meta test phone number for the Business API.
+WhatsApp auth uses phone numbers. Configure `allowed_users` with phone numbers (digits only, no `+` prefix):
+
+```toml
+[channel.whatsapp]
+enabled = true
+allowed_users = ["5511999887766", "5521888776655"]
+```
+
+Leave `allowed_users = []` to allow all incoming messages.
+
+---
+
+## Channel Trait Methods
+
+| Method | Description |
+|--------|-------------|
+| `name()` | Returns `"whatsapp"` |
+| `start()` | Initializes session store, builds bot, starts event loop |
+| `send()` | Sends text message to the chat JID |
+| `send_typing()` | Sends "composing" presence indicator |
+| `stop()` | Disconnects and cleans up |
+
+---
+
+## QR Code Utilities
+
+The `whatsapp` module exports public functions for QR code generation:
+
+- `generate_qr_terminal(data)` — Unicode string for terminal display
+- `generate_qr_image(data)` — PNG bytes for sending as an image
+- `start_pairing(data_dir)` — Full pairing flow with QR + completion channels
+
+---
+
+## Troubleshooting
+
+### Session expired
+If WhatsApp logs out the device (from phone settings), delete `~/.omega/whatsapp_session/` and re-pair:
+```bash
+rm -rf ~/.omega/whatsapp_session/
+omega init  # or /whatsapp from Telegram
+```
+
+### QR code not appearing
+Check that the `whatsapp-rust` dependencies are correctly installed. The library needs network access to WhatsApp servers.
+
+### Messages not received
+- Check `allowed_users` in config — the sender's phone number must be listed (or leave empty for all)
+- Verify the session is still valid (check logs for "WhatsApp connected" or "logged out")
 
 ---
 
 ## Reference
 
-- Telegram channel implementation: `crates/omega-channels/src/telegram.rs`
-- Channel trait definition: `crates/omega-core/src/traits.rs`
+- Implementation: `crates/omega-channels/src/whatsapp.rs`
 - Config struct: `crates/omega-core/src/config.rs` (`WhatsAppConfig`)
-- Message types: `crates/omega-core/src/message.rs`
-- Example config: `config.example.toml`
-- WhatsApp Cloud API docs: https://developers.facebook.com/docs/whatsapp/cloud-api
+- Channel trait: `crates/omega-core/src/traits.rs`
+- Gateway integration: `src/gateway.rs` (auth + WHATSAPP_QR marker)
+- Commands: `src/commands.rs` (`/whatsapp`)
+- Init wizard: `src/init.rs` (WhatsApp QR step)
+- whatsapp-rust crate: https://crates.io/crates/whatsapp-rust

@@ -155,15 +155,17 @@ pub struct TelegramConfig {
     pub allowed_users: Vec<i64>,
 }
 
-/// WhatsApp bridge config.
+/// WhatsApp channel config.
+///
+/// Session data is stored at `{data_dir}/whatsapp_session/`.
+/// Pairing is done by scanning a QR code (like WhatsApp Web).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhatsAppConfig {
     #[serde(default)]
     pub enabled: bool,
+    /// Allowed phone numbers (e.g. `["5511999887766"]`). Empty = allow all.
     #[serde(default)]
-    pub bridge_url: String,
-    #[serde(default)]
-    pub phone_number: String,
+    pub allowed_users: Vec<String>,
 }
 
 /// Memory config.
@@ -379,7 +381,8 @@ impl Default for Prompts {
                      - Speak the same language the user uses.\n\
                      - Reference past conversations naturally when relevant.\n\
                      - Never apologize unnecessarily.\n\
-                     - NEVER introduce yourself or describe what you can do. The user already received a welcome message. Just answer what they ask.".into(),
+                     - NEVER introduce yourself or describe what you can do. The user already received a welcome message. Just answer what they ask.\n\
+                     - When the user asks to connect, set up, or configure WhatsApp, respond with exactly WHATSAPP_QR on its own line. Do not explain the process — the system will handle QR generation automatically.".into(),
             summarize: "Summarize this conversation in 1-2 sentences. Be factual and concise. \
                         Do not add commentary.".into(),
             facts: "Extract key facts about the user from this conversation. \

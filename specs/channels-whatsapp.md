@@ -2,154 +2,147 @@
 
 **File:** `crates/omega-channels/src/whatsapp.rs`
 **Crate:** `omega-channels`
-**Module:** `whatsapp` (private, declared as `mod whatsapp` in `lib.rs`)
-**Status:** Placeholder -- no structs, no trait implementation, no logic.
+**Module:** `whatsapp` (public)
+**Status:** Implemented — pure Rust via `whatsapp-rust` crate
 
 ---
 
 ## Overview
 
-The WhatsApp channel module is intended to provide WhatsApp messaging integration for Omega, mirroring the role that `telegram.rs` fills for Telegram. As of the current codebase, it contains only a single-line doc comment and no executable code.
-
-### File Contents
-
-```rust
-//! WhatsApp bridge channel (placeholder).
-```
-
-That is the entire file. No imports, no structs, no functions, no trait implementations.
+The WhatsApp channel connects Omega to WhatsApp using the WhatsApp Web protocol (Noise handshake + Signal encryption), implemented purely in Rust via the `whatsapp-rust` crate. No external bridge process is needed. Users pair by scanning a QR code, identical to the WhatsApp Web experience.
 
 ---
 
-## Required Trait: `Channel`
+## Dependencies
 
-Defined in `crates/omega-core/src/traits.rs`, the `Channel` trait is the contract that every messaging platform must satisfy.
-
-| Method | Signature | Default Impl | Description |
-|--------|-----------|--------------|-------------|
-| `name` | `fn name(&self) -> &str` | No | Returns a human-readable channel name (e.g., `"whatsapp"`). |
-| `start` | `async fn start(&self) -> Result<mpsc::Receiver<IncomingMessage>, OmegaError>` | No | Begins listening for incoming messages. Returns an `mpsc::Receiver` that yields `IncomingMessage` values. |
-| `send` | `async fn send(&self, message: OutgoingMessage) -> Result<(), OmegaError>` | No | Sends a response back through the channel. |
-| `send_typing` | `async fn send_typing(&self, _target: &str) -> Result<(), OmegaError>` | Yes (no-op) | Sends a typing/composing indicator. Has a default no-op implementation. |
-| `stop` | `async fn stop(&self) -> Result<(), OmegaError>` | No | Performs graceful shutdown of the channel. |
-
-The trait requires `Send + Sync` and uses `#[async_trait]`.
+| Crate | Purpose |
+|-------|---------|
+| `whatsapp-rust` | WhatsApp Web protocol client |
+| `whatsapp-rust-tokio-transport` | Tokio-based WebSocket transport |
+| `whatsapp-rust-ureq-http-client` | HTTP client for WhatsApp API calls |
+| `wacore` | Core types (Event, Jid, Message) |
+| `qrcode` | QR code generation (terminal + image) |
+| `image` | PNG encoding for QR images |
 
 ---
 
-## Configuration Struct
-
-Defined in `crates/omega-core/src/config.rs`:
+## Configuration
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhatsAppConfig {
-    #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
-    pub bridge_url: String,
-    #[serde(default)]
-    pub phone_number: String,
+    pub allowed_users: Vec<String>,  // phone numbers, empty = allow all
 }
 ```
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | `bool` | `false` | Whether the WhatsApp channel is active. |
-| `bridge_url` | `String` | `""` | URL of the WhatsApp bridge/gateway server. |
-| `phone_number` | `String` | `""` | Phone number associated with the WhatsApp Business account. |
-
-The config is nested under `[channel.whatsapp]` in `config.toml`. Example from `config.example.toml`:
-
+TOML:
 ```toml
 [channel.whatsapp]
 enabled = false
-bridge_url = "http://localhost:3000"
-phone_number = ""
+allowed_users = []
 ```
 
-The `ChannelConfig` struct holds it as `pub whatsapp: Option<WhatsAppConfig>`.
+Session data stored at `{data_dir}/whatsapp_session/whatsapp.db`.
 
 ---
 
-## Expected Structs (Not Yet Implemented)
+## Core Struct
 
-Based on the Telegram reference implementation, the WhatsApp channel would need at minimum:
+```rust
+pub struct WhatsAppChannel {
+    config: WhatsAppConfig,
+    data_dir: String,
+    client: Arc<Mutex<Option<Arc<Client>>>>,
+}
+```
 
-| Struct | Purpose | Status |
-|--------|---------|--------|
-| `WhatsAppChannel` | Main struct holding config, HTTP client, and connection state. Implements `Channel`. | Not implemented |
-| WhatsApp API response types | Deserialization structs for webhook payloads and API responses. | Not implemented |
+The `client` field is set during the `Connected` event and cleared on disconnect/logout.
 
 ---
 
-## Implementation Status
+## Channel Trait Implementation
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Module declaration in `lib.rs` | Done | `mod whatsapp;` (private, not `pub mod`) |
-| `WhatsAppConfig` in `omega-core` | Done | Fields: `enabled`, `bridge_url`, `phone_number` |
-| Config example entry | Done | `[channel.whatsapp]` section in `config.example.toml` |
-| `WhatsAppChannel` struct | Not started | -- |
-| `Channel` trait impl | Not started | -- |
-| `Channel::name()` | Not started | -- |
-| `Channel::start()` | Not started | -- |
-| `Channel::send()` | Not started | -- |
-| `Channel::send_typing()` | Not started | -- |
-| `Channel::stop()` | Not started | -- |
-| Authentication/allowed users | Not started | `WhatsAppConfig` has no `allowed_users` field yet |
-| Message chunking | Not started | WhatsApp has a 4096-character limit for text messages |
-| Webhook server or polling | Not started | Depends on bridge architecture chosen |
-| Integration tests | Not started | -- |
+| Method | Behavior |
+|--------|----------|
+| `name()` | Returns `"whatsapp"` |
+| `start()` | Initializes `SqliteStore`, builds `Bot` with event handler, starts bot loop. Forwards `Event::Message` to mpsc as `IncomingMessage`. |
+| `send()` | Sends text via `client.send_message()` with `wa::Message { conversation: Some(text) }`. Chunks at 4096 chars. |
+| `send_typing()` | Sends composing presence via `client.chatstate().send_composing()`. |
+| `stop()` | Clears client reference, logs shutdown. |
+
+---
+
+## Event Handling
+
+| Event | Action |
+|-------|--------|
+| `PairingQrCode { code, .. }` | Logs QR availability |
+| `PairSuccess` | Logs success |
+| `Connected` | Stores `Arc<Client>` for sending |
+| `Disconnected` | Clears client reference |
+| `LoggedOut` | Clears client reference, warns about invalidated session |
+| `Message(msg, info)` | Extracts text from `conversation` or `extended_text_message.text`, applies auth filter, forwards to gateway |
+
+---
+
+## QR Code Functions
+
+| Function | Signature | Purpose |
+|----------|-----------|---------|
+| `generate_qr_terminal` | `fn(qr_data: &str) -> Result<String, OmegaError>` | Unicode QR for terminal display |
+| `generate_qr_image` | `fn(qr_data: &str) -> Result<Vec<u8>, OmegaError>` | PNG bytes for sending as photo |
+| `start_pairing` | `async fn(data_dir: &str) -> Result<(Receiver<String>, Receiver<bool>), OmegaError>` | Pairing flow: yields QR data strings + completion signal |
+
+---
+
+## Pairing Entry Points
+
+1. **CLI (`omega init`)**: Terminal QR code, blocks until scan or timeout.
+2. **Telegram `/whatsapp` command**: QR sent as image via `send_photo()`.
+3. **Conversational trigger**: AI responds with `WHATSAPP_QR` marker, gateway intercepts and runs the same flow.
+
+---
+
+## Gateway Integration
+
+### Auth (`check_auth`)
+
+WhatsApp uses `allowed_users: Vec<String>` (phone numbers). Empty = allow all.
+
+### WHATSAPP_QR Marker
+
+The gateway extracts `WHATSAPP_QR` lines from AI responses (like `SCHEDULE:` and `LANG_SWITCH:`). When detected:
+1. Calls `whatsapp::start_pairing(data_dir)`
+2. Waits for QR data
+3. Renders QR as PNG via `generate_qr_image()`
+4. Sends image via `channel.send_photo()`
+5. Waits for pairing confirmation (60s timeout)
 
 ---
 
 ## Message Types
 
-The channel must produce `IncomingMessage` and consume `OutgoingMessage`, both defined in `crates/omega-core/src/message.rs`.
+### Incoming (WhatsApp → Gateway)
 
-### IncomingMessage
+| Field | Value |
+|-------|-------|
+| `channel` | `"whatsapp"` |
+| `sender_id` | Phone number (e.g. `"5511999887766"`) |
+| `sender_name` | Phone number (profile name not always available) |
+| `reply_target` | Chat JID (e.g. `"5511999887766@s.whatsapp.net"`) |
 
-| Field | Type | WhatsApp Mapping |
-|-------|------|-----------------|
-| `id` | `Uuid` | Generate via `Uuid::new_v4()` |
-| `channel` | `String` | `"whatsapp"` |
-| `sender_id` | `String` | WhatsApp phone number or user ID |
-| `sender_name` | `Option<String>` | Profile name if available |
-| `text` | `String` | Message body text |
-| `timestamp` | `DateTime<Utc>` | Message timestamp |
-| `reply_to` | `Option<Uuid>` | If replying to a previous Omega message |
-| `attachments` | `Vec<Attachment>` | Media attachments (images, documents, etc.) |
-| `reply_target` | `Option<String>` | Phone number or chat ID for routing the response |
+### Outgoing (Gateway → WhatsApp)
 
-### OutgoingMessage
-
-| Field | Type | WhatsApp Mapping |
-|-------|------|-----------------|
-| `text` | `String` | Message body to send |
-| `metadata` | `MessageMetadata` | Provider info, timing, model used |
-| `reply_target` | `Option<String>` | Phone number or chat ID for routing |
+Text is sent as `wa::Message { conversation: Some(text) }`. Messages over 4096 chars are chunked.
 
 ---
 
-## Module Visibility
+## Session Persistence
 
-The module is currently declared as `mod whatsapp;` (private) in `lib.rs`, unlike `telegram` which is `pub mod telegram;`. This means `WhatsAppChannel` would not be accessible outside the crate until the declaration is changed to `pub mod whatsapp;`.
+The `whatsapp-rust` crate's `SqliteStore` handles session persistence automatically. The session database at `{data_dir}/whatsapp_session/whatsapp.db` stores:
+- Device identity keys
+- Prekey bundles
+- Session state
+- App state
 
----
-
-## Dependencies Required
-
-Based on the Telegram implementation, the WhatsApp channel will likely need:
-
-| Dependency | Purpose |
-|------------|---------|
-| `reqwest` | HTTP client for API calls |
-| `serde` / `serde_json` | Serialization/deserialization |
-| `async_trait` | Async trait support |
-| `tokio` | Async runtime, mpsc channels |
-| `tracing` | Structured logging |
-| `uuid` | Message ID generation |
-| `chrono` | Timestamps |
-
-All of these are already dependencies of the `omega-channels` crate.
+On restart, the bot reconnects using the persisted session without requiring a new QR scan.

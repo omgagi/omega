@@ -4,6 +4,7 @@
 //! background conversation summarization, and graceful shutdown.
 
 use crate::commands;
+use omega_channels::whatsapp;
 use omega_core::{
     config::{AuthConfig, ChannelConfig, HeartbeatConfig, Prompts, SchedulerConfig},
     context::Context,
@@ -32,6 +33,7 @@ pub struct Gateway {
     heartbeat_config: HeartbeatConfig,
     scheduler_config: SchedulerConfig,
     prompts: Prompts,
+    data_dir: String,
     uptime: Instant,
 }
 
@@ -47,6 +49,7 @@ impl Gateway {
         heartbeat_config: HeartbeatConfig,
         scheduler_config: SchedulerConfig,
         prompts: Prompts,
+        data_dir: String,
     ) -> Self {
         let audit = AuditLogger::new(memory.pool().clone());
         Self {
@@ -59,6 +62,7 @@ impl Gateway {
             heartbeat_config,
             scheduler_config,
             prompts,
+            data_dir,
             uptime: Instant::now(),
         }
     }
@@ -506,6 +510,13 @@ impl Gateway {
                 self.provider.name(),
             )
             .await;
+
+            // Intercept WHATSAPP_QR marker from /whatsapp command.
+            if response.trim() == "WHATSAPP_QR" {
+                self.handle_whatsapp_qr(&incoming).await;
+                return;
+            }
+
             self.send_text(&incoming, &response).await;
             return;
         }
@@ -624,7 +635,13 @@ impl Gateway {
             response.text = strip_schedule_marker(&response.text);
         }
 
-        // --- 5c. EXTRACT LANG_SWITCH MARKER ---
+        // --- 5c. EXTRACT WHATSAPP_QR MARKER ---
+        if has_whatsapp_qr_marker(&response.text) {
+            response.text = strip_whatsapp_qr_marker(&response.text);
+            self.handle_whatsapp_qr(&incoming).await;
+        }
+
+        // --- 5d. EXTRACT LANG_SWITCH MARKER ---
         if let Some(lang) = extract_lang_switch(&response.text) {
             if let Err(e) = self
                 .memory
@@ -700,7 +717,104 @@ impl Gateway {
                     None => Some("telegram channel not configured".to_string()),
                 }
             }
+            "whatsapp" => {
+                let allowed = self
+                    .channel_config
+                    .whatsapp
+                    .as_ref()
+                    .map(|wa| &wa.allowed_users);
+
+                match allowed {
+                    Some(users) if users.is_empty() => None,
+                    Some(users) => {
+                        if users.contains(&incoming.sender_id) {
+                            None
+                        } else {
+                            Some(format!(
+                                "whatsapp user {} not in allowed_users",
+                                incoming.sender_id
+                            ))
+                        }
+                    }
+                    None => Some("whatsapp channel not configured".to_string()),
+                }
+            }
             other => Some(format!("unknown channel: {other}")),
+        }
+    }
+
+    /// Handle the WHATSAPP_QR flow: start pairing, send QR image, wait for result.
+    async fn handle_whatsapp_qr(&self, incoming: &IncomingMessage) {
+        self.send_text(incoming, "Starting WhatsApp pairing...")
+            .await;
+
+        match whatsapp::start_pairing(&self.data_dir).await {
+            Ok((mut qr_rx, mut done_rx)) => {
+                // Wait for the first QR code (with timeout).
+                let qr_timeout =
+                    tokio::time::timeout(std::time::Duration::from_secs(30), qr_rx.recv());
+
+                match qr_timeout.await {
+                    Ok(Some(qr_data)) => {
+                        // Generate QR image and send it.
+                        match whatsapp::generate_qr_image(&qr_data) {
+                            Ok(png_bytes) => {
+                                if let Some(channel) = self.channels.get(&incoming.channel) {
+                                    let target = incoming.reply_target.as_deref().unwrap_or("");
+                                    if let Err(e) = channel
+                                        .send_photo(
+                                            target,
+                                            &png_bytes,
+                                            "Scan with WhatsApp (Link a Device > QR Code)",
+                                        )
+                                        .await
+                                    {
+                                        warn!("failed to send QR image: {e}");
+                                        self.send_text(
+                                            incoming,
+                                            &format!("Failed to send QR image: {e}"),
+                                        )
+                                        .await;
+                                        return;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                self.send_text(incoming, &format!("QR generation failed: {e}"))
+                                    .await;
+                                return;
+                            }
+                        }
+
+                        // Wait for pairing confirmation (up to 60s).
+                        let pair_timeout = tokio::time::timeout(
+                            std::time::Duration::from_secs(60),
+                            done_rx.recv(),
+                        );
+
+                        match pair_timeout.await {
+                            Ok(Some(true)) => {
+                                self.send_text(incoming, "WhatsApp connected!").await;
+                            }
+                            _ => {
+                                self.send_text(
+                                    incoming,
+                                    "WhatsApp pairing timed out. Try /whatsapp again.",
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    _ => {
+                        self.send_text(incoming, "Failed to generate QR code. Try again.")
+                            .await;
+                    }
+                }
+            }
+            Err(e) => {
+                self.send_text(incoming, &format!("WhatsApp pairing failed: {e}"))
+                    .await;
+            }
         }
     }
 
@@ -771,6 +885,21 @@ fn strip_lang_switch(text: &str) -> String {
 fn strip_schedule_marker(text: &str) -> String {
     text.lines()
         .filter(|line| !line.trim().starts_with("SCHEDULE:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Check if response text contains a `WHATSAPP_QR` marker line.
+fn has_whatsapp_qr_marker(text: &str) -> bool {
+    text.lines().any(|line| line.trim() == "WHATSAPP_QR")
+}
+
+/// Strip all `WHATSAPP_QR` lines from response text.
+fn strip_whatsapp_qr_marker(text: &str) -> String {
+    text.lines()
+        .filter(|line| line.trim() != "WHATSAPP_QR")
         .collect::<Vec<_>>()
         .join("\n")
         .trim()

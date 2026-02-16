@@ -3,4 +3,5 @@
 //! Messaging platform integrations for Omega.
 
 pub mod telegram;
-mod whatsapp;
+pub mod whatsapp;
+pub mod whatsapp_store;

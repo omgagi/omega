@@ -52,8 +52,7 @@ allowed_users = []          # Empty = allow all. Add Telegram user IDs to restri
 
 [channel.whatsapp]
 enabled = false
-bridge_url = "http://localhost:3000"
-phone_number = ""
+allowed_users = []          # Phone numbers (e.g. ["5511999887766"]). Empty = allow all.
 
 # --- Memory ---
 

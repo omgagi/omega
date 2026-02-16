@@ -45,6 +45,16 @@ pub trait Channel: Send + Sync {
         Ok(())
     }
 
+    /// Send a photo (PNG bytes) with an optional caption.
+    async fn send_photo(
+        &self,
+        _target: &str,
+        _image: &[u8],
+        _caption: &str,
+    ) -> Result<(), OmegaError> {
+        Ok(())
+    }
+
     /// Graceful shutdown.
     async fn stop(&self) -> Result<(), OmegaError>;
 }

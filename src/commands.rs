@@ -13,6 +13,7 @@ pub enum Command {
     Tasks,
     Cancel,
     Language,
+    WhatsApp,
     Help,
 }
 
@@ -30,6 +31,7 @@ impl Command {
             "/tasks" => Some(Self::Tasks),
             "/cancel" => Some(Self::Cancel),
             "/language" | "/lang" => Some(Self::Language),
+            "/whatsapp" => Some(Self::WhatsApp),
             "/help" => Some(Self::Help),
             _ => None,
         }
@@ -55,6 +57,7 @@ pub async fn handle(
         Command::Tasks => handle_tasks(store, sender_id).await,
         Command::Cancel => handle_cancel(store, sender_id, text).await,
         Command::Language => handle_language(store, sender_id, text).await,
+        Command::WhatsApp => handle_whatsapp(),
         Command::Help => handle_help(),
     }
 }
@@ -189,6 +192,11 @@ async fn handle_language(store: &Store, sender_id: &str, text: &str) -> String {
     }
 }
 
+/// Handle /whatsapp — returns a marker that the gateway intercepts.
+fn handle_whatsapp() -> String {
+    "WHATSAPP_QR".to_string()
+}
+
 fn handle_help() -> String {
     "\
 Omega Commands\n\n\
@@ -200,6 +208,7 @@ Omega Commands\n\n\
 /tasks    — List your scheduled tasks\n\
 /cancel   — Cancel a task by ID\n\
 /language — Show or set your language\n\
+/whatsapp — Connect WhatsApp via QR code\n\
 /help     — This message"
         .to_string()
 }
