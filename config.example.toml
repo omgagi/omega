@@ -1,0 +1,66 @@
+[omega]
+name = "Omega"
+data_dir = "~/.omega"
+log_level = "info"
+
+[provider]
+default = "claude-code"
+
+# Claude Code (no key needed — uses local claude CLI auth)
+[provider.claude-code]
+enabled = true
+max_turns = 10
+allowed_tools = ["Bash", "Read", "Write", "Edit"]
+
+# Anthropic API (requires key)
+[provider.anthropic]
+enabled = false
+api_key = ""  # Or env: ANTHROPIC_API_KEY
+model = "claude-sonnet-4-20250514"
+
+# OpenAI-compatible (requires key)
+[provider.openai]
+enabled = false
+api_key = ""  # Or env: OPENAI_API_KEY
+model = "gpt-4o"
+base_url = "https://api.openai.com/v1"
+
+# Ollama (local, no key)
+[provider.ollama]
+enabled = false
+base_url = "http://localhost:11434"
+model = "llama3"
+
+# OpenRouter (requires key)
+[provider.openrouter]
+enabled = false
+api_key = ""  # Or env: OPENROUTER_API_KEY
+model = "anthropic/claude-sonnet-4-20250514"
+
+# --- Channels ---
+
+[channel.telegram]
+enabled = false
+bot_token = ""  # Or env: TELEGRAM_BOT_TOKEN
+allowed_users = []
+
+[channel.whatsapp]
+enabled = false
+bridge_url = "http://localhost:3000"
+phone_number = ""
+
+# --- Memory ---
+
+[memory]
+backend = "sqlite"
+db_path = "~/.omega/memory.db"
+max_context_messages = 50
+
+# --- Security ---
+
+[sandbox]
+enabled = true
+allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]
+blocked_paths = ["/etc/shadow", "/etc/passwd"]
+max_execution_time_secs = 30
+max_output_bytes = 1048576
