@@ -11,6 +11,7 @@ use omega_core::{
     message::{IncomingMessage, OutgoingMessage},
     traits::Channel,
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info, warn};
@@ -30,6 +31,8 @@ pub struct WhatsAppChannel {
     data_dir: String,
     /// Client handle for sending messages — set after `start()`.
     client: Arc<Mutex<Option<Arc<Client>>>>,
+    /// Message IDs we sent — used to ignore our own echo in self-chat.
+    sent_ids: Arc<Mutex<HashSet<String>>>,
 }
 
 impl WhatsAppChannel {
@@ -39,6 +42,7 @@ impl WhatsAppChannel {
             config,
             data_dir: data_dir.to_string(),
             client: Arc::new(Mutex::new(None)),
+            sent_ids: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -68,10 +72,12 @@ impl WhatsAppChannel {
                 conversation: Some(chunk.to_string()),
                 ..Default::default()
             };
-            client
+            let msg_id = client
                 .send_message(jid.clone(), msg)
                 .await
                 .map_err(|e| OmegaError::Channel(format!("whatsapp send failed: {e}")))?;
+            // Track sent message ID to ignore our own echo.
+            self.sent_ids.lock().await.insert(msg_id);
         }
 
         Ok(())
@@ -100,6 +106,7 @@ impl Channel for WhatsAppChannel {
 
         let tx_events = tx.clone();
         let client_for_event = client_handle.clone();
+        let sent_ids_for_event = self.sent_ids.clone();
 
         let mut bot = Bot::builder()
             .with_backend(backend)
@@ -109,6 +116,7 @@ impl Channel for WhatsAppChannel {
                 let tx = tx_events.clone();
                 let allowed = allowed_users.clone();
                 let client_store = client_for_event.clone();
+                let sent_ids = sent_ids_for_event.clone();
                 async move {
                     match event {
                         Event::PairingQrCode { code, .. } => {
@@ -132,13 +140,22 @@ impl Channel for WhatsAppChannel {
                             *client_store.lock().await = None;
                         }
                         Event::Message(msg, info) => {
-                            let sender_jid = info.source.sender.to_string();
-                            // Extract phone number from JID (strip @s.whatsapp.net).
-                            let phone = sender_jid
-                                .split('@')
-                                .next()
-                                .unwrap_or(&sender_jid)
-                                .to_string();
+                            // Only process self-chat (personal channel).
+                            if !info.source.is_from_me {
+                                return;
+                            }
+                            if info.source.sender.user != info.source.chat.user {
+                                return;
+                            }
+
+                            let msg_id = info.id.clone();
+                            let phone = info.source.sender.user.clone();
+
+                            // Skip messages we sent (echo prevention).
+                            if sent_ids.lock().await.remove(&msg_id) {
+                                debug!("skipping own echo: {msg_id}");
+                                return;
+                            }
 
                             // Auth check.
                             if !allowed.is_empty() && !allowed.contains(&phone) {
@@ -146,12 +163,30 @@ impl Channel for WhatsAppChannel {
                                 return;
                             }
 
-                            // Extract text from the message.
-                            let text = msg
+                            // Unwrap nested wrappers (device_sent, ephemeral, view_once).
+                            let inner = msg
+                                .device_sent_message
+                                .as_ref()
+                                .and_then(|d| d.message.as_deref())
+                                .or_else(|| {
+                                    msg.ephemeral_message
+                                        .as_ref()
+                                        .and_then(|e| e.message.as_deref())
+                                })
+                                .or_else(|| {
+                                    msg.view_once_message
+                                        .as_ref()
+                                        .and_then(|v| v.message.as_deref())
+                                })
+                                .unwrap_or(&msg);
+
+                            // Extract text from the (possibly unwrapped) message.
+                            let text = inner
                                 .conversation
                                 .as_deref()
                                 .or_else(|| {
-                                    msg.extended_text_message
+                                    inner
+                                        .extended_text_message
                                         .as_ref()
                                         .and_then(|e| e.text.as_deref())
                                 })
@@ -159,7 +194,6 @@ impl Channel for WhatsAppChannel {
                                 .to_string();
 
                             if text.is_empty() {
-                                debug!("skipping non-text whatsapp message from {phone}");
                                 return;
                             }
 
@@ -169,13 +203,7 @@ impl Channel for WhatsAppChannel {
                                 id: Uuid::new_v4(),
                                 channel: "whatsapp".to_string(),
                                 sender_id: phone.clone(),
-                                sender_name: info
-                                    .source
-                                    .sender
-                                    .to_string()
-                                    .split('@')
-                                    .next()
-                                    .map(|s| s.to_string()),
+                                sender_name: Some(phone.clone()),
                                 text,
                                 timestamp: chrono::Utc::now(),
                                 reply_to: None,
