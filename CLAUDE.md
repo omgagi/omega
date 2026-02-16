@@ -69,6 +69,13 @@ Claude Code CLI is the primary provider. It invokes `claude -p --output-format j
 ```
 When `subtype` is `error_max_turns`, extract `result` if available, otherwise return a meaningful fallback.
 
+## Documentation
+
+Always consult these before modifying or extending the codebase:
+
+- **`specs/SPECS.md`** — Master index of technical specifications for every file in the repository
+- **`docs/DOCS.md`** — Master index of developer-facing guides and references
+
 ## Current Status
 
 - **Phase 1** (complete): Workspace, core types, Claude Code provider, CLI (`omega ask`)
