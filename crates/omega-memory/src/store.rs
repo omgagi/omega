@@ -756,7 +756,8 @@ fn build_system_prompt(
          - Answer concisely. No preamble.\n\
          - Speak the same language the user uses.\n\
          - Reference past conversations naturally when relevant.\n\
-         - Never apologize unnecessarily.",
+         - Never apologize unnecessarily.\n\
+         - NEVER introduce yourself or describe what you can do. The user already received a welcome message. Just answer what they ask.",
     );
 
     if !facts.is_empty() {
