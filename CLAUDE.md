@@ -22,12 +22,12 @@ All our architecture must be monolithic and modular, like Legos.
     After any development for the Rust parts, run cargo build with nix to ensure it compiles, then cargo clippy to clean up any lint errors. Release the binary, stop and restart my service.
 
 2. **Pre-Commit Gate** (Execute in order, all steps mandatory):
-   
+
    | Step | Action | Condition |
    |------|--------|-----------|
-   | 1 | **Update `specs/`** | If technical behavior, API, constants, or protocol changed |
-   | 2 | **Update `docs/`** | If user-facing behavior, CLI, or configuration changed |
-   | 3 | **Update `CLAUDE.md`** | If architecture, crate structure, or constants changed |
+   | 1 | **Update `specs/`** | **Always** when adding or modifying any functionality — technical specs must reflect current behavior |
+   | 2 | **Update `docs/`** | **Always** when adding or modifying any functionality — user-facing docs must match the code |
+   | 3 | **Update `CLAUDE.md`** | **Always** when adding or modifying any functionality — architecture and feature list must stay current |
    | 4 | **Verify build** | `cargo build && cargo clippy -- -D warnings && cargo fmt --check` |
    | 5 | **Verify tests** | `cargo test` |
    | 6 | **Commit** | Only after steps 1-5 pass |
