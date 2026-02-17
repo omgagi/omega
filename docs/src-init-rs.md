@@ -317,6 +317,7 @@ The wizard moves on. No `[google]` section is added to the config.
 │  3. Enable: Gmail API, Calendar API, Drive API
 │  4. Go to Credentials → Create OAuth Client ID → Desktop app
 │  5. Download the JSON file
+│  6. Go to OAuth consent screen → Audience → Publish app
 │
 ```
 
@@ -354,7 +355,21 @@ If this fails, the wizard shows the error and skips the rest of Google setup:
 
 The user enters their Gmail address. Validated to be non-empty and contain an `@` sign.
 
-**Sub-step 7e: OAuth Approval**
+**Sub-step 7e: OAuth Tips**
+```
+│
+│  OAuth Tips
+│
+│  Open the browser link that appears
+│  Use an incognito/private window if you have trouble
+│  Ensure your app is published in OAuth consent screen
+│  Add yourself as a test user if not using a published app
+│
+```
+
+The wizard displays troubleshooting guidance before the OAuth flow begins, helping the user avoid common issues.
+
+**Sub-step 7f: OAuth Approval**
 ```
 ◒  Waiting for OAuth approval in browser...
 ```
@@ -369,10 +384,10 @@ The wizard runs `gog auth add <email> --services gmail,calendar,drive,contacts,d
 **On Failure:**
 ```
 ▲  gog auth add failed: <error details>
-◇  Google Workspace setup incomplete.
+◇  Try again in an incognito/private browser window and ensure your app is published.
 ```
 
-**Sub-step 7f: Verification**
+**Sub-step 7g: Verification**
 
 The wizard runs `gog auth list` and checks if the user's email appears in the output.
 
@@ -618,6 +633,7 @@ Here is a complete example of what a full wizard session looks like with all int
 │  3. Enable: Gmail API, Calendar API, Drive API
 │  4. Go to Credentials → Create OAuth Client ID → Desktop app
 │  5. Download the JSON file
+│  6. Go to OAuth consent screen → Audience → Publish app
 │
 ◆  Path to client_secret.json
 │  ~/Downloads/client_secret_12345.json
@@ -626,6 +642,13 @@ Here is a complete example of what a full wizard session looks like with all int
 │
 ◆  Your Gmail address
 │  user@gmail.com
+│
+│  OAuth Tips
+│
+│  Open the browser link that appears
+│  Use an incognito/private window if you have trouble
+│  Ensure your app is published in OAuth consent screen
+│  Add yourself as a test user if not using a published app
 │
 ◇  OAuth approved
 ◇  Google Workspace connected!

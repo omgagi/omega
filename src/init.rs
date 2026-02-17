@@ -299,8 +299,9 @@ fn run_google_setup() -> anyhow::Result<Option<String>> {
         "1. Go to console.cloud.google.com\n\
          2. Create a project (or use existing)\n\
          3. Enable: Gmail API, Calendar API, Drive API\n\
-         4. Go to Credentials → Create OAuth Client ID → Desktop app\n\
-         5. Download the JSON file",
+         4. Go to OAuth consent screen → Audience → Publish app\n\
+         5. Go to Credentials → Create OAuth Client ID → Desktop app\n\
+         6. Download the JSON file",
     )?;
 
     // Ask for credentials file path.
@@ -355,6 +356,17 @@ fn run_google_setup() -> anyhow::Result<Option<String>> {
         })
         .interact()?;
 
+    // Show OAuth troubleshooting tips before starting the flow.
+    cliclack::note(
+        "OAuth Tips",
+        "A browser will open for Google sign-in.\n\
+         • Click 'Advanced' → 'Go to gog (unsafe)' → Allow\n\
+         • If you see 'Something went wrong', try in an incognito window:\n\
+           gog auth add <email> --services gmail,calendar,drive,contacts,docs,sheets\n\
+         • If 'Access blocked: not verified', go to OAuth consent screen →\n\
+           Audience → Publish app (or add yourself as a test user)",
+    )?;
+
     // Run: gog auth add <email> --services gmail,calendar,drive,contacts,docs,sheets
     let spinner = cliclack::spinner();
     spinner.start("Waiting for OAuth approval in browser...");
@@ -375,7 +387,10 @@ fn run_google_setup() -> anyhow::Result<Option<String>> {
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
             spinner.error(format!("gog auth add failed: {stderr}"));
-            cliclack::log::warning("Google Workspace setup incomplete.")?;
+            cliclack::log::warning(
+                "If your browser showed an error, try in an incognito window:\n\
+                 gog auth add <email> --services gmail,calendar,drive,contacts,docs,sheets",
+            )?;
             return Ok(None);
         }
         Err(e) => {

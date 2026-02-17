@@ -304,12 +304,13 @@ fn run_google_setup() -> anyhow::Result<Option<String>>
 2. If user declines: return `Ok(None)`
 
 **Step 3: Display Google Cloud Console instructions**
-1. Call `cliclack::note("Google Workspace Setup", ...)` with a 5-step guide:
+1. Call `cliclack::note("Google Workspace Setup", ...)` with a 6-step guide:
    - Go to console.cloud.google.com
    - Create a project (or use existing)
    - Enable: Gmail API, Calendar API, Drive API
    - Go to Credentials -> Create OAuth Client ID -> Desktop app
    - Download the JSON file
+   - Go to OAuth consent screen → Audience → Publish app
 
 **Step 4: Collect credentials file path**
 1. Call `cliclack::input("Path to client_secret.json")` with:
@@ -334,14 +335,21 @@ fn run_google_setup() -> anyhow::Result<Option<String>>
    - `.validate(...)` closure that rejects empty input or input without `@` with `"Please enter a valid email address"`
    - `.interact()?`
 
-**Step 7: OAuth authorization**
+**Step 7: Display OAuth Tips**
+1. Before starting the OAuth flow, display `cliclack::note("OAuth Tips", ...)` with troubleshooting guidance:
+   - Open the browser link that appears
+   - Use an incognito/private window if you have trouble
+   - Ensure your app is published in OAuth consent screen
+   - Add yourself as a test user if not using a published app
+
+**Step 8: OAuth authorization**
 1. Start spinner: `"Waiting for OAuth approval in browser..."`
 2. Execute `gog auth add <email> --services gmail,calendar,drive,contacts,docs,sheets` as subprocess
 3. On success: stop spinner with `"OAuth approved"`
-4. On failure (non-zero exit): stop spinner with error, log warning, return `Ok(None)`
-5. On execution error: stop spinner with error, log warning, return `Ok(None)`
+4. On failure (non-zero exit): stop spinner with error, log warning, display incognito retry suggestion, return `Ok(None)`
+5. On execution error: stop spinner with error, log warning, display incognito retry suggestion, return `Ok(None)`
 
-**Step 8: Verify with `gog auth list`**
+**Step 9: Verify with `gog auth list`**
 1. Execute `gog auth list` as subprocess
 2. Check if stdout contains the email address
 3. If verified: log success `"Google Workspace connected!"`, return `Ok(Some(email))`
@@ -350,6 +358,7 @@ fn run_google_setup() -> anyhow::Result<Option<String>>
 ### Error Handling
 - Missing `gog` CLI: silently skipped, user is never prompted
 - All `gog` subprocess failures produce warnings and return `Ok(None)` -- never fatal to the wizard
+- Failed OAuth now shows incognito retry suggestion to help users troubleshoot browser-related issues
 - Verification failure is non-fatal; returns the email optimistically
 
 ---
