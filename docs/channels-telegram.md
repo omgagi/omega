@@ -189,10 +189,19 @@ If Omega restarts, `last_update_id` resets to `None`, which could theoretically 
 
 ---
 
+## Group Chat Awareness
+
+The Telegram channel detects group chats using the `type` field from the Telegram Bot API's `Chat` object. When the chat type is `"group"` or `"supergroup"`, the `is_group` flag on `IncomingMessage` is set to `true`.
+
+When `is_group` is true, the gateway:
+
+1. **Injects group-specific rules** into the system prompt, instructing the AI to only respond when directly mentioned, asked a question, or when it can add genuine value.
+2. **Suppresses SILENT responses** -- the AI can reply with exactly `SILENT` to indicate it should stay quiet, and the gateway silently drops the message instead of sending it.
+3. **Prevents personal fact leakage** -- the group-chat rules instruct the AI not to reveal facts learned in private conversations.
+
 ## Limitations
 
 - **Text only.** Photos, documents, voice messages, stickers, and other media types are silently skipped.
 - **No inline keyboards or buttons.** Responses are plain text (with optional Markdown formatting).
-- **No group chat support.** While the code does not explicitly reject group messages, the `allowed_users` check applies to individual senders, and the bot must be mentioned or replied to in groups (depending on BotFather privacy settings).
 - **No webhook mode.** Only long polling is supported. This is simpler but slightly higher latency than webhooks.
 - **Message chunking is byte-based.** The 4096-byte split operates on byte offsets, not Unicode grapheme clusters. In practice this is fine because Telegram's own limit is also byte-based.

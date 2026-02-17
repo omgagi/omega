@@ -753,6 +753,35 @@ impl Store {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Get all facts across all users — for heartbeat context enrichment.
+    pub async fn get_all_facts(&self) -> Result<Vec<(String, String)>, OmegaError> {
+        let rows: Vec<(String, String)> =
+            sqlx::query_as("SELECT key, value FROM facts WHERE key != 'welcomed' ORDER BY key")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| OmegaError::Memory(format!("query failed: {e}")))?;
+
+        Ok(rows)
+    }
+
+    /// Get recent conversation summaries across all users — for heartbeat context enrichment.
+    pub async fn get_all_recent_summaries(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<(String, String)>, OmegaError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT summary, updated_at FROM conversations \
+             WHERE status = 'closed' AND summary IS NOT NULL \
+             ORDER BY updated_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("query failed: {e}")))?;
+
+        Ok(rows)
+    }
+
     /// Check if a sender has never been welcomed (no `welcomed` fact).
     pub async fn is_new_user(&self, sender_id: &str) -> Result<bool, OmegaError> {
         let row: Option<(String,)> =
@@ -1142,5 +1171,49 @@ mod tests {
 
         // No longer new.
         assert!(!store.is_new_user("fresh_user").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_get_all_facts() {
+        let store = test_store().await;
+
+        // Empty store returns empty vec.
+        let facts = store.get_all_facts().await.unwrap();
+        assert!(facts.is_empty());
+
+        // Store some facts across different users.
+        store.store_fact("user1", "name", "Alice").await.unwrap();
+        store.store_fact("user2", "name", "Bob").await.unwrap();
+        store.store_fact("user1", "timezone", "EST").await.unwrap();
+        // Store a welcomed fact — should be excluded.
+        store.store_fact("user1", "welcomed", "true").await.unwrap();
+
+        let facts = store.get_all_facts().await.unwrap();
+        assert_eq!(facts.len(), 3, "should exclude 'welcomed' facts");
+        assert!(facts.iter().any(|(k, v)| k == "name" && v == "Alice"));
+        assert!(facts.iter().any(|(k, v)| k == "name" && v == "Bob"));
+        assert!(facts.iter().any(|(k, v)| k == "timezone" && v == "EST"));
+    }
+
+    #[tokio::test]
+    async fn test_get_all_recent_summaries() {
+        let store = test_store().await;
+
+        // Empty store returns empty vec.
+        let summaries = store.get_all_recent_summaries(3).await.unwrap();
+        assert!(summaries.is_empty());
+
+        // Create a conversation, close it with a summary.
+        sqlx::query(
+            "INSERT INTO conversations (id, channel, sender_id, status, summary, last_activity, updated_at) \
+             VALUES ('c1', 'telegram', 'user1', 'closed', 'Discussed project planning', datetime('now'), datetime('now'))",
+        )
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+        let summaries = store.get_all_recent_summaries(3).await.unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].0, "Discussed project planning");
     }
 }

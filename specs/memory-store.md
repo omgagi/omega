@@ -436,6 +436,48 @@ SELECT key, value FROM facts WHERE sender_id = ? ORDER BY key
 
 ---
 
+#### `async fn get_all_facts(&self) -> Result<Vec<(String, String)>, OmegaError>`
+
+**Purpose:** Get all facts across all users — for heartbeat context enrichment.
+
+**Parameters:** None.
+
+**Returns:** `Result<Vec<(String, String)>, OmegaError>` where each tuple is `(key, value)`, ordered alphabetically by key.
+
+**SQL:**
+```sql
+SELECT key, value FROM facts WHERE key != 'welcomed' ORDER BY key
+```
+
+**Note:** Excludes the `welcomed` fact (an internal marker) from results.
+
+**Called by:** `gateway.rs::heartbeat_loop()` to inject user facts into the heartbeat provider prompt.
+
+---
+
+#### `async fn get_all_recent_summaries(&self, limit: i64) -> Result<Vec<(String, String)>, OmegaError>`
+
+**Purpose:** Get recent conversation summaries across all users — for heartbeat context enrichment.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | `i64` | Maximum number of summaries to return. |
+
+**Returns:** `Result<Vec<(String, String)>, OmegaError>` where each tuple is `(summary, updated_at)`, ordered newest first.
+
+**SQL:**
+```sql
+SELECT summary, updated_at FROM conversations
+WHERE status = 'closed' AND summary IS NOT NULL
+ORDER BY updated_at DESC LIMIT ?
+```
+
+**Called by:** `gateway.rs::heartbeat_loop()` with `limit = 3` to inject recent conversation context into the heartbeat provider prompt.
+
+---
+
 #### `async fn get_fact(&self, sender_id: &str, key: &str) -> Result<Option<String>, OmegaError>`
 
 **Purpose:** Get a single fact value by sender and key.
@@ -1242,6 +1284,8 @@ All errors are wrapped in `OmegaError::Memory(String)` with descriptive messages
 | `get_tasks_for_sender()` | Propagates errors. |
 | `cancel_task()` | Propagates errors. |
 | `get_fact()` | Propagates errors. |
+| `get_all_facts()` | Propagates errors. |
+| `get_all_recent_summaries()` | Propagates errors. |
 | `delete_fact()` | Propagates errors. |
 
 ### Resilience in build_context()
@@ -1278,6 +1322,8 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 | `test_cancel_task_wrong_sender` | Creates a task for user1, attempts cancellation by user2, verifies it fails (returns `false`) and the task still exists for user1. |
 | `test_get_fact` | Stores a fact, verifies `get_fact()` returns `Some(value)`. Also checks missing fact returns `None`. |
 | `test_delete_fact` | Verifies `delete_fact()` returns `false` for non-existent fact, `true` after storing, and fact is gone after deletion. |
+| `test_get_all_facts` | Stores facts including a `welcomed` fact, verifies `get_all_facts()` returns all facts except `welcomed`. |
+| `test_get_all_recent_summaries` | Creates and closes conversations with summaries, verifies `get_all_recent_summaries()` returns them ordered newest-first and respects the limit parameter. |
 
 ## Invariants
 

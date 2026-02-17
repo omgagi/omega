@@ -108,6 +108,31 @@ Sanitization is a defense-in-depth measure. Even if an injection pattern gets th
 **Why This Exists:**
 Commands are fast, deterministic, and don't require AI reasoning. They provide system introspection without API latency or cost.
 
+### Stage 3b: Platform Formatting Hint
+
+**What happens:** A platform-specific formatting hint is appended to the system prompt.
+
+**Implementation:**
+- For **WhatsApp**: "Avoid markdown tables and headers — use bold and bullet lists instead."
+- For **Telegram**: "Markdown is supported (bold, italic, code blocks)."
+- Other channels receive no hint.
+
+**Why This Exists:**
+Different platforms render text differently. WhatsApp does not support markdown tables or headers, while Telegram has full markdown support. Telling the AI about the platform prevents it from producing formatting that looks broken on the user's end.
+
+### Stage 3c: Group Chat Rules
+
+**What happens:** If the message is from a group chat, additional behavior rules are injected into the system prompt.
+
+**Implementation:**
+- When `incoming.is_group` is `true`, the gateway appends rules instructing the AI to:
+  - Only respond when directly mentioned, asked a question, or when it can add genuine value.
+  - Not leak personal facts from private conversations into the group.
+  - Reply with exactly `SILENT` if the message does not warrant a response.
+
+**Why This Exists:**
+In group chats, an AI that responds to every message is noisy and annoying. The group rules create a "speak when spoken to" behavior model. The `SILENT` keyword provides a clean mechanism for the AI to signal "I have nothing useful to add" without sending an empty message.
+
 ### Stage 4: Typing Indicator
 
 **What happens:** The gateway tells the channel that Omega is thinking.
@@ -190,6 +215,17 @@ If the provider fails, the error is mapped to a friendly user-facing message (no
 
 **Performance:**
 Provider calls are the slowest part of the pipeline (typically 2-30 seconds, but can take up to 10 minutes for complex agentic tasks). The status updater keeps the user informed during long waits. Everything else is near-instant.
+
+### Stage 5a: SILENT Response Suppression
+
+**What happens:** In group chats, if the AI decides it has nothing useful to add, it responds with `SILENT`. The gateway detects this and drops the response entirely.
+
+**Implementation:**
+- After aborting the typing indicator, check if `incoming.is_group` is `true` AND `response.text.trim()` equals `"SILENT"`.
+- If so, log the suppression and return immediately — no storage, no audit, no message sent.
+
+**Why This Exists:**
+This is the other half of group chat awareness. The group rules (Stage 3c) tell the AI to say `SILENT` when it should stay quiet. This stage enforces the suppression so the user never sees an empty or meaningless response.
 
 ### Stage 6b: Schedule Marker Extraction
 
@@ -317,6 +353,15 @@ User sends message on Telegram
 │  ✓ Is command? → Handle locally, return │
 │  ✗ Not command? → Continue              │
 │                                          │
+│ Stage 3b: Platform formatting hint      │
+│  • WhatsApp: avoid tables/headers       │
+│  • Telegram: markdown supported         │
+│                                          │
+│ Stage 3c: Group chat rules (if group)   │
+│  • Only respond when mentioned/asked    │
+│  • Don't leak private facts             │
+│  • Say SILENT to stay quiet             │
+│                                          │
 │ Stage 4: send_typing()                  │
 │  • Spawn repeater task (every 5s)       │
 │                                          │
@@ -332,6 +377,10 @@ User sends message on Telegram
 │  • Await result, cancel updater         │
 │  ✓ Success? → Continue                  │
 │  ✗ Error? → Friendly msg, audit, return │
+│                                          │
+│ Stage 5a: SILENT suppression (groups)   │
+│  ✓ is_group && SILENT? → Drop, return  │
+│  ✗ Otherwise? → Continue               │
 │                                          │
 │ Stage 6b: extract_schedule_marker()     │
 │  • Scan response for SCHEDULE: line     │
@@ -457,25 +506,30 @@ The heartbeat is a background task that performs periodic AI check-ins. It is sp
 Every `interval_minutes` minutes (default: 30), the heartbeat:
 
 1. **Active Hours Check** -- If `active_start` and `active_end` are configured, checks the current local time. Skips the check if outside the window.
-2. **Read Checklist** -- Reads `~/.omega/HEARTBEAT.md` if it exists. This file contains a custom checklist for the AI to evaluate.
-3. **Provider Call** -- Sends a prompt to the AI provider asking it to perform a health check. If a checklist is present, the AI evaluates it.
-4. **Suppress or Alert**:
-   - If the response contains `HEARTBEAT_OK`, the result is logged at INFO level and no message is sent to the user.
+2. **Read Checklist** -- Reads `~/.omega/HEARTBEAT.md` if it exists. If the file is missing or empty, the entire cycle is **skipped** (no API call). This prevents wasted provider calls when no checklist is configured.
+3. **Context Enrichment** -- Before calling the provider, the heartbeat enriches the prompt with:
+   - **User facts** from `memory.get_all_facts()` (excluding internal `welcomed` markers).
+   - **Recent conversation summaries** from `memory.get_all_recent_summaries(3)`.
+   This gives the AI provider awareness of who the user is and what they've been working on, enabling more contextual health check responses.
+4. **Provider Call** -- Sends the enriched prompt to the AI provider for evaluation.
+5. **Suppress or Alert**:
+   - The response text is cleaned (markdown `*` and backtick characters are stripped) before checking for `HEARTBEAT_OK`.
+   - If the cleaned response contains `HEARTBEAT_OK`, the result is logged at INFO level and no message is sent to the user.
    - If the response contains anything else, it is treated as an alert and delivered to the configured channel and reply target.
 
 ```
-┌──────────┐    ┌─────────┐    ┌───────────┐    ┌──────────────┐
-│  Sleep   │───>│ Active  │───>│ Read      │───>│ Provider     │
-│  N min   │    │ hours?  │    │ HEARTBEAT │    │ call         │
-│          │    │ Yes ──> │    │ .md       │    │              │
-└──────────┘    │ No: skip│    └───────────┘    └──────────────┘
-     ^          └─────────┘                           │
-     │                                    ┌───────────┴───────────┐
-     │                                    │ HEARTBEAT_OK?         │
-     │                                    │ Yes: log only         │
-     │                                    │ No: send alert        │
-     │                                    └───────────────────────┘
-     └────────────────────────────────────────────────┘
+┌──────────┐    ┌─────────┐    ┌───────────┐    ┌───────────┐    ┌──────────────┐
+│  Sleep   │───>│ Active  │───>│ Read      │───>│ Enrich    │───>│ Provider     │
+│  N min   │    │ hours?  │    │ HEARTBEAT │    │ with      │    │ call         │
+│          │    │ Yes ──> │    │ .md       │    │ facts +   │    │              │
+└──────────┘    │ No: skip│    │ None: skip│    │ summaries │    └──────────────┘
+     ^          └─────────┘    └───────────┘    └───────────┘          │
+     │                                                     ┌───────────┴───────────┐
+     │                                                     │ HEARTBEAT_OK?         │
+     │                                                     │ Yes: log only         │
+     │                                                     │ No: send alert        │
+     │                                                     └───────────────────────┘
+     └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### The HEARTBEAT.md File

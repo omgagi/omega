@@ -89,6 +89,7 @@ Note: `message_id` and `from` are marked `#[allow(dead_code)]` -- `message_id` i
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `i64` | Unique chat identifier; used as `reply_target` |
+| `chat_type` | `String` | Chat type from the Telegram API: `"private"`, `"group"`, `"supergroup"`, or `"channel"`. Annotated with `#[serde(default, rename = "type")]` to map from the JSON `type` field and default to an empty string if missing. Used to set `is_group` on `IncomingMessage`. |
 
 ---
 
@@ -206,6 +207,7 @@ For each `TgUpdate` in the response:
 | `reply_to` | `None` |
 | `attachments` | `Vec::new()` (empty) |
 | `reply_target` | `Some(chat.id.to_string())` |
+| `is_group` | `true` if `chat.chat_type` is `"group"` or `"supergroup"`, `false` otherwise |
 
 ---
 
@@ -294,6 +296,18 @@ mod tests {
     fn test_split_long_message()
     // Creates a 6000-char string of "a\n" repeated, splits at 4096.
     // Asserts at least 2 chunks, each <= 4096 bytes.
+
+    #[test]
+    fn test_tg_chat_group_detection()
+    // Deserializes a TgChat with `"type": "supergroup"` and verifies
+    // `chat_type` is `"supergroup"`. Also tests `matches!` logic for
+    // group/supergroup → `is_group = true`.
+
+    #[test]
+    fn test_tg_chat_type_defaults_when_missing()
+    // Deserializes a TgChat JSON object without a `type` field.
+    // Verifies `chat_type` defaults to an empty string, resulting
+    // in `is_group = false`.
 }
 ```
 

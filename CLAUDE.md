@@ -62,12 +62,12 @@ Cargo workspace with 6 crates:
 
 Gateway event loop (`src/gateway.rs`):
 ```
-Message → Auth → Sanitize → Memory (context) → Heads-up → Provider (async + status updates) → Schedule extract → Memory (store) → Audit → Send
+Message → Auth → Sanitize → Platform Hint → Group Rules → Memory (context) → Heads-up → Provider (async + status updates) → SILENT suppress → Schedule extract → Memory (store) → Audit → Send
 ```
 
 Background loops (spawned in `gateway::run()`):
 - **Scheduler**: polls `scheduled_tasks` table every 60s, delivers due reminders via channel
-- **Heartbeat**: periodic provider check-in (default 30min), suppresses `HEARTBEAT_OK`, alerts otherwise
+- **Heartbeat**: periodic context-aware provider check-in (default 30min), enriched with user facts + recent summaries, skips when no `~/.omega/HEARTBEAT.md` checklist is configured, suppresses `HEARTBEAT_OK`, alerts otherwise
 
 Bot commands: `/help`, `/forget`, `/tasks`, `/cancel <id>`, `/language`, `/skills`, `/projects`, `/project`
 
@@ -140,4 +140,4 @@ Always consult these before modifying or extending the codebase:
 - **Phase 1** (complete): Workspace, core types, Claude Code provider, CLI (`omega ask`)
 - **Phase 2** (complete): Memory, Telegram channel, gateway, audit log, auth, sanitization, LaunchAgent
 - **Phase 3** (complete): Conversation boundaries, summaries, facts extraction, enriched context, typing indicator, bot commands, system prompt upgrade, self-check, graceful shutdown, exponential backoff, init wizard
-- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, sandbox, WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`)
+- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, sandbox, WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, Soul personality in system prompt, guided fact-extraction schema

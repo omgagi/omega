@@ -61,6 +61,9 @@ struct TgUser {
 #[derive(Debug, Deserialize)]
 struct TgChat {
     id: i64,
+    /// Chat type: "private", "group", "supergroup", or "channel".
+    #[serde(default, rename = "type")]
+    chat_type: String,
 }
 
 impl TelegramChannel {
@@ -277,6 +280,8 @@ impl Channel for TelegramChannel {
                         user.first_name.clone()
                     };
 
+                    let is_group = matches!(msg.chat.chat_type.as_str(), "group" | "supergroup");
+
                     let incoming = IncomingMessage {
                         id: Uuid::new_v4(),
                         channel: "telegram".to_string(),
@@ -287,6 +292,7 @@ impl Channel for TelegramChannel {
                         reply_to: None,
                         attachments: Vec::new(),
                         reply_target: Some(msg.chat.id.to_string()),
+                        is_group,
                     };
 
                     if tx.send(incoming).await.is_err() {
@@ -382,5 +388,37 @@ mod tests {
         for chunk in &chunks {
             assert!(chunk.len() <= 4096);
         }
+    }
+
+    #[test]
+    fn test_tg_chat_group_detection() {
+        let group: TgChat = serde_json::from_str(r#"{"id": -100123, "type": "group"}"#).unwrap();
+        assert_eq!(group.chat_type, "group");
+
+        let supergroup: TgChat =
+            serde_json::from_str(r#"{"id": -100456, "type": "supergroup"}"#).unwrap();
+        assert_eq!(supergroup.chat_type, "supergroup");
+
+        let private: TgChat = serde_json::from_str(r#"{"id": 789, "type": "private"}"#).unwrap();
+        assert_eq!(private.chat_type, "private");
+
+        // is_group check
+        assert!(matches!(group.chat_type.as_str(), "group" | "supergroup"));
+        assert!(matches!(
+            supergroup.chat_type.as_str(),
+            "group" | "supergroup"
+        ));
+        assert!(!matches!(
+            private.chat_type.as_str(),
+            "group" | "supergroup"
+        ));
+    }
+
+    #[test]
+    fn test_tg_chat_type_defaults_when_missing() {
+        let chat: TgChat = serde_json::from_str(r#"{"id": 123}"#).unwrap();
+        assert_eq!(chat.chat_type, "");
+        // Missing type should not be detected as group.
+        assert!(!matches!(chat.chat_type.as_str(), "group" | "supergroup"));
     }
 }

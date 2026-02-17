@@ -316,6 +316,13 @@ The five scheduler-related methods on the store:
 - **`get_tasks_for_sender()`** -- Returns all pending tasks for a given user (used by the `/tasks` command).
 - **`cancel_task()`** -- Matches a task by ID prefix and sender, setting `status = 'cancelled'` (used by the `/cancel` command).
 
+### Heartbeat Context Methods
+
+Two additional methods support the heartbeat loop's context-aware check-ins:
+
+- **`get_all_facts()`** -- Returns all facts across all users (excluding internal `welcomed` markers), ordered by key. Used by the heartbeat to give the AI awareness of who it's monitoring for.
+- **`get_all_recent_summaries(limit)`** -- Returns recent closed conversation summaries across all users, ordered newest-first. Used by the heartbeat with `limit = 3` to give the AI context about recent user activity.
+
 ## Memory Statistics and Introspection
 
 The store provides several methods for system introspection, used primarily by bot commands:

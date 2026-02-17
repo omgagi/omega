@@ -69,7 +69,7 @@ On restart, Omega reconnects using the persisted session — no re-scan needed. 
 
 ## How It Works
 
-WhatsApp is a **personal channel** — it only processes messages from your self-chat (messages to yourself). It does not act as a chatbot for other people's messages.
+WhatsApp is a **personal channel** — it only processes messages from your self-chat (messages to yourself). It does not act as a chatbot for other people's messages. Because of this, `is_group` is always set to `false` on WhatsApp messages.
 
 1. **Pairing**: The `whatsapp-rust` library initiates a WebSocket connection to WhatsApp servers and generates QR codes. The user scans one with their phone (WhatsApp > Linked Devices > Link a Device).
 

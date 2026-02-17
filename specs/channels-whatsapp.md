@@ -145,6 +145,7 @@ The gateway extracts `WHATSAPP_QR` lines from AI responses (like `SCHEDULE:` and
 | `sender_id` | Phone number (e.g. `"5511999887766"`) |
 | `sender_name` | Phone number (profile name not always available) |
 | `reply_target` | Chat JID (e.g. `"5511999887766@s.whatsapp.net"`) |
+| `is_group` | `false` (WhatsApp is currently self-chat only) |
 
 ### Outgoing (Gateway → WhatsApp)
 

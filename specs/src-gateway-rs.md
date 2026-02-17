@@ -170,15 +170,15 @@ pub struct Gateway {
 - Task completion errors are logged but do not stop the loop.
 - `get_due_tasks()` errors are logged but do not stop the loop.
 
-#### `async fn heartbeat_loop(provider: Arc<dyn Provider>, channels: HashMap<String, Arc<dyn Channel>>, config: HeartbeatConfig, heartbeat_prompt: String, heartbeat_checklist_prompt: String)`
-**Purpose:** Background task that periodically invokes the AI provider for a health check-in. If the provider reports an issue, the alert is delivered via a configured channel. If everything is fine (response contains `HEARTBEAT_OK`), the response is suppressed.
+#### `async fn heartbeat_loop(provider: Arc<dyn Provider>, channels: HashMap<String, Arc<dyn Channel>>, config: HeartbeatConfig, heartbeat_checklist_prompt: String, memory: Store)`
+**Purpose:** Background task that periodically invokes the AI provider for a context-aware health check-in. Skips the API call entirely when no checklist is configured. If the provider reports an issue, the alert is delivered via a configured channel. If everything is fine (response contains `HEARTBEAT_OK`), the response is suppressed.
 
 **Parameters:**
 - `provider: Arc<dyn Provider>` - Shared provider reference for the check-in call.
 - `channels: HashMap<String, Arc<dyn Channel>>` - Map of channel implementations for alert delivery.
 - `config: HeartbeatConfig` - Heartbeat configuration (interval, active hours, channel, reply target).
-- `heartbeat_prompt: String` - Prompt for heartbeat check-in without checklist (from `Prompts.heartbeat`).
 - `heartbeat_checklist_prompt: String` - Prompt template with `{checklist}` placeholder (from `Prompts.heartbeat_checklist`).
+- `memory: Store` - Shared memory store for enriching heartbeat context with user facts and recent summaries.
 
 **Returns:** Never returns (infinite loop).
 
@@ -187,16 +187,19 @@ pub struct Gateway {
 2. Check active hours:
    - If both `active_start` and `active_end` are non-empty, call `is_within_active_hours()`.
    - If outside active hours, log info and skip this iteration.
-3. Read optional checklist from `~/.omega/HEARTBEAT.md` via `read_heartbeat_file()`.
-4. Build prompt:
-   - If checklist is empty: use `heartbeat_prompt` (cloned).
-   - If checklist has content: use `heartbeat_checklist_prompt` with `{checklist}` replaced by the file content.
-5. Call `provider.complete()` with the prompt context.
-6. On success:
-   - If response contains `HEARTBEAT_OK`, log info and suppress (no message sent).
+3. Read checklist from `~/.omega/HEARTBEAT.md` via `read_heartbeat_file()`.
+4. **Skip when no checklist**: If `read_heartbeat_file()` returns `None`, log info and skip this iteration entirely (no API call).
+5. Build prompt from `heartbeat_checklist_prompt` with `{checklist}` replaced by the file content.
+6. **Context enrichment**: Enrich the prompt with memory data:
+   - Call `memory.get_all_facts()` — if non-empty, append "Known about the user:" followed by key-value pairs.
+   - Call `memory.get_all_recent_summaries(3)` — if non-empty, append "Recent activity:" followed by timestamped summaries.
+7. Call `provider.complete()` with the enriched prompt context.
+8. On success:
+   - Strip markdown formatting characters (`*`, `` ` ``) from the response before checking for `HEARTBEAT_OK`.
+   - If cleaned response contains `HEARTBEAT_OK`, log info and suppress (no message sent).
    - Otherwise, send the response as an alert via `config.channel` to `config.reply_target`.
    - If channel not found, log warning.
-7. On provider error, log error.
+9. On provider error, log error.
 
 **Async Patterns:**
 - Uses `tokio::time::sleep()` for periodic ticking.
@@ -306,6 +309,19 @@ pub struct Gateway {
   - Return (skip provider call).
 - Examples: `/uptime`, `/help`, `/status`.
 
+**Stage 3b: Platform Formatting Hint**
+- After command dispatch, inject a platform-specific formatting hint into the system prompt:
+  - **WhatsApp**: "Platform: WhatsApp. Avoid markdown tables and headers — use bold (*text*) and bullet lists instead."
+  - **Telegram**: "Platform: Telegram. Markdown is supported (bold, italic, code blocks)."
+  - Other channels: no hint injected.
+- This hint is appended to the system prompt before context building.
+
+**Stage 3c: Group Chat Rules Injection**
+- If `incoming.is_group` is `true`, append group-specific rules to the system prompt:
+  - Only respond when directly mentioned by name, asked a question, or adding genuine value.
+  - Do not leak personal facts from private conversations.
+  - If the message does not warrant a response, reply with exactly `SILENT`.
+
 **Stage 4: Typing Indicator (Lines 322-342)**
 - Get the channel for the incoming message.
 - If channel exists and incoming has a `reply_target`, spawn a repeating task:
@@ -342,8 +358,15 @@ pub struct Gateway {
   - Send friendly error message.
   - Return.
 
-**Stage 5b: SCHEDULE Marker Extraction**
+**Stage 5a: SILENT Response Suppression (Group Chats)**
 - After receiving the provider response and aborting the typing indicator:
+- If `incoming.is_group` is `true` AND `response.text.trim()` equals `"SILENT"`:
+  - Log info about the suppression.
+  - Return immediately (skip storage, audit, and sending).
+  - This prevents the bot from sending empty or unwanted responses in group chats.
+
+**Stage 5b: SCHEDULE Marker Extraction**
+- After SILENT suppression check:
 - Call `extract_schedule_marker(&response.text)` to find a `SCHEDULE:` line.
 - If found, call `parse_schedule_line()` to extract `(description, due_at, repeat)`.
 - If parsing succeeds:
@@ -578,8 +601,10 @@ pub struct Gateway {
   is_within_active_hours()
        ↓ (if active)
   read_heartbeat_file()
+       ↓ (None → skip, no API call)
+  enrich prompt with memory.get_all_facts() + memory.get_all_recent_summaries(3)
        ↓
-  provider.complete(heartbeat prompt)
+  provider.complete(enriched heartbeat prompt)
        ↓
   [HEARTBEAT_OK?] → suppress / [Alert?] → channel.send(alert)
 ```
@@ -677,6 +702,8 @@ The response includes:
 - **`create_task(&channel, &sender_id, &reply_target, &description, &due_at, repeat) -> Result<String>`:** Creates a scheduled task. Called from handle_message Stage 5b.
 - **`get_due_tasks() -> Result<Vec<(String, String, String, String, Option<String>)>>`:** Fetches tasks where status is pending and due_at <= now. Called by scheduler_loop.
 - **`complete_task(&id, repeat) -> Result<()>`:** Marks a one-shot task as delivered or advances due_at for recurring tasks. Called by scheduler_loop.
+- **`get_all_facts() -> Result<Vec<(String, String)>>`:** Gets all facts across all users (excluding `welcomed`). Called by heartbeat_loop for context enrichment.
+- **`get_all_recent_summaries(limit) -> Result<Vec<(String, String)>>`:** Gets recent conversation summaries across all users. Called by heartbeat_loop with `limit = 3` for context enrichment.
 
 ## Configuration Parameters
 
@@ -760,8 +787,13 @@ All interactions are logged to SQLite with:
 11. LANG_SWITCH: markers are stripped from the response before sending to the user. The extracted language is persisted as a `preferred_language` fact.
 12. Scheduler loop only runs when `scheduler_config.enabled` is true.
 13. Heartbeat loop only runs when `heartbeat_config.enabled` is true.
-14. Heartbeat alerts are suppressed when the provider response contains `HEARTBEAT_OK`.
+14. Heartbeat alerts are suppressed when the provider response contains `HEARTBEAT_OK` (after stripping markdown formatting).
 15. Status updater is aborted when provider result arrives.
+16. When `is_group` is true and the provider response is `SILENT`, the response is suppressed (not stored, not audited, not sent).
+17. Platform formatting hints are injected into the system prompt based on `incoming.channel` (WhatsApp avoids markdown tables/headers; Telegram supports full markdown).
+18. Group chat rules are injected into the system prompt when `incoming.is_group` is `true`.
+19. Heartbeat loop skips API calls entirely when no checklist file (`~/.omega/HEARTBEAT.md`) is configured.
+20. Heartbeat prompt is enriched with user facts and recent conversation summaries from memory.
 
 ## Tests
 
@@ -794,3 +826,21 @@ Verifies that `status_messages()` falls back to English for unrecognized languag
 **Type:** Synchronous unit test (`#[test]`)
 
 Verifies that `status_messages("Spanish")` returns Spanish-language status messages.
+
+### `test_read_heartbeat_file_returns_none_when_missing`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `read_heartbeat_file()` returns `None` when `~/.omega/HEARTBEAT.md` does not exist or is empty, confirming the skip-when-no-checklist behavior.
+
+### `test_bundled_system_prompt_contains_soul`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that the bundled `SYSTEM_PROMPT.md` (via `include_str!`) contains the Soul personality section with key phrases like "genuinely helpful" and "earn its place".
+
+### `test_bundled_facts_prompt_guided_schema`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that the bundled `SYSTEM_PROMPT.md` (via `include_str!`) contains the guided fact-extraction schema with canonical fields like "preferred_name", "pronouns", and "timezone".

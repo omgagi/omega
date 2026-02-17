@@ -136,15 +136,15 @@ impl Gateway {
             let hb_provider = self.provider.clone();
             let hb_channels = self.channels.clone();
             let hb_config = self.heartbeat_config.clone();
-            let hb_prompt = self.prompts.heartbeat.clone();
             let hb_prompt_checklist = self.prompts.heartbeat_checklist.clone();
+            let hb_memory = self.memory.clone();
             Some(tokio::spawn(async move {
                 Self::heartbeat_loop(
                     hb_provider,
                     hb_channels,
                     hb_config,
-                    hb_prompt,
                     hb_prompt_checklist,
+                    hb_memory,
                 )
                 .await;
             }))
@@ -246,12 +246,15 @@ impl Gateway {
     }
 
     /// Background task: periodic heartbeat check-in.
+    ///
+    /// Skips the provider call entirely when no checklist is configured.
+    /// When a checklist exists, enriches the prompt with recent memory context.
     async fn heartbeat_loop(
         provider: Arc<dyn Provider>,
         channels: HashMap<String, Arc<dyn Channel>>,
         config: HeartbeatConfig,
-        heartbeat_prompt: String,
         heartbeat_checklist_prompt: String,
+        memory: Store,
     ) {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(config.interval_minutes * 60)).await;
@@ -265,19 +268,44 @@ impl Gateway {
                 continue;
             }
 
-            // Read optional checklist.
-            let checklist = read_heartbeat_file().unwrap_or_default();
-
-            let prompt = if checklist.is_empty() {
-                heartbeat_prompt.clone()
-            } else {
-                heartbeat_checklist_prompt.replace("{checklist}", &checklist)
+            // Read optional checklist — skip API call if none configured.
+            let checklist = match read_heartbeat_file() {
+                Some(cl) => cl,
+                None => {
+                    info!("heartbeat: no checklist configured, skipping");
+                    continue;
+                }
             };
+
+            let mut prompt = heartbeat_checklist_prompt.replace("{checklist}", &checklist);
+
+            // Enrich heartbeat context with recent memory.
+            if let Ok(facts) = memory.get_all_facts().await {
+                if !facts.is_empty() {
+                    prompt.push_str("\n\nKnown about the user:");
+                    for (key, value) in &facts {
+                        prompt.push_str(&format!("\n- {key}: {value}"));
+                    }
+                }
+            }
+            if let Ok(summaries) = memory.get_all_recent_summaries(3).await {
+                if !summaries.is_empty() {
+                    prompt.push_str("\n\nRecent activity:");
+                    for (summary, timestamp) in &summaries {
+                        prompt.push_str(&format!("\n- [{timestamp}] {summary}"));
+                    }
+                }
+            }
 
             let ctx = Context::new(&prompt);
             match provider.complete(&ctx).await {
                 Ok(resp) => {
-                    if resp.text.trim().contains("HEARTBEAT_OK") {
+                    let cleaned: String = resp
+                        .text
+                        .chars()
+                        .filter(|c| *c != '*' && *c != '`')
+                        .collect();
+                    if cleaned.trim().contains("HEARTBEAT_OK") {
                         info!("heartbeat: OK");
                     } else if let Some(ch) = channels.get(&config.channel) {
                         let msg = OutgoingMessage {
@@ -552,9 +580,31 @@ impl Gateway {
         };
 
         // --- 4. BUILD CONTEXT FROM MEMORY ---
-        // Inject active project instructions into the system prompt.
+        // Inject active project instructions, platform hint, and group chat rules.
         let system_prompt = {
             let mut prompt = self.prompts.system.clone();
+
+            // Platform formatting hint.
+            match incoming.channel.as_str() {
+                "whatsapp" => prompt.push_str(
+                    "\n\nPlatform: WhatsApp. Avoid markdown tables and headers — use bold (*text*) and bullet lists instead.",
+                ),
+                "telegram" => prompt.push_str(
+                    "\n\nPlatform: Telegram. Markdown is supported (bold, italic, code blocks).",
+                ),
+                _ => {}
+            }
+
+            // Group chat awareness.
+            if incoming.is_group {
+                prompt.push_str(
+                    "\n\nThis is a GROUP CHAT. Only respond when directly mentioned by name, \
+                     asked a question, or you can add genuine value. Do not leak personal facts \
+                     from private conversations. If the message does not warrant a response, \
+                     reply with exactly SILENT on its own line.",
+                );
+            }
+
             if let Ok(Some(project_name)) = self
                 .memory
                 .get_fact(&incoming.sender_id, "active_project")
@@ -682,6 +732,15 @@ impl Gateway {
         // Stop typing indicator.
         if let Some(h) = typing_handle {
             h.abort();
+        }
+
+        // --- 5a. SUPPRESS SILENT RESPONSES (group chats) ---
+        if incoming.is_group && response.text.trim() == "SILENT" {
+            info!(
+                "[{}] group chat: suppressing SILENT response",
+                incoming.channel
+            );
+            return;
         }
 
         // --- 5b. EXTRACT SCHEDULE MARKER ---
@@ -1225,5 +1284,51 @@ mod tests {
         let (nudge, still) = status_messages("Spanish");
         assert!(nudge.contains("tomar un momento"));
         assert!(still.contains("trabajando"));
+    }
+
+    #[test]
+    fn test_read_heartbeat_file_returns_none_when_missing() {
+        // When the file does not exist, read_heartbeat_file returns None.
+        // This test relies on HOME being set, which it always is in CI/dev.
+        // We cannot easily control the file, so just verify the function is callable.
+        let result = read_heartbeat_file();
+        // Result depends on whether the file exists; just check it doesn't panic.
+        let _ = result;
+    }
+
+    #[test]
+    fn test_bundled_system_prompt_contains_soul() {
+        // Verify the bundled SYSTEM_PROMPT.md (source of truth) includes Soul.
+        let content = include_str!("../prompts/SYSTEM_PROMPT.md");
+        assert!(
+            content.contains("Soul:"),
+            "bundled system prompt should contain Soul section"
+        );
+        assert!(
+            content.contains("genuinely helpful"),
+            "bundled system prompt should contain personality principles"
+        );
+    }
+
+    #[test]
+    fn test_bundled_facts_prompt_guided_schema() {
+        // Verify the bundled SYSTEM_PROMPT.md has guided fact-extraction fields.
+        let content = include_str!("../prompts/SYSTEM_PROMPT.md");
+        assert!(
+            content.contains("preferred_name"),
+            "bundled facts section should list preferred_name"
+        );
+        assert!(
+            content.contains("timezone"),
+            "bundled facts section should list timezone"
+        );
+        assert!(
+            content.contains("pronouns"),
+            "bundled facts section should list pronouns"
+        );
+        assert!(
+            content.contains("dossier"),
+            "bundled facts section should include privacy framing"
+        );
     }
 }

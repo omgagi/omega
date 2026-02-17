@@ -11,21 +11,27 @@ Think of it as a watchdog that uses AI reasoning instead of simple threshold che
 The heartbeat runs as a background loop inside the gateway, firing every N minutes (default: 30). Each cycle follows this sequence:
 
 1. **Check active hours** -- If you configured an active hours window (e.g., 08:00-22:00), the heartbeat checks the current local time. Outside the window, it sleeps until the next cycle.
-2. **Read the checklist** -- Looks for `~/.omega/HEARTBEAT.md`. If the file exists and is not empty, its contents are included in the prompt.
-3. **Call the provider** -- Sends a prompt to the AI provider. The prompt asks the AI to evaluate the checklist (if provided) or perform a general health check.
-4. **Evaluate the response**:
-   - If the response contains `HEARTBEAT_OK`, the heartbeat logs an INFO message and sends nothing to the user.
+2. **Read the checklist** -- Looks for `~/.omega/HEARTBEAT.md`. If the file does not exist or is empty, the entire cycle is **skipped** — no API call is made. This prevents wasted provider calls when no checklist is configured.
+3. **Enrich with context** -- The heartbeat enriches the prompt with data from memory:
+   - **User facts** (name, timezone, interests, etc.) from all users — gives the AI awareness of who it's monitoring for.
+   - **Recent conversation summaries** (last 3 closed conversations) — gives the AI context about recent activity.
+4. **Call the provider** -- Sends the enriched prompt to the AI provider for evaluation.
+5. **Evaluate the response**:
+   - Markdown formatting characters (`*` and backticks) are stripped before checking for the keyword.
+   - If the cleaned response contains `HEARTBEAT_OK`, the heartbeat logs an INFO message and sends nothing to the user.
    - If the response contains anything else, it is treated as an alert and delivered to the configured channel.
 
 ```
 Every N minutes:
   → Is it within active hours?
     → No: skip, sleep
-    → Yes: read HEARTBEAT.md (optional)
-      → Call provider with checklist prompt
-        → Response contains "HEARTBEAT_OK"?
-          → Yes: log "heartbeat: OK", done
-          → No: send response as alert to channel
+    → Yes: read HEARTBEAT.md
+      → File missing or empty? → skip, no API call
+      → Has content? → Enrich prompt with user facts + recent summaries
+        → Call provider with enriched checklist prompt
+          → Strip markdown, check for "HEARTBEAT_OK"
+            → Yes: log "heartbeat: OK", done
+            → No: send response as alert to channel
 ```
 
 ## The HEARTBEAT_OK Suppression Mechanism
@@ -78,14 +84,7 @@ The AI evaluates each item. If all checks pass, it responds with `HEARTBEAT_OK`.
 
 ### What Happens Without HEARTBEAT.md
 
-If the file does not exist or is empty, the heartbeat sends a generic prompt:
-
-```
-You are Omega performing a periodic heartbeat check. If everything is fine,
-respond with exactly HEARTBEAT_OK. Otherwise, respond with a brief alert.
-```
-
-This still works -- the AI can perform general reasoning about the system state. However, without a specific checklist, the responses will be less targeted.
+If the file does not exist or is empty, the heartbeat **skips the cycle entirely** — no API call is made. This is an intentional optimization: without a specific checklist, a generic health check provides limited value but still costs provider credits. Create a `HEARTBEAT.md` file with your monitoring items to activate the heartbeat.
 
 ## Configuration
 

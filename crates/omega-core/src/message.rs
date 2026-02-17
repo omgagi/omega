@@ -21,6 +21,9 @@ pub struct IncomingMessage {
     /// Platform-specific target for routing the response (e.g. Telegram chat_id).
     #[serde(default)]
     pub reply_target: Option<String>,
+    /// Whether this message comes from a group chat.
+    #[serde(default)]
+    pub is_group: bool,
 }
 
 /// An outgoing message to send back through a channel.

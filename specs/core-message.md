@@ -36,6 +36,9 @@ pub struct IncomingMessage {
     pub attachments: Vec<Attachment>,
     #[serde(default)]
     pub reply_target: Option<String>,
+    /// Whether this message comes from a group chat.
+    #[serde(default)]
+    pub is_group: bool,
 }
 ```
 
@@ -54,9 +57,11 @@ pub struct IncomingMessage {
 | `reply_to` | `Option<Uuid>` | No | If this message is a reply to a previous message, the UUID of that original message. Currently unused by channels but reserved for threading support. |
 | `attachments` | `Vec<Attachment>` | Yes (empty default) | List of file attachments. Currently channels send `Vec::new()` as attachment handling is not yet implemented. |
 | `reply_target` | `Option<String>` | No | Platform-specific routing target for sending the response back. For Telegram, this is the `chat_id` as a string. Annotated with `#[serde(default)]` to default to `None` during deserialization. |
+| `is_group` | `bool` | Yes (default `false`) | Whether this message comes from a group chat (e.g., Telegram group/supergroup). Set by the channel during message construction. Used by the gateway to inject group-chat rules and suppress `SILENT` responses. Annotated with `#[serde(default)]` to default to `false`. |
 
 **Serde Annotations:**
 - `reply_target` uses `#[serde(default)]` to handle missing field during deserialization.
+- `is_group` uses `#[serde(default)]` to default to `false` during deserialization.
 
 ---
 
@@ -287,3 +292,4 @@ All types implement `Serialize` and `Deserialize` via serde derives. This enable
 4. `MessageMetadata.provider_used` is set by the provider implementation, never by the gateway.
 5. `attachments` is always present (may be empty) on `IncomingMessage`.
 6. All timestamp values are UTC.
+7. `is_group` defaults to `false` and is only set to `true` by channels that support group chat detection (currently Telegram).

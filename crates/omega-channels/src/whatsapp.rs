@@ -214,6 +214,7 @@ impl Channel for WhatsAppChannel {
                                 reply_to: None,
                                 attachments: Vec::new(),
                                 reply_target: Some(chat_jid),
+                                is_group: false,
                             };
 
                             if tx.send(incoming).await.is_err() {

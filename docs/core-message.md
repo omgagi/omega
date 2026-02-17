@@ -31,6 +31,7 @@ pub struct IncomingMessage {
     pub reply_to: Option<Uuid>,          // If replying to an earlier message
     pub attachments: Vec<Attachment>,     // Files, images, etc.
     pub reply_target: Option<String>,    // Where to send the response
+    pub is_group: bool,                  // Group chat flag
 }
 ```
 
@@ -41,6 +42,8 @@ Most fields are self-explanatory, but a few deserve special attention:
 - **`reply_target`** is the key to response routing. On Telegram, this is the chat ID. When Omega sends a response, it reads this field to know which chat to deliver it to. The gateway copies this value from the incoming message to the outgoing message, so the provider never needs to know about platform-specific routing.
 
 - **`attachments`** is always present (never `None`) but is typically an empty `Vec`. Attachment processing is planned but not yet implemented.
+
+- **`is_group`** indicates whether the message came from a group chat. Telegram sets this to `true` for groups and supergroups; WhatsApp currently always sets it to `false` (self-chat only). The gateway uses this flag to inject group-specific behavior rules and suppress `SILENT` responses.
 
 ### OutgoingMessage
 
@@ -86,6 +89,7 @@ let incoming = IncomingMessage {
     reply_to: None,
     attachments: Vec::new(),
     reply_target: Some(chat_id.to_string()),
+    is_group: false,
 };
 ```
 
@@ -159,6 +163,7 @@ let incoming = IncomingMessage {
     reply_to: None,              // Set if this is a reply to another message
     attachments: Vec::new(),     // Populate when attachment handling is implemented
     reply_target: Some(platform_chat_id.to_string()),
+    is_group: false,             // Set to true for group/supergroup chats
 };
 ```
 
