@@ -10,7 +10,7 @@
 
 ## Purpose
 
-Loads skill definitions from `SKILL.md` files inside per-skill directories with TOML frontmatter. Each skill file declares a name, description, required CLI tools, and optional homepage. The loader checks whether required tools are installed and builds a prompt block that tells the AI what skills exist and where to read full instructions.
+Loads skill definitions from `SKILL.md` files inside per-skill directories. Frontmatter can be TOML (`key = "value"`) or YAML (`key: value`) — the parser tries TOML first, then falls back to YAML-style parsing so skill files from any source (npm packages, third parties) just work. Each skill file declares a name, description, required CLI tools, and optional homepage. The loader checks whether required tools are installed and builds a prompt block that tells the AI what skills exist and where to read full instructions.
 
 ## Public API
 
@@ -24,16 +24,17 @@ Loads skill definitions from `SKILL.md` files inside per-skill directories with 
 
 ## Skill Directory Format
 
-Skills are stored as directories in `{data_dir}/skills/` with a `SKILL.md` file containing TOML frontmatter between `---` delimiters:
+Skills are stored as directories in `{data_dir}/skills/` with a `SKILL.md` file containing frontmatter (TOML or YAML) between `---` delimiters:
 
 ```
 ~/.omega/skills/
 ├── google-workspace/
 │   └── SKILL.md
-└── my-tool/
+└── playwright-mcp-1.0.0/
     └── SKILL.md
 ```
 
+TOML format (our convention):
 ```markdown
 ---
 name = "gog"
@@ -41,9 +42,19 @@ description = "Google Workspace CLI."
 requires = ["gog"]
 homepage = "https://gogcli.sh"
 ---
-
-(Body text — full instructions the AI reads on demand)
 ```
+
+YAML format (third-party skills):
+```markdown
+---
+name: playwright-mcp
+description: Browser automation via Playwright MCP.
+requires: [npx, playwright-mcp]
+homepage: https://playwright.dev
+---
+```
+
+The YAML parser also extracts `requires` from openclaw-style `metadata` JSON blobs (`"requires":{"bins":[...]}`) when no explicit `requires` field is present.
 
 ## Bundled Skills
 
@@ -57,7 +68,11 @@ Core skills are embedded at compile time from `skills/` in the repo root via `in
 
 | Function | Description |
 |----------|-------------|
-| `parse_skill_file(content)` | Extract and deserialize TOML frontmatter from `---` delimiters |
+| `parse_skill_file(content)` | Extract frontmatter from `---` delimiters — tries TOML, falls back to YAML |
+| `parse_yaml_frontmatter(block)` | Lightweight YAML-style `key: value` parser for frontmatter |
+| `parse_yaml_list(val)` | Parse YAML inline list `[a, b, c]` |
+| `extract_bins_from_metadata(meta)` | Extract `bins` from openclaw metadata JSON blob |
+| `unquote(s)` | Strip surrounding quotes (single or double) |
 | `which_exists(tool)` | Check if a CLI tool exists on `$PATH` via `which` |
 | `expand_tilde(path)` | Expand `~` to `$HOME` in data_dir paths |
 
@@ -66,7 +81,7 @@ Core skills are embedded at compile time from `skills/` in the repo root via `in
 | Dependency | Usage |
 |------------|-------|
 | `serde` | Deserialize TOML frontmatter |
-| `toml` | Parse TOML |
+| `toml` | Parse TOML (primary frontmatter format) |
 | `tracing` | Warn on invalid skill files |
 
 ## Projects
@@ -101,14 +116,18 @@ In addition to skills, this crate also handles project loading. Projects are use
 
 ## Tests
 
-- Valid frontmatter parsing
+- Valid TOML frontmatter parsing
+- Valid YAML frontmatter parsing
+- YAML with openclaw metadata JSON extracts bins
+- YAML with quoted values (single and double quotes)
 - Missing frontmatter returns None
 - Empty requires defaults to empty vec
 - Empty skill list produces empty prompt
 - Prompt format with installed/not-installed status (paths use `*/SKILL.md`)
 - `which` detection for known and unknown tools
 - Missing skills directory returns empty vec
-- Valid skill directory with SKILL.md loads correctly
+- Valid skill directory with TOML SKILL.md loads correctly
+- Valid skill directory with YAML SKILL.md loads correctly
 - Flat skill migration moves `.md` → `{name}/SKILL.md`, skips existing dirs
 - Bundled skills deploy to `{name}/SKILL.md`, never overwrite existing files
 - Missing projects directory returns empty vec

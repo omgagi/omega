@@ -115,7 +115,7 @@ pub struct Skill {
     pub path: PathBuf,
 }
 
-/// TOML frontmatter parsed from a `SKILL.md` file.
+/// Frontmatter parsed from a `SKILL.md` file (TOML or YAML).
 #[derive(Debug, Deserialize)]
 struct SkillFrontmatter {
     name: String,
@@ -207,13 +207,115 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-/// Extract TOML frontmatter delimited by `---` lines.
+/// Extract frontmatter delimited by `---` lines.
+///
+/// Tries TOML first (`key = "value"`), then falls back to YAML-style
+/// (`key: value`) so skill files from any source just work.
 fn parse_skill_file(content: &str) -> Option<SkillFrontmatter> {
     let trimmed = content.trim_start();
     let rest = trimmed.strip_prefix("---")?;
     let end = rest.find("\n---")?;
-    let toml_block = &rest[..end];
-    toml::from_str(toml_block).ok()
+    let block = &rest[..end];
+
+    // Try TOML first.
+    if let Ok(fm) = toml::from_str::<SkillFrontmatter>(block) {
+        return Some(fm);
+    }
+
+    // Fallback: parse YAML-style `key: value` lines.
+    parse_yaml_frontmatter(block)
+}
+
+/// Lightweight YAML-style frontmatter parser.
+///
+/// Handles flat `key: value` lines and extracts `requires` from either a
+/// YAML list (`requires: [a, b]`) or from an openclaw `metadata` JSON
+/// blob (`"requires":{"bins":[...]}`). No YAML dependency needed.
+fn parse_yaml_frontmatter(block: &str) -> Option<SkillFrontmatter> {
+    let mut name = None;
+    let mut description = None;
+    let mut requires = Vec::new();
+    let mut homepage = String::new();
+    let mut metadata_line = None;
+
+    for line in block.lines() {
+        let line = line.trim();
+        if let Some((key, val)) = line.split_once(':') {
+            let key = key.trim();
+            let val = val.trim();
+            match key {
+                "name" => name = Some(unquote(val)),
+                "description" => description = Some(unquote(val)),
+                "homepage" => homepage = unquote(val),
+                "requires" => requires = parse_yaml_list(val),
+                "metadata" => metadata_line = Some(val.to_string()),
+                _ => {}
+            }
+        }
+    }
+
+    // If no explicit `requires`, try extracting from openclaw metadata JSON.
+    if requires.is_empty() {
+        if let Some(meta) = &metadata_line {
+            requires = extract_bins_from_metadata(meta);
+        }
+    }
+
+    Some(SkillFrontmatter {
+        name: name?,
+        description: description?,
+        requires,
+        homepage,
+    })
+}
+
+/// Parse a YAML-style inline list: `[a, b, c]` or `["a", "b"]`.
+fn parse_yaml_list(val: &str) -> Vec<String> {
+    let trimmed = val.trim();
+    let inner = trimmed
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or("");
+    if inner.is_empty() {
+        return Vec::new();
+    }
+    inner
+        .split(',')
+        .map(|s| unquote(s.trim()))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Extract `bins` from an openclaw metadata JSON blob.
+///
+/// Looks for `"requires":{"bins":["tool1","tool2"]}` without a full JSON parser.
+fn extract_bins_from_metadata(meta: &str) -> Vec<String> {
+    let Some(idx) = meta.find("\"bins\"") else {
+        return Vec::new();
+    };
+    let rest = &meta[idx..];
+    let Some(start) = rest.find('[') else {
+        return Vec::new();
+    };
+    let Some(end) = rest[start..].find(']') else {
+        return Vec::new();
+    };
+    let inner = &rest[start + 1..start + end];
+    inner
+        .split(',')
+        .map(|s| unquote(s.trim()))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Strip surrounding quotes (single or double) from a string.
+fn unquote(s: &str) -> String {
+    let s = s.trim();
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +426,52 @@ Some body text.
     }
 
     #[test]
+    fn test_parse_yaml_frontmatter() {
+        let content = "\
+---
+name: playwright-mcp
+description: Browser automation via Playwright MCP.
+requires: [npx, playwright-mcp]
+homepage: https://playwright.dev
+---
+
+Some body text.
+";
+        let fm = parse_skill_file(content).unwrap();
+        assert_eq!(fm.name, "playwright-mcp");
+        assert_eq!(fm.description, "Browser automation via Playwright MCP.");
+        assert_eq!(fm.requires, vec!["npx", "playwright-mcp"]);
+        assert_eq!(fm.homepage, "https://playwright.dev");
+    }
+
+    #[test]
+    fn test_parse_yaml_openclaw_metadata() {
+        let content = "\
+---
+name: playwright-mcp
+description: Browser automation.
+metadata: {\"openclaw\":{\"requires\":{\"bins\":[\"playwright-mcp\",\"npx\"]}}}
+---
+";
+        let fm = parse_skill_file(content).unwrap();
+        assert_eq!(fm.name, "playwright-mcp");
+        assert_eq!(fm.requires, vec!["playwright-mcp", "npx"]);
+    }
+
+    #[test]
+    fn test_parse_yaml_quoted_values() {
+        let content = "\
+---
+name: \"my-tool\"
+description: 'A quoted description.'
+---
+";
+        let fm = parse_skill_file(content).unwrap();
+        assert_eq!(fm.name, "my-tool");
+        assert_eq!(fm.description, "A quoted description.");
+    }
+
+    #[test]
     fn test_parse_no_frontmatter() {
         assert!(parse_skill_file("Just plain text.").is_none());
     }
@@ -405,6 +553,26 @@ description = \"No deps.\"
         assert_eq!(skills[0].name, "my-skill");
         assert_eq!(skills[0].description, "A test skill.");
         assert!(skills[0].path.ends_with("my-skill/SKILL.md"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_load_skills_yaml_format() {
+        let tmp = std::env::temp_dir().join("__omega_test_skills_yaml__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let skill_dir = tmp.join("skills/playwright");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: playwright\ndescription: Browser automation.\nrequires: [npx]\n---\n\nBody.",
+        )
+        .unwrap();
+
+        let skills = load_skills(tmp.to_str().unwrap());
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "playwright");
+        assert_eq!(skills[0].description, "Browser automation.");
+        assert_eq!(skills[0].requires, vec!["npx"]);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

@@ -9,7 +9,7 @@
 1. **Startup**: `install_bundled_skills(data_dir)` deploys core skills from the binary to `{data_dir}/skills/{name}/SKILL.md` (skips existing files)
 2. **Migration**: `migrate_flat_skills(data_dir)` auto-migrates legacy flat `.md` files to the directory layout
 3. **Load**: `load_skills(data_dir)` scans `{data_dir}/skills/` for subdirectories containing `SKILL.md`
-4. **Frontmatter**: Each `SKILL.md` must have TOML frontmatter between `---` delimiters
+4. **Frontmatter**: Each `SKILL.md` must have frontmatter between `---` delimiters (TOML or YAML — both work)
 5. **Dep check**: Required CLI tools are checked via `which`
 6. **Prompt**: `build_skill_prompt()` builds a block appended to the system prompt listing all skills with their install status and file path
 7. **On demand**: When the AI needs a skill, it reads the full `SKILL.md` file for instructions
@@ -26,6 +26,7 @@ Create a directory in `~/.omega/skills/` with a `SKILL.md` file:
     └── SKILL.md
 ```
 
+TOML format (our convention):
 ```markdown
 ---
 name = "gog"
@@ -35,8 +36,21 @@ homepage = "https://gogcli.sh"
 ---
 
 # Full usage instructions here
-The AI reads this section when it needs to use the skill.
 ```
+
+YAML format (third-party skills, e.g. npm packages):
+```markdown
+---
+name: playwright-mcp
+description: Browser automation via Playwright MCP.
+requires: [npx, playwright-mcp]
+homepage: https://playwright.dev
+---
+
+# Full usage instructions here
+```
+
+The parser tries TOML first, then falls back to YAML-style `key: value` parsing. It also extracts `requires` from openclaw-style `metadata` JSON blobs when present.
 
 ### Frontmatter Fields
 
