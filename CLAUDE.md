@@ -69,7 +69,7 @@ System prompt composition: The `Prompts` struct splits prompts into three fields
 
 User profile: `format_user_profile()` in `omega-memory` replaces the flat "Known facts" dump with a structured "User profile:" block that filters system keys (`welcomed`, `preferred_language`, `active_project`) and groups identity keys first, context keys second, rest last.
 
-Conversational onboarding: First-time welcome sends (introducing OMEGA with tech stack and "honor to serve" tone), then the message falls through to normal AI processing (no `return`). Two-tier onboarding hint: when the user has 0 real facts, a strong "connect first" prompt is injected telling OMEGA to prioritize getting to know the person; when 1-2 real facts, a lighter "naturally weave in a question" hint. At 3+ real facts, no hint.
+Conversational onboarding: No separate welcome message — the AI handles introduction and onboarding naturally. On first contact (0 real facts), a strong onboarding hint tells OMEGA to introduce itself and prioritize getting to know the person. With 1-2 real facts, a lighter "naturally weave in a question" hint. At 3+ real facts, no hint. The `welcomed` fact and language detection are still stored on first contact for tracking.
 
 Background loops (spawned in `gateway::run()`):
 - **Scheduler**: polls `scheduled_tasks` table every 60s, delivers due reminders via channel

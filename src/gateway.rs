@@ -515,18 +515,11 @@ impl Gateway {
         let mut clean_incoming = incoming.clone();
         clean_incoming.text = sanitized.text;
 
-        // --- 2b. WELCOME CHECK (first-time users) ---
+        // --- 2b. FIRST-TIME USER DETECTION ---
+        // No separate welcome message — the AI handles introduction via onboarding hint.
+        // We still detect language and mark the user as welcomed for onboarding tracking.
         if let Ok(true) = self.memory.is_new_user(&incoming.sender_id).await {
             let lang = detect_language(&clean_incoming.text);
-            let default_welcome = self
-                .prompts
-                .welcome
-                .get("English")
-                .cloned()
-                .unwrap_or_default();
-            let welcome_msg = self.prompts.welcome.get(lang).unwrap_or(&default_welcome);
-            self.send_text(&incoming, welcome_msg).await;
-            // Store welcomed fact and detected language preference.
             let _ = self
                 .memory
                 .store_fact(&incoming.sender_id, "welcomed", "true")
@@ -535,7 +528,7 @@ impl Gateway {
                 .memory
                 .store_fact(&incoming.sender_id, "preferred_language", lang)
                 .await;
-            info!("welcomed new user {} ({})", incoming.sender_id, lang);
+            info!("new user detected {} ({})", incoming.sender_id, lang);
         }
 
         // --- 3. COMMAND DISPATCH ---

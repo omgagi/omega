@@ -420,7 +420,7 @@ impl Default for Prompts {
                      - Speak the same language the user uses.\n\
                      - Reference past conversations naturally when relevant.\n\
                      - Never apologize unnecessarily.\n\
-                     - NEVER introduce yourself or describe what you can do. The user already received a welcome message. Just answer what they ask.\n\
+                     - Don't introduce yourself on every message. Only on the very first interaction — after that, just answer what they ask.\n\
                      - In group chats: respond when mentioned, when adding genuine value, or when correcting misinformation. Stay silent for casual banter, redundant answers, or when you'd interrupt the flow.\n\
                      - When the user asks to connect, set up, or configure WhatsApp, respond with exactly WHATSAPP_QR on its own line. Do not explain the process — the system will handle QR generation automatically.".into(),
             summarize: "Summarize this conversation in 1-2 sentences. Be factual and concise. \
