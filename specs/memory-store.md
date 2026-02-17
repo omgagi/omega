@@ -721,7 +721,7 @@ LIMIT ?
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `incoming` | `&IncomingMessage` | The incoming message (provides `channel`, `sender_id`, `text`). |
-| `base_system_prompt` | `&str` | The base system prompt (personality/rules) from `Prompts.system`. |
+| `base_system_prompt` | `&str` | The base system prompt (identity + soul + rules), composed by the gateway from `Prompts.identity`, `Prompts.soul`, and `Prompts.system`. |
 
 **Returns:** `Result<Context, OmegaError>`.
 
@@ -1073,7 +1073,7 @@ The `shellexpand()` utility is now a public function in `omega_core::config`, re
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `base_rules` | `&str` | Base personality/rules text (from `Prompts.system`). |
+| `base_rules` | `&str` | Base prompt text (identity + soul + rules), composed by the gateway from `Prompts.identity`, `Prompts.soul`, and `Prompts.system`. |
 | `facts` | `&[(String, String)]` | User facts as `(key, value)` pairs. |
 | `summaries` | `&[(String, String)]` | Recent conversation summaries as `(summary, timestamp)` pairs. |
 | `recall` | `&[(String, String, String)]` | Recalled past messages as `(role, content, timestamp)` tuples. |
@@ -1084,11 +1084,15 @@ The `shellexpand()` utility is now a public function in `omega_core::config`, re
 
 **Output structure:**
 ```
-<base_rules content from Prompts.system>
+<base_rules content (identity + soul + system, composed by gateway)>
 
-Known facts about this user:          ← (only if facts is non-empty)
-- name: Alice
-- timezone: America/New_York
+User profile:                         ← (only if real facts exist, via format_user_profile())
+- preferred_name: Alice               ← identity keys first
+- pronouns: she/her
+- timezone: America/New_York          ← context keys second
+- favorite_language: Rust             ← remaining keys last
+
+(onboarding hint)                     ← (only when <3 real facts, after language line)
 
 Recent conversation history:          ← (only if summaries is non-empty)
 - [2024-01-15 14:30:00] User asked about Rust async patterns.
@@ -1119,13 +1123,39 @@ Only include the marker if the user explicitly asks to add or remove a monitored
 ```
 
 **Conditional sections:**
-- Facts section: appended only if `facts` is non-empty.
+- User profile section: appended only if real (non-system) facts exist, via `format_user_profile()`. Header is "User profile:" instead of "Known facts about this user:".
+- Onboarding hint: appended after the language directive when the user has fewer than 3 real facts (non-system keys). Encourages the user to share more about themselves so the agent can personalize.
 - Summaries section: appended only if `summaries` is non-empty.
 - Recall section: appended only if `recall` is non-empty. Each message is truncated to 200 characters.
 - Language directive: always appended (unconditional). Uses the `language` parameter.
 - LANG_SWITCH instruction: always appended (unconditional). Tells the provider to include a `LANG_SWITCH:` marker when the user explicitly asks to change language.
 - SCHEDULE marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE:` marker line when the user explicitly requests a reminder or scheduled task.
 - HEARTBEAT_ADD/REMOVE marker instructions: always appended (unconditional). Tells the provider to include `HEARTBEAT_ADD:` or `HEARTBEAT_REMOVE:` markers when the user explicitly asks to add or remove monitored items.
+
+---
+
+### `fn format_user_profile(facts: &[(String, String)]) -> Option<String>`
+
+**Purpose:** Format user facts into a structured "User profile:" block with intelligent grouping and system-key filtering.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `facts` | `&[(String, String)]` | All user facts as `(key, value)` pairs. |
+
+**Returns:** `Option<String>` -- `Some(formatted_block)` if there are any real (non-system) facts, `None` otherwise.
+
+**Logic:**
+1. Filter out system keys: `welcomed`, `preferred_language`, `active_project`.
+2. If no facts remain after filtering, return `None`.
+3. Group remaining facts into three tiers:
+   - **Identity keys** (first): e.g., `preferred_name`, `pronouns`, `location`, `occupation`.
+   - **Context keys** (second): e.g., `timezone`, `primary_language`, `tech_stack`.
+   - **Remaining keys** (last): everything else, alphabetically.
+4. Format as "User profile:" header followed by `- key: value` lines.
+
+**Called by:** `build_system_prompt()` to replace the previous flat "Known facts about this user:" dump.
 
 ---
 
@@ -1332,6 +1362,11 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 | `test_delete_fact` | Verifies `delete_fact()` returns `false` for non-existent fact, `true` after storing, and fact is gone after deletion. |
 | `test_get_all_facts` | Stores facts including a `welcomed` fact, verifies `get_all_facts()` returns all facts except `welcomed`. |
 | `test_get_all_recent_summaries` | Creates and closes conversations with summaries, verifies `get_all_recent_summaries()` returns them ordered newest-first and respects the limit parameter. |
+| `test_user_profile_filters_system_facts` | Verifies that `format_user_profile()` filters out system keys (`welcomed`, `preferred_language`, `active_project`) from the output. |
+| `test_user_profile_groups_identity_first` | Verifies that `format_user_profile()` places identity keys (e.g., `preferred_name`, `pronouns`) before context keys and other facts. |
+| `test_user_profile_empty_for_system_only` | Verifies that `format_user_profile()` returns `None` when all facts are system keys. |
+| `test_onboarding_hint_with_few_facts` | Verifies that `build_system_prompt()` includes an onboarding hint when the user has fewer than 3 real (non-system) facts. |
+| `test_onboarding_hint_absent_with_enough_facts` | Verifies that `build_system_prompt()` does not include an onboarding hint when the user has 3 or more real facts. |
 
 ## Invariants
 

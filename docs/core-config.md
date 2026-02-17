@@ -40,7 +40,7 @@ The config file is gitignored because it may contain secrets (API keys, bot toke
 
 ```toml
 [omega]
-name = "OMEGA Ω"
+name = "OMEGA"
 data_dir = "~/.omega"
 log_level = "info"
 
@@ -339,8 +339,8 @@ impl Default for MemoryConfig {
 
 On first startup, Omega automatically deploys two template files to `data_dir` (default `~/.omega/`):
 
-- **`SYSTEM_PROMPT.md`** — The system prompt with `## Section` headers (System, Summarize, Facts, Heartbeat, Heartbeat Checklist). Edit this file to customize the AI's personality and behavior.
-- **`WELCOME.toml`** — Welcome messages in 8 languages (English, Spanish, Portuguese, French, German, Italian, Dutch, Russian). Edit this file to customize the greeting users receive.
+- **`SYSTEM_PROMPT.md`** — The system prompt with three main sections (`## Identity`, `## Soul`, `## System`) plus auxiliary sections (Summarize, Facts, Heartbeat, Heartbeat Checklist). The Identity section defines who the agent is, Soul defines its personality and communication style, and System defines operational rules. Edit this file to customize the AI's behavior.
+- **`WELCOME.toml`** — Privacy-focused welcome messages in 8 languages (English, Spanish, Portuguese, French, German, Italian, Dutch, Russian). Edit this file to customize the greeting users receive.
 
 These files are embedded in the binary at compile time from the `prompts/` directory in the repository. On startup, `install_bundled_prompts()` writes them to `data_dir` only if they don't already exist — **user edits are never overwritten**.
 

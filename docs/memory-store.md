@@ -191,7 +191,7 @@ Rules:
 - Reference past conversations naturally when relevant.
 - Never apologize unnecessarily.
 
-Known facts about this user:
+User profile:
 - name: Ivan
 - timezone: America/Chicago
 - language: Spanish
@@ -207,7 +207,7 @@ Related past context:
 IMPORTANT: Always respond in Spanish.
 ```
 
-The "Known facts", "Recent conversation history", and "Related past context" sections are only included when data is available. Recalled messages are truncated to 200 characters to avoid bloating the prompt. The language directive (e.g., "IMPORTANT: Always respond in Spanish.") is always present, using the user's stored `preferred_language` fact or auto-detecting from the first message via stop-word heuristics for 7 languages (Spanish, Portuguese, French, German, Italian, Dutch, Russian), defaulting to English.
+The "User profile", "Recent conversation history", and "Related past context" sections are only included when data is available. The user profile groups identity facts (name, language, timezone) separately from context facts (interests, preferences), and filters out internal system keys. For new users with fewer than 3 real facts, an onboarding hint is included encouraging the AI to learn about the user naturally through conversation. Recalled messages are truncated to 200 characters to avoid bloating the prompt. The language directive (e.g., "IMPORTANT: Always respond in Spanish.") is always present, using the user's stored `preferred_language` fact or auto-detecting from the first message via stop-word heuristics for 7 languages (Spanish, Portuguese, French, German, Italian, Dutch, Russian), defaulting to English.
 
 ### Resilience
 

@@ -414,8 +414,24 @@ Channel and provider sub-configs use `Option<T>` rather than `#[serde(default)]`
 
 | Constant | Source | Description |
 |----------|--------|-------------|
-| `BUNDLED_SYSTEM_PROMPT` | `include_str!("../../../prompts/SYSTEM_PROMPT.md")` | Default system prompt with `## Section` headers |
+| `BUNDLED_SYSTEM_PROMPT` | `include_str!("../../../prompts/SYSTEM_PROMPT.md")` | Default system prompt with 3 sections: `## Identity`, `## Soul`, `## System` |
 | `BUNDLED_WELCOME_TOML` | `include_str!("../../../prompts/WELCOME.toml")` | Default welcome messages (8 languages) in TOML format |
+
+### `Prompts` Struct — `identity` and `soul` Fields
+
+The `Prompts` struct has three prompt fields parsed from `SYSTEM_PROMPT.md`:
+
+| Field | Type | Section Header | Description |
+|-------|------|----------------|-------------|
+| `identity` | `String` | `## Identity` | Agent identity description (who the agent is). |
+| `soul` | `String` | `## Soul` | Agent personality and values. |
+| `system` | `String` | `## System` | Operational rules and constraints. |
+
+**`Prompts::load()`** parses the file by splitting on `## Identity`, `## Soul`, and `## System` section headers. Each section's content (between its header and the next header) becomes the corresponding field value.
+
+**Backward compatibility:** If the user's `SYSTEM_PROMPT.md` only contains `## System` (no `## Identity` or `## Soul` sections), the `identity` and `soul` fields retain their compiled-in defaults from `Default` impl. Only the `system` field is overwritten from the file.
+
+**`Default` impl:** Provides hardcoded defaults for all three fields (`identity`, `soul`, `system`), ensuring the agent has a complete prompt even without any file on disk.
 
 ### `install_bundled_prompts(data_dir: &str)`
 
@@ -423,7 +439,7 @@ Channel and provider sub-configs use `Option<T>` rather than `#[serde(default)]`
 pub fn install_bundled_prompts(data_dir: &str)
 ```
 
-Deploys `SYSTEM_PROMPT.md` and `WELCOME.toml` from compile-time embedded templates to `data_dir`. Creates the directory if needed. **Never overwrites existing files** so user edits are preserved.
+Deploys `SYSTEM_PROMPT.md` and `WELCOME.toml` from compile-time embedded templates to `data_dir`. Creates the directory if needed. **Never overwrites existing files** so user edits are preserved. The deployed `SYSTEM_PROMPT.md` contains all three sections (`## Identity`, `## Soul`, `## System`).
 
 Called from `main.rs` before `Prompts::load()` so first-run users get editable files instead of falling back to hardcoded defaults.
 
@@ -450,6 +466,24 @@ Verifies that a TOML config with an explicit `timeout_secs` value (e.g., `300`) 
 **Type:** Synchronous unit test (`#[test]`)
 
 Verifies that when `timeout_secs` is omitted from the TOML, the serde default function `default_timeout_secs()` supplies `600`.
+
+### `test_parse_identity_soul_system_sections`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `Prompts::load()` correctly parses all three sections (`## Identity`, `## Soul`, `## System`) from a `SYSTEM_PROMPT.md` file into the corresponding `identity`, `soul`, and `system` fields.
+
+### `test_backward_compat_system_only`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies backward compatibility: when the user's `SYSTEM_PROMPT.md` only contains `## System` (no `## Identity` or `## Soul`), the `identity` and `soul` fields retain their compiled-in defaults while `system` is loaded from the file.
+
+### `test_prompts_default_has_identity_soul`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `Prompts::default()` provides non-empty hardcoded values for `identity` and `soul` fields.
 
 ### `test_install_bundled_prompts_creates_files`
 

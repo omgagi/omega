@@ -796,6 +796,60 @@ impl Store {
     }
 }
 
+/// System fact keys filtered out of the user profile.
+const SYSTEM_FACT_KEYS: &[&str] = &["welcomed", "preferred_language", "active_project"];
+
+/// Identity fact keys — shown first in the user profile.
+const IDENTITY_KEYS: &[&str] = &["name", "preferred_name", "pronouns"];
+
+/// Context fact keys — shown second in the user profile.
+const CONTEXT_KEYS: &[&str] = &["timezone", "location", "occupation"];
+
+/// Format user facts into a structured profile, filtering system keys
+/// and grouping identity facts first, then context, then the rest.
+///
+/// Returns an empty string when only system facts exist.
+pub fn format_user_profile(facts: &[(String, String)]) -> String {
+    let user_facts: Vec<&(String, String)> = facts
+        .iter()
+        .filter(|(k, _)| !SYSTEM_FACT_KEYS.contains(&k.as_str()))
+        .collect();
+
+    if user_facts.is_empty() {
+        return String::new();
+    }
+
+    let mut lines = vec!["User profile:".to_string()];
+
+    // Identity group first.
+    for key in IDENTITY_KEYS {
+        if let Some((_, v)) = user_facts.iter().find(|(k, _)| k == key) {
+            lines.push(format!("- {key}: {v}"));
+        }
+    }
+
+    // Context group second.
+    for key in CONTEXT_KEYS {
+        if let Some((_, v)) = user_facts.iter().find(|(k, _)| k == key) {
+            lines.push(format!("- {key}: {v}"));
+        }
+    }
+
+    // Everything else, preserving original order.
+    let known_keys: Vec<&str> = IDENTITY_KEYS
+        .iter()
+        .chain(CONTEXT_KEYS.iter())
+        .copied()
+        .collect();
+    for (k, v) in &user_facts {
+        if !known_keys.contains(&k.as_str()) {
+            lines.push(format!("- {k}: {v}"));
+        }
+    }
+
+    lines.join("\n")
+}
+
 /// Build a dynamic system prompt enriched with facts, conversation history, and recalled messages.
 fn build_system_prompt(
     base_rules: &str,
@@ -807,11 +861,10 @@ fn build_system_prompt(
 ) -> String {
     let mut prompt = String::from(base_rules);
 
-    if !facts.is_empty() {
-        prompt.push_str("\n\nKnown facts about this user:");
-        for (key, value) in facts {
-            prompt.push_str(&format!("\n- {key}: {value}"));
-        }
+    let profile = format_user_profile(facts);
+    if !profile.is_empty() {
+        prompt.push_str("\n\n");
+        prompt.push_str(&profile);
     }
 
     if !summaries.is_empty() {
@@ -845,6 +898,21 @@ fn build_system_prompt(
     }
 
     prompt.push_str(&format!("\n\nIMPORTANT: Always respond in {language}."));
+
+    // Onboarding hint: help the agent learn about the user naturally.
+    let real_facts = facts
+        .iter()
+        .filter(|(k, _)| {
+            !["welcomed", "preferred_language", "active_project"].contains(&k.as_str())
+        })
+        .count();
+    if real_facts < 3 {
+        prompt.push_str(
+            "\n\nYou're still getting to know this person. Naturally weave in a question \
+             to learn about them — their name, what they do, what they care about — but \
+             only when it flows with the conversation. Never interrogate.",
+        );
+    }
 
     prompt.push_str(
         "\n\nIf the user explicitly asks you to change language (e.g. 'speak in French'), \
@@ -1225,5 +1293,91 @@ mod tests {
         let summaries = store.get_all_recent_summaries(3).await.unwrap();
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].0, "Discussed project planning");
+    }
+
+    // --- User profile tests ---
+
+    #[test]
+    fn test_user_profile_filters_system_facts() {
+        let facts = vec![
+            ("welcomed".to_string(), "true".to_string()),
+            ("preferred_language".to_string(), "English".to_string()),
+            ("active_project".to_string(), "omega".to_string()),
+            ("name".to_string(), "Alice".to_string()),
+        ];
+        let profile = format_user_profile(&facts);
+        assert!(profile.contains("name: Alice"));
+        assert!(!profile.contains("welcomed"));
+        assert!(!profile.contains("preferred_language"));
+        assert!(!profile.contains("active_project"));
+    }
+
+    #[test]
+    fn test_user_profile_groups_identity_first() {
+        let facts = vec![
+            ("timezone".to_string(), "EST".to_string()),
+            ("interests".to_string(), "chess".to_string()),
+            ("name".to_string(), "Alice".to_string()),
+            ("pronouns".to_string(), "she/her".to_string()),
+            ("occupation".to_string(), "engineer".to_string()),
+        ];
+        let profile = format_user_profile(&facts);
+        let lines: Vec<&str> = profile.lines().collect();
+        assert_eq!(lines[0], "User profile:");
+        // Identity keys (name, pronouns) should come before context keys (timezone, occupation).
+        let name_pos = lines.iter().position(|l| l.contains("name:")).unwrap();
+        let pronouns_pos = lines.iter().position(|l| l.contains("pronouns:")).unwrap();
+        let timezone_pos = lines.iter().position(|l| l.contains("timezone:")).unwrap();
+        let occupation_pos = lines
+            .iter()
+            .position(|l| l.contains("occupation:"))
+            .unwrap();
+        let interests_pos = lines.iter().position(|l| l.contains("interests:")).unwrap();
+        assert!(name_pos < timezone_pos);
+        assert!(pronouns_pos < timezone_pos);
+        assert!(timezone_pos < interests_pos);
+        assert!(occupation_pos < interests_pos);
+    }
+
+    #[test]
+    fn test_user_profile_empty_for_system_only() {
+        let facts = vec![
+            ("welcomed".to_string(), "true".to_string()),
+            ("preferred_language".to_string(), "English".to_string()),
+        ];
+        let profile = format_user_profile(&facts);
+        assert!(profile.is_empty());
+    }
+
+    // --- Onboarding hint tests ---
+
+    #[test]
+    fn test_onboarding_hint_with_few_facts() {
+        let facts = vec![
+            ("welcomed".to_string(), "true".to_string()),
+            ("preferred_language".to_string(), "English".to_string()),
+            ("name".to_string(), "Alice".to_string()),
+        ];
+        let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], "English");
+        assert!(
+            prompt.contains("still getting to know"),
+            "should include onboarding hint with <3 real facts (only 1 real: name)"
+        );
+    }
+
+    #[test]
+    fn test_onboarding_hint_absent_with_enough_facts() {
+        let facts = vec![
+            ("welcomed".to_string(), "true".to_string()),
+            ("preferred_language".to_string(), "English".to_string()),
+            ("name".to_string(), "Alice".to_string()),
+            ("occupation".to_string(), "engineer".to_string()),
+            ("timezone".to_string(), "EST".to_string()),
+        ];
+        let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], "English");
+        assert!(
+            !prompt.contains("still getting to know"),
+            "should NOT include onboarding hint with 3+ real facts"
+        );
     }
 }

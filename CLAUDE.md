@@ -53,17 +53,23 @@ Cargo workspace with 6 crates:
 
 | Crate | Purpose |
 |-------|---------|
-| `omega-core` | Types, traits, config, error handling, prompt sanitization |
+| `omega-core` | Types, traits, config (Prompts with identity/soul/system split), error handling, prompt sanitization |
 | `omega-providers` | AI backends (Claude Code CLI, Anthropic, OpenAI, Ollama, OpenRouter) |
 | `omega-channels` | Messaging platforms (Telegram, WhatsApp) |
-| `omega-memory` | SQLite storage, conversation history, audit log, scheduled tasks |
+| `omega-memory` | SQLite storage, conversation history, audit log, scheduled tasks, structured user profile formatting |
 | `omega-skills` | Skill loader + project loader — skills from `~/.omega/skills/*/SKILL.md` (TOML or YAML frontmatter), projects from `~/.omega/projects/*/INSTRUCTIONS.md`, trigger-based MCP server activation |
 | `omega-sandbox` | OS-level filesystem enforcement — Seatbelt (macOS), Landlock (Linux) — restricts writes to workspace + /tmp + ~/.claude in sandbox/rx modes |
 
 Gateway event loop (`src/gateway.rs`):
 ```
-Message → Auth → Sanitize → Platform Hint → Group Rules → Heartbeat awareness → Sandbox constraint → Memory (context) → MCP trigger match → Heads-up → Provider (MCP settings write → async CLI + status updates → MCP cleanup) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
+Message → Auth → Sanitize → Welcome (non-blocking) → Platform Hint → Group Rules → Heartbeat awareness → Sandbox constraint → Identity+Soul+System compose → Memory (context) → MCP trigger match → Heads-up → Provider (MCP settings write → async CLI + status updates → MCP cleanup) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
 ```
+
+System prompt composition: The `Prompts` struct splits prompts into three fields — `identity` (who the agent is), `soul` (personality/values), `system` (behavioral rules) — parsed from `## Identity`, `## Soul`, `## System` sections in `SYSTEM_PROMPT.md`. Gateway composes them: `format!("{}\n\n{}\n\n{}", identity, soul, system)`. Backward compatible: missing sections keep compiled defaults.
+
+User profile: `format_user_profile()` in `omega-memory` replaces the flat "Known facts" dump with a structured "User profile:" block that filters system keys (`welcomed`, `preferred_language`, `active_project`) and groups identity keys first, context keys second, rest last.
+
+Conversational onboarding: First-time welcome sends, then the message falls through to normal AI processing (no `return`). When the user has <3 real facts, an onboarding hint is injected into the system prompt encouraging natural discovery.
 
 Background loops (spawned in `gateway::run()`):
 - **Scheduler**: polls `scheduled_tasks` table every 60s, delivers due reminders via channel
@@ -109,8 +115,8 @@ cargo build --release        # Optimized binary
 
 - Config: `config.toml` (gitignored), `config.example.toml` (committed)
 - Database: `~/.omega/memory.db`
-- Prompt templates: `prompts/SYSTEM_PROMPT.md`, `prompts/WELCOME.toml` (bundled into binary via `include_str!`)
-- Prompts: `~/.omega/SYSTEM_PROMPT.md` (auto-deployed on first run, `## Section` headers, read at startup)
+- Prompt templates: `prompts/SYSTEM_PROMPT.md` (3 sections: `## Identity`, `## Soul`, `## System`), `prompts/WELCOME.toml` (bundled into binary via `include_str!`)
+- Prompts: `~/.omega/SYSTEM_PROMPT.md` (auto-deployed on first run, `## Identity` + `## Soul` + `## System` sections, read at startup)
 - Welcome messages: `~/.omega/WELCOME.toml` (auto-deployed on first run, `[messages]` table keyed by language, read at startup)
 - Skills: `~/.omega/skills/*/SKILL.md` (auto-deployed on first run, TOML or YAML frontmatter + instructions, scanned at startup)
 - Projects: `~/.omega/projects/*/INSTRUCTIONS.md` (user-created, directory name = project name, scanned at startup)
@@ -142,4 +148,4 @@ Always consult these before modifying or extending the codebase:
 - **Phase 1** (complete): Workspace, core types, Claude Code provider, CLI (`omega ask`)
 - **Phase 2** (complete): Memory, Telegram channel, gateway, audit log, auth, sanitization, LaunchAgent
 - **Phase 3** (complete): Conversation boundaries, summaries, facts extraction, enriched context, typing indicator, bot commands, system prompt upgrade, self-check, graceful shutdown, exponential backoff, init wizard
-- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, skill-declared MCP servers (trigger-based activation, dynamic `.claude/settings.local.json` + `--allowedTools` injection), 3-level sandbox (sandbox/rx/rwx workspace isolation + OS-level write enforcement via Seatbelt/Landlock), WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, Soul personality in system prompt, guided fact-extraction schema
+- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, skill-declared MCP servers (trigger-based activation, dynamic `.claude/settings.local.json` + `--allowedTools` injection), 3-level sandbox (sandbox/rx/rwx workspace isolation + OS-level write enforcement via Seatbelt/Landlock), WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, identity/soul/system prompt split, structured user profile, conversational onboarding, privacy-focused welcome messages, guided fact-extraction schema

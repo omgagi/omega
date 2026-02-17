@@ -308,6 +308,14 @@ pub struct Gateway {
 - If modified, log warning with sanitization warnings.
 - Clone the incoming message and replace its text with sanitized version.
 
+**Stage 2b: Welcome Check (First-Time Users)**
+- If the sender has no `welcomed` fact (first-time user):
+  - Detect language from the incoming message text.
+  - Send the localized welcome message from `self.prompts.welcome`.
+  - Store `welcomed = "true"` and `preferred_language` facts.
+  - Log the welcome event.
+  - **Does not return** — the first message falls through to normal processing (command dispatch, context building, provider call, etc.).
+
 **Stage 3: Command Dispatch (Lines 307-320)**
 - Call `commands::Command::parse()` to check if input is a bot command.
 - If command detected:
@@ -354,7 +362,8 @@ pub struct Gateway {
 - In `rwx` mode, `sandbox_prompt` is `None` and no constraint is injected.
 
 **Stage 5: Build Context from Memory (Lines 344-356)**
-- Call `self.memory.build_context(&clean_incoming, &self.prompts.system)` to build enriched context (using the potentially project-enriched system prompt).
+- Compose the base system prompt from all three prompt sections: `format!("{}\n\n{}\n\n{}", self.prompts.identity, self.prompts.soul, self.prompts.system)`.
+- Call `self.memory.build_context(&clean_incoming, &composed_prompt)` to build enriched context (using the potentially project-enriched system prompt).
 - This includes recent conversation history, relevant facts, and system prompt.
 - If error, abort typing task, send error message, and return.
 
@@ -895,11 +904,11 @@ Verifies that `status_messages("Spanish")` returns Spanish-language status messa
 
 Verifies that `read_heartbeat_file()` returns `None` when `~/.omega/HEARTBEAT.md` does not exist or is empty, confirming the skip-when-no-checklist behavior.
 
-### `test_bundled_system_prompt_contains_soul`
+### `test_bundled_system_prompt_contains_identity_soul_system`
 
 **Type:** Synchronous unit test (`#[test]`)
 
-Verifies that the bundled `SYSTEM_PROMPT.md` (via `include_str!`) contains the Soul personality section with key phrases like "genuinely helpful" and "earn its place".
+Verifies that the bundled `SYSTEM_PROMPT.md` (via `include_str!`) contains all three sections (`## Identity`, `## Soul`, `## System`) with key phrases from each.
 
 ### `test_bundled_facts_prompt_guided_schema`
 

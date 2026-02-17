@@ -536,7 +536,6 @@ impl Gateway {
                 .store_fact(&incoming.sender_id, "preferred_language", lang)
                 .await;
             info!("welcomed new user {} ({})", incoming.sender_id, lang);
-            return;
         }
 
         // --- 3. COMMAND DISPATCH ---
@@ -589,7 +588,10 @@ impl Gateway {
         // --- 4. BUILD CONTEXT FROM MEMORY ---
         // Inject active project instructions, platform hint, and group chat rules.
         let system_prompt = {
-            let mut prompt = self.prompts.system.clone();
+            let mut prompt = format!(
+                "{}\n\n{}\n\n{}",
+                self.prompts.identity, self.prompts.soul, self.prompts.system
+            );
 
             // Platform formatting hint.
             match incoming.channel.as_str() {
@@ -1377,8 +1379,8 @@ mod tests {
             let msg = prompts.welcome.get(*lang);
             assert!(msg.is_some(), "welcome for {lang} should exist");
             assert!(
-                msg.unwrap().contains("*OMEGA Ω*"),
-                "welcome for {lang} should mention *OMEGA Ω*"
+                msg.unwrap().contains("*OMEGA*"),
+                "welcome for {lang} should mention *OMEGA*"
             );
         }
     }
@@ -1388,8 +1390,8 @@ mod tests {
         let prompts = Prompts::default();
         let default = prompts.welcome.get("English").cloned().unwrap_or_default();
         let msg = prompts.welcome.get("Klingon").unwrap_or(&default);
-        assert!(msg.contains("*OMEGA Ω*"));
-        assert!(msg.contains("Rust"));
+        assert!(msg.contains("*OMEGA*"));
+        assert!(msg.contains("private"));
     }
 
     #[test]
@@ -1449,12 +1451,19 @@ mod tests {
     }
 
     #[test]
-    fn test_bundled_system_prompt_contains_soul() {
-        // Verify the bundled SYSTEM_PROMPT.md (source of truth) includes Soul.
+    fn test_bundled_system_prompt_contains_identity_soul_system() {
         let content = include_str!("../prompts/SYSTEM_PROMPT.md");
         assert!(
-            content.contains("Soul:"),
+            content.contains("## Identity"),
+            "bundled system prompt should contain Identity section"
+        );
+        assert!(
+            content.contains("## Soul"),
             "bundled system prompt should contain Soul section"
+        );
+        assert!(
+            content.contains("## System"),
+            "bundled system prompt should contain System section"
         );
         assert!(
             content.contains("genuinely helpful"),

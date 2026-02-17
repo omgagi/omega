@@ -87,6 +87,21 @@ This is a simple but effective defense. Omega will not process messages from una
 **Security Model:**
 Sanitization is a defense-in-depth measure. Even if an injection pattern gets through, it's neutralized before reaching the AI provider.
 
+### Stage 2b: Welcome Check (First-Time Users)
+
+**What happens:** The gateway detects first-time users, sends them a welcome message, and then continues processing their message normally through the rest of the pipeline.
+
+**Implementation:**
+- Calls `memory.is_new_user()` to check if the sender has interacted before.
+- If the user is new:
+  - Detects the user's language from the message text.
+  - Sends the appropriate welcome message from `WELCOME.toml` (privacy-focused messaging).
+  - Stores a `welcomed` fact and the detected `preferred_language` fact.
+  - Processing **continues** -- the user's first message falls through to the normal AI pipeline (context building, provider call, etc.), so new users get both a welcome greeting and an AI response to their first message.
+
+**Why This Exists:**
+New users should be greeted warmly and informed about the agent's privacy stance, but their first message should not be discarded. Sending the welcome and then processing the message normally ensures the user gets an immediate, useful response alongside the greeting.
+
 ### Stage 3: Command Dispatch
 
 **What happens:** The gateway checks if the input is a bot command rather than a regular message.
@@ -169,7 +184,8 @@ Users expect to see "typing" indicators on messaging platforms. Without them, it
 **What happens:** The gateway builds a rich context for the AI provider, including conversation history and user facts.
 
 **Implementation:**
-- Calls `memory.build_context(&incoming, &self.prompts.system)`.
+- The system prompt is composed from three separate sections: `format!("{}\n\n{}\n\n{}", prompts.identity, prompts.soul, prompts.system)`. Identity defines who the agent is, Soul defines personality and communication style, and System defines operational rules. Platform hints, sandbox rules, group chat rules, and project instructions are appended to this composed prompt.
+- Calls `memory.build_context(&incoming, &system_prompt)`.
 - The context includes:
   - The user's current message.
   - Recent conversation history (previous exchanges in the same thread).
@@ -184,8 +200,8 @@ Raw AI models are stateless. They have no memory of previous conversations. The 
 
 **Example:**
 ```
-# System Prompt
-You are a helpful AI assistant named Omega...
+# Identity + Soul + System (composed)
+You are OMEGA, a personal AI agent running on the owner's infrastructure...
 
 # User Facts
 - Name: Alice
@@ -404,6 +420,11 @@ User sends message on Telegram
 │ Stage 2: sanitize()                     │
 │  • Clean input                          │
 │  • Replace text with sanitized version  │
+│                                          │
+│ Stage 2b: welcome check (new users)     │
+│  • Send welcome message                │
+│  • Store language preference            │
+│  • Continue processing (no return)      │
 │                                          │
 │ Stage 3: commands::parse()              │
 │  ✓ Is command? → Handle locally, return │
