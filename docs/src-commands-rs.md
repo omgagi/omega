@@ -1,4 +1,4 @@
-# User Documentation: Ω OMEGA Commands
+# User Documentation: OMEGA Ω Commands
 
 ## What Are Commands?
 
@@ -6,7 +6,7 @@ Commands are special messages that start with a forward slash (`/`) and provide 
 
 **Key Difference:**
 - **Regular Message:** "What's the capital of France?" → Sent to Claude → Response: "The capital of France is Paris."
-- **Command:** `/status` → Handled locally → Response: "Ω OMEGA Status, Uptime: 2h 15m 30s, ..."
+- **Command:** `/status` → Handled locally → Response: "OMEGA Ω Status, Uptime: 2h 15m 30s, ..."
 
 ---
 
@@ -18,7 +18,7 @@ Commands are special messages that start with a forward slash (`/`) and provide 
 
 **Response Example:**
 ```
-*Ω OMEGA* Status
+*OMEGA Ω* Status
 Uptime: 2h 15m 30s
 Provider: Claude Code CLI
 Sandbox: sandbox
@@ -302,7 +302,7 @@ Project deactivated. Conversation cleared.
 
 **Response Example:**
 ```
-*Ω OMEGA* Commands
+*OMEGA Ω* Commands
 
 /status   — Uptime, provider, database info
 /memory   — Your conversation and facts stats

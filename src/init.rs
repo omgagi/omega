@@ -146,13 +146,13 @@ pub async fn run() -> anyhow::Result<()> {
         steps.push_str("\n★ Google Workspace is connected!");
     }
     if service_installed {
-        steps.push_str("\n★ System service installed — Ω OMEGA starts on login!");
+        steps.push_str("\n★ System service installed — OMEGA Ω starts on login!");
     } else if !install_service {
         steps.push_str("\nTip: Run `omega service install` to auto-start on login");
     }
     cliclack::note("Next steps", &steps)?;
 
-    cliclack::outro("Setup complete — enjoy Ω OMEGA!")?;
+    cliclack::outro("Setup complete — enjoy OMEGA Ω!")?;
     Ok(())
 }
 
@@ -177,7 +177,7 @@ pub fn generate_config(
 
     let mut config = format!(
         r#"[omega]
-name = "Ω OMEGA"
+name = "OMEGA Ω"
 data_dir = "~/.omega"
 log_level = "info"
 

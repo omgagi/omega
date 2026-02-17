@@ -142,7 +142,7 @@ fn default_system_prompt() -> String
 
 **Returns:**
 ```
-"You are Ω OMEGA, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented."
+"You are OMEGA Ω, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented."
 ```
 
 **Note:** This default prompt is only used for one-shot contexts created with `Context::new()`. The gateway pipeline uses `memory.build_context()`, which constructs an enriched system prompt containing user facts and conversation summaries via the `build_system_prompt()` function in `omega-memory`.

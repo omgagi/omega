@@ -149,7 +149,7 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String
 
 **Response Format:**
 ```
-*Ω OMEGA* Status
+*OMEGA Ω* Status
 Uptime: 1h 23m 45s
 Provider: Claude Code CLI
 Sandbox: sandbox
@@ -425,7 +425,7 @@ Project 'xyz' not found. Use /projects to see available projects.
 
 **Response Format:**
 ```
-*Ω OMEGA* Commands
+*OMEGA Ω* Commands
 
 /status   — Uptime, provider, database info
 /memory   — Your conversation and facts stats

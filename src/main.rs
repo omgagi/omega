@@ -22,7 +22,7 @@ use std::sync::Arc;
 #[command(
     name = "omega",
     version,
-    about = "Ω OMEGA — Personal AI Agent Infrastructure"
+    about = "OMEGA Ω — Personal AI Agent Infrastructure"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -35,7 +35,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the Ω OMEGA agent.
+    /// Start the OMEGA Ω agent.
     Start,
     /// Check system health and provider availability.
     Status,
@@ -175,7 +175,7 @@ async fn main() -> anyhow::Result<()> {
             let sandbox_prompt = sandbox_mode.prompt_constraint(&workspace_path.to_string_lossy());
 
             // Build and run gateway.
-            println!("Ω OMEGA — Starting agent...");
+            println!("OMEGA Ω — Starting agent...");
             let mut gw = gateway::Gateway::new(
                 provider,
                 channels,

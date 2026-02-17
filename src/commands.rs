@@ -105,7 +105,7 @@ async fn handle_status(
         .unwrap_or_else(|_| "unknown".to_string());
 
     format!(
-        "*Ω OMEGA* Status\n\
+        "*OMEGA Ω* Status\n\
          Uptime: {hours}h {minutes}m {secs}s\n\
          Provider: {provider_name}\n\
          Sandbox: {sandbox_mode}\n\
@@ -325,7 +325,7 @@ fn handle_whatsapp() -> String {
 
 fn handle_help() -> String {
     "\
-*Ω OMEGA* Commands\n\n\
+*OMEGA Ω* Commands\n\n\
 /status   — Uptime, provider, database info\n\
 /memory   — Your conversation and facts stats\n\
 /history  — Last 5 conversation summaries\n\

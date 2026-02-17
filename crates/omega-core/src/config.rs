@@ -301,7 +301,7 @@ impl Default for SchedulerConfig {
 // --- Default value functions ---
 
 fn default_name() -> String {
-    "Ω OMEGA".to_string()
+    "OMEGA Ω".to_string()
 }
 fn default_data_dir() -> String {
     "~/.omega".to_string()
@@ -390,17 +390,17 @@ pub struct Prompts {
 impl Default for Prompts {
     fn default() -> Self {
         let mut welcome = HashMap::new();
-        welcome.insert("English".into(), "I'm *Ω OMEGA*, your personal artificial intelligence agent. I run on your own infrastructure, built in Rust \u{01f4aa}, connected to Telegram, WhatsApp and with Claude as my \u{01f9e0}.\n\nIt's an honor to be at your service. What do you need from me?".into());
-        welcome.insert("Spanish".into(), "Soy *Ω OMEGA*, tu agente personal de inteligencia artificial. Corro sobre tu propia infraestructura, construido en Rust \u{01f4aa}, conectado a Telegram, WhatsApp y con Claude como \u{01f9e0}.\n\nEs un honor estar a tu servicio. \u{00bf}Qu\u{00e9} necesitas de m\u{00ed}?".into());
-        welcome.insert("Portuguese".into(), "Sou o *Ω OMEGA*, seu agente pessoal de intelig\u{00ea}ncia artificial. Rodo na sua pr\u{00f3}pria infraestrutura, constru\u{00ed}do em Rust \u{01f4aa}, conectado ao Telegram, WhatsApp e com Claude como \u{01f9e0}.\n\n\u{00c9} uma honra estar ao seu servi\u{00e7}o. Do que voc\u{00ea} precisa?".into());
-        welcome.insert("French".into(), "Je suis *Ω OMEGA*, votre agent personnel d'intelligence artificielle. Je tourne sur votre propre infrastructure, construit en Rust \u{01f4aa}, connect\u{00e9} \u{00e0} Telegram, WhatsApp et avec Claude comme \u{01f9e0}.\n\nC'est un honneur d'\u{00ea}tre \u{00e0} votre service. De quoi avez-vous besoin\u{00a0}?".into());
-        welcome.insert("German".into(), "Ich bin *Ω OMEGA*, dein pers\u{00f6}nlicher KI-Agent. Ich laufe auf deiner eigenen Infrastruktur, gebaut in Rust \u{01f4aa}, verbunden mit Telegram, WhatsApp und mit Claude als \u{01f9e0}.\n\nEs ist mir eine Ehre, dir zu dienen. Was brauchst du von mir?".into());
-        welcome.insert("Italian".into(), "Sono *Ω OMEGA*, il tuo agente personale di intelligenza artificiale. Giro sulla tua infrastruttura, costruito in Rust \u{01f4aa}, connesso a Telegram, WhatsApp e con Claude come \u{01f9e0}.\n\n\u{00c8} un onore essere al tuo servizio. Di cosa hai bisogno?".into());
-        welcome.insert("Dutch".into(), "Ik ben *Ω OMEGA*, je persoonlijke AI-agent. Ik draai op je eigen infrastructuur, gebouwd in Rust \u{01f4aa}, verbonden met Telegram, WhatsApp en met Claude als \u{01f9e0}.\n\nHet is een eer om je van dienst te zijn. Wat heb je nodig?".into());
-        welcome.insert("Russian".into(), "\u{042f} *Ω OMEGA*, \u{0432}\u{0430}\u{0448} \u{043f}\u{0435}\u{0440}\u{0441}\u{043e}\u{043d}\u{0430}\u{043b}\u{044c}\u{043d}\u{044b}\u{0439} \u{0430}\u{0433}\u{0435}\u{043d}\u{0442} \u{0438}\u{0441}\u{043a}\u{0443}\u{0441}\u{0441}\u{0442}\u{0432}\u{0435}\u{043d}\u{043d}\u{043e}\u{0433}\u{043e} \u{0438}\u{043d}\u{0442}\u{0435}\u{043b}\u{043b}\u{0435}\u{043a}\u{0442}\u{0430}. \u{042f} \u{0440}\u{0430}\u{0431}\u{043e}\u{0442}\u{0430}\u{044e} \u{043d}\u{0430} \u{0432}\u{0430}\u{0448}\u{0435}\u{0439} \u{0441}\u{043e}\u{0431}\u{0441}\u{0442}\u{0432}\u{0435}\u{043d}\u{043d}\u{043e}\u{0439} \u{0438}\u{043d}\u{0444}\u{0440}\u{0430}\u{0441}\u{0442}\u{0440}\u{0443}\u{043a}\u{0442}\u{0443}\u{0440}\u{0435}, \u{043d}\u{0430}\u{043f}\u{0438}\u{0441}\u{0430}\u{043d} \u{043d}\u{0430} Rust \u{01f4aa}, \u{043f}\u{043e}\u{0434}\u{043a}\u{043b}\u{044e}\u{0447}\u{0451}\u{043d} \u{043a} Telegram, WhatsApp \u{0438} \u{0438}\u{0441}\u{043f}\u{043e}\u{043b}\u{044c}\u{0437}\u{0443}\u{044e} Claude \u{043a}\u{0430}\u{043a} \u{01f9e0}.\n\n\u{0414}\u{043b}\u{044f} \u{043c}\u{0435}\u{043d}\u{044f} \u{0447}\u{0435}\u{0441}\u{0442}\u{044c} \u{0441}\u{043b}\u{0443}\u{0436}\u{0438}\u{0442}\u{044c} \u{0432}\u{0430}\u{043c}. \u{0427}\u{0442}\u{043e} \u{0432}\u{0430}\u{043c} \u{043d}\u{0443}\u{0436}\u{043d}\u{043e}?".into());
+        welcome.insert("English".into(), "I'm *OMEGA Ω*, your personal artificial intelligence agent. I run on your own infrastructure, built in Rust \u{01f4aa}, connected to Telegram, WhatsApp and with Claude as my \u{01f9e0}.\n\nIt's an honor to be at your service. What do you need from me?".into());
+        welcome.insert("Spanish".into(), "Soy *OMEGA Ω*, tu agente personal de inteligencia artificial. Corro sobre tu propia infraestructura, construido en Rust \u{01f4aa}, conectado a Telegram, WhatsApp y con Claude como \u{01f9e0}.\n\nEs un honor estar a tu servicio. \u{00bf}Qu\u{00e9} necesitas de m\u{00ed}?".into());
+        welcome.insert("Portuguese".into(), "Sou o *OMEGA Ω*, seu agente pessoal de intelig\u{00ea}ncia artificial. Rodo na sua pr\u{00f3}pria infraestrutura, constru\u{00ed}do em Rust \u{01f4aa}, conectado ao Telegram, WhatsApp e com Claude como \u{01f9e0}.\n\n\u{00c9} uma honra estar ao seu servi\u{00e7}o. Do que voc\u{00ea} precisa?".into());
+        welcome.insert("French".into(), "Je suis *OMEGA Ω*, votre agent personnel d'intelligence artificielle. Je tourne sur votre propre infrastructure, construit en Rust \u{01f4aa}, connect\u{00e9} \u{00e0} Telegram, WhatsApp et avec Claude comme \u{01f9e0}.\n\nC'est un honneur d'\u{00ea}tre \u{00e0} votre service. De quoi avez-vous besoin\u{00a0}?".into());
+        welcome.insert("German".into(), "Ich bin *OMEGA Ω*, dein pers\u{00f6}nlicher KI-Agent. Ich laufe auf deiner eigenen Infrastruktur, gebaut in Rust \u{01f4aa}, verbunden mit Telegram, WhatsApp und mit Claude als \u{01f9e0}.\n\nEs ist mir eine Ehre, dir zu dienen. Was brauchst du von mir?".into());
+        welcome.insert("Italian".into(), "Sono *OMEGA Ω*, il tuo agente personale di intelligenza artificiale. Giro sulla tua infrastruttura, costruito in Rust \u{01f4aa}, connesso a Telegram, WhatsApp e con Claude come \u{01f9e0}.\n\n\u{00c8} un onore essere al tuo servizio. Di cosa hai bisogno?".into());
+        welcome.insert("Dutch".into(), "Ik ben *OMEGA Ω*, je persoonlijke AI-agent. Ik draai op je eigen infrastructuur, gebouwd in Rust \u{01f4aa}, verbonden met Telegram, WhatsApp en met Claude als \u{01f9e0}.\n\nHet is een eer om je van dienst te zijn. Wat heb je nodig?".into());
+        welcome.insert("Russian".into(), "\u{042f} *OMEGA Ω*, \u{0432}\u{0430}\u{0448} \u{043f}\u{0435}\u{0440}\u{0441}\u{043e}\u{043d}\u{0430}\u{043b}\u{044c}\u{043d}\u{044b}\u{0439} \u{0430}\u{0433}\u{0435}\u{043d}\u{0442} \u{0438}\u{0441}\u{043a}\u{0443}\u{0441}\u{0441}\u{0442}\u{0432}\u{0435}\u{043d}\u{043d}\u{043e}\u{0433}\u{043e} \u{0438}\u{043d}\u{0442}\u{0435}\u{043b}\u{043b}\u{0435}\u{043a}\u{0442}\u{0430}. \u{042f} \u{0440}\u{0430}\u{0431}\u{043e}\u{0442}\u{0430}\u{044e} \u{043d}\u{0430} \u{0432}\u{0430}\u{0448}\u{0435}\u{0439} \u{0441}\u{043e}\u{0431}\u{0441}\u{0442}\u{0432}\u{0435}\u{043d}\u{043d}\u{043e}\u{0439} \u{0438}\u{043d}\u{0444}\u{0440}\u{0430}\u{0441}\u{0442}\u{0440}\u{0443}\u{043a}\u{0442}\u{0443}\u{0440}\u{0435}, \u{043d}\u{0430}\u{043f}\u{0438}\u{0441}\u{0430}\u{043d} \u{043d}\u{0430} Rust \u{01f4aa}, \u{043f}\u{043e}\u{0434}\u{043a}\u{043b}\u{044e}\u{0447}\u{0451}\u{043d} \u{043a} Telegram, WhatsApp \u{0438} \u{0438}\u{0441}\u{043f}\u{043e}\u{043b}\u{044c}\u{0437}\u{0443}\u{044e} Claude \u{043a}\u{0430}\u{043a} \u{01f9e0}.\n\n\u{0414}\u{043b}\u{044f} \u{043c}\u{0435}\u{043d}\u{044f} \u{0447}\u{0435}\u{0441}\u{0442}\u{044c} \u{0441}\u{043b}\u{0443}\u{0436}\u{0438}\u{0442}\u{044c} \u{0432}\u{0430}\u{043c}. \u{0427}\u{0442}\u{043e} \u{0432}\u{0430}\u{043c} \u{043d}\u{0443}\u{0436}\u{043d}\u{043e}?".into());
 
         Self {
-            system: "You are Ω OMEGA, a personal AI agent running on the owner's infrastructure.\n\
+            system: "You are OMEGA Ω, a personal AI agent running on the owner's infrastructure.\n\
                      You are NOT a chatbot. You are an agent that DOES things.\n\n\
                      Rules:\n\
                      - When asked to DO something, DO IT. Don't explain how.\n\
@@ -416,10 +416,10 @@ impl Default for Prompts {
                     Return each fact as 'key: value' on its own line. \
                     Only include concrete, personal facts (name, preferences, location, etc.). \
                     If no facts are apparent, respond with 'none'.".into(),
-            heartbeat: "You are Ω OMEGA performing a periodic heartbeat check. \
+            heartbeat: "You are OMEGA Ω performing a periodic heartbeat check. \
                         If everything is fine, respond with exactly HEARTBEAT_OK. \
                         Otherwise, respond with a brief alert.".into(),
-            heartbeat_checklist: "You are Ω OMEGA performing a periodic heartbeat check.\n\
+            heartbeat_checklist: "You are OMEGA Ω performing a periodic heartbeat check.\n\
                                   Review this checklist and report anything that needs attention.\n\
                                   If everything is fine, respond with exactly HEARTBEAT_OK.\n\n\
                                   {checklist}".into(),

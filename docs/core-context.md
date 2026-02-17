@@ -55,7 +55,7 @@ let context = Context::new("What time is it?");
 ```
 
 This produces a context with:
-- The default system prompt: *"You are Ω OMEGA, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented."*
+- The default system prompt: *"You are OMEGA Ω, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented."*
 - Empty history (no previous messages).
 - Your message as the current message.
 
@@ -102,7 +102,7 @@ The flattened output looks like this:
 
 ```
 [System]
-You are Ω OMEGA, a personal AI assistant...
+You are OMEGA Ω, a personal AI assistant...
 
 [User]
 What's the weather like?
@@ -157,7 +157,7 @@ The context is the bridge between memory and reasoning. Without it, the AI would
 
 When `Context::new()` is called, it uses a built-in default prompt:
 
-> You are Ω OMEGA, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented.
+> You are OMEGA Ω, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented.
 
 This prompt is intentionally short. It is only used for quick, one-shot calls (CLI usage, internal summarization tasks). The enriched context built by the memory store replaces this with a longer, personalized prompt that includes user facts and conversation summaries.
 
@@ -169,7 +169,7 @@ This prompt is intentionally short. It is only used for quick, one-shot calls (C
 omega ask "Explain Rust ownership"
 
 Context {
-    system_prompt: "You are Ω OMEGA, a personal AI assistant...",
+    system_prompt: "You are OMEGA Ω, a personal AI assistant...",
     history: [],
     current_message: "Explain Rust ownership",
 }
@@ -179,7 +179,7 @@ Context {
 
 ```
 Context {
-    system_prompt: "You are Ω OMEGA, a personal AI assistant running on
+    system_prompt: "You are OMEGA Ω, a personal AI assistant running on
         the user's own server. You are helpful, concise, and
         action-oriented.
 
@@ -203,7 +203,7 @@ Context {
 
 ```
 Context {
-    system_prompt: "You are Ω OMEGA, a personal AI assistant...",
+    system_prompt: "You are OMEGA Ω, a personal AI assistant...",
     history: [],
     current_message: "Summarize this conversation in 1-2 sentences.
         Be factual and concise. Do not add commentary.

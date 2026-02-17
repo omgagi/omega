@@ -116,7 +116,7 @@ For simple use (no history):
 use omega_core::context::Context;
 
 let ctx = Context::new("What is the capital of France?");
-// ctx.system_prompt = "You are Ω OMEGA, a personal AI assistant..."
+// ctx.system_prompt = "You are OMEGA Ω, a personal AI assistant..."
 // ctx.history = [] (empty)
 // ctx.current_message = "What is the capital of France?"
 ```
@@ -147,7 +147,7 @@ Some providers (like Claude Code CLI) accept a single text input rather than str
 let prompt = ctx.to_prompt_string();
 // Output:
 // [System]
-// You are Ω OMEGA, a personal AI assistant...
+// You are OMEGA Ω, a personal AI assistant...
 //
 // [User]
 // Previous question

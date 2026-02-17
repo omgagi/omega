@@ -33,7 +33,7 @@ Core bot configuration and global settings.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `name` | String | `"Ω OMEGA"` | Display name for the bot. Used in logs, responses, and service identification. |
+| `name` | String | `"OMEGA Ω"` | Display name for the bot. Used in logs, responses, and service identification. |
 | `data_dir` | Path | `"~/.omega"` | Directory for persistent data (database, logs, cache). Supports `~` expansion for home directory. Must be writable by the process owner. |
 | `log_level` | String | `"info"` | Logging verbosity. Valid values: `"trace"`, `"debug"`, `"info"`, `"warn"`, `"error"`. Controls `tracing` output detail. |
 
@@ -41,7 +41,7 @@ Core bot configuration and global settings.
 
 ```toml
 [omega]
-name = "Ω OMEGA"
+name = "OMEGA Ω"
 data_dir = "~/.omega"
 log_level = "info"
 ```

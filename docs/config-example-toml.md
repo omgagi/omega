@@ -29,7 +29,7 @@ Open `config.toml` and look at the `[omega]` section:
 
 ```toml
 [omega]
-name = "Ω OMEGA"
+name = "OMEGA Ω"
 data_dir = "~/.omega"
 log_level = "info"
 ```

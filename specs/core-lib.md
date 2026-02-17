@@ -185,7 +185,7 @@ Sections are joined by double newlines. The system prompt section is omitted if 
 
 | Function | Returns | Value |
 |----------|---------|-------|
-| `default_system_prompt()` | `String` | `"You are Ω OMEGA, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented."` |
+| `default_system_prompt()` | `String` | `"You are OMEGA Ω, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented."` |
 
 ---
 

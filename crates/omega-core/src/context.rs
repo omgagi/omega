@@ -56,7 +56,7 @@ impl Context {
 
 /// Default system prompt for the Omega agent.
 fn default_system_prompt() -> String {
-    "You are Ω OMEGA, a personal AI assistant running on the user's own server. \
+    "You are OMEGA Ω, a personal AI assistant running on the user's own server. \
      You are helpful, concise, and action-oriented."
         .to_string()
 }
