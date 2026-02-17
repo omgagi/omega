@@ -9,7 +9,7 @@ Interactive setup wizard for new Omega users. Provides a guided onboarding exper
 ## Module Overview
 The `init.rs` module contains:
 - `run()` — Main wizard orchestration function
-- `generate_config(bot_token, user_id, whatsapp_enabled, google_email) -> String` — Public pure function that builds `config.toml` content (extracted for testability)
+- `generate_config(bot_token, user_id, whatsapp_enabled, google_email, sandbox_mode) -> String` — Public pure function that builds `config.toml` content (extracted for testability)
 - `run_anthropic_auth()` — Private function that handles Anthropic authentication (setup-token flow)
 - `run_whatsapp_setup()` — Private function that handles WhatsApp QR-code pairing
 - `run_google_setup()` — Private function that handles Google Workspace OAuth setup via `gog` CLI
@@ -212,7 +212,21 @@ See [Google Workspace Setup Flow](#google-workspace-setup-flow-run_google_setup)
 
 ---
 
-### Phase 8: Config File Generation
+### Phase 8: Sandbox Mode Selection
+**Action:** Prompt user to choose sandbox mode via `cliclack::select`
+
+**Logic Flow:**
+1. Display `cliclack::select("Sandbox mode")` with three options:
+   - `"Sandbox (Recommended)"` — Workspace only, no host filesystem access (default, safest)
+   - `"Read-only"` — Read & execute on host, writes only in workspace
+   - `"Full access"` — Unrestricted host access (power users)
+2. Store selected mode string (`"sandbox"`, `"rx"`, or `"rwx"`)
+
+**Purpose:** Lets users choose the security boundary for Claude Code CLI execution. The workspace directory (`~/.omega/workspace/`) is created on startup. Default is `sandbox` for maximum safety.
+
+---
+
+### Phase 9: Config File Generation
 **Action:** Create or skip `config.toml` based on existing file
 
 **Location:** Current working directory, file named `config.toml`
@@ -220,7 +234,7 @@ See [Google Workspace Setup Flow](#google-workspace-setup-flow-run_google_setup)
 **Logic Flow:**
 1. Check if `config.toml` already exists
 2. If exists: Warn via `cliclack::log::warning(...)` and skip generation
-3. If missing: Call `generate_config(bot_token, user_id, whatsapp_enabled, google_email)` and write to file
+3. If missing: Call `generate_config(bot_token, user_id, whatsapp_enabled, google_email, sandbox_mode)` and write to file
 
 **Skip Output (if exists):**
 ```
@@ -239,7 +253,7 @@ See [Google Workspace Setup Flow](#google-workspace-setup-flow-run_google_setup)
 
 ---
 
-### Phase 9: Service Installation Offer
+### Phase 10: Service Installation Offer
 **Action:** Prompt user to install Omega as a system service
 
 **Logic Flow:**
@@ -255,7 +269,7 @@ See [Google Workspace Setup Flow](#google-workspace-setup-flow-run_google_setup)
 
 ---
 
-### Phase 10: Summary and Next Steps
+### Phase 11: Summary and Next Steps
 **Action:** Display next steps via `cliclack::note` and close session with `cliclack::outro`
 
 **Logic Flow:**
@@ -396,6 +410,7 @@ pub fn generate_config(
     user_id: Option<i64>,
     whatsapp_enabled: bool,
     google_email: Option<&str>,
+    sandbox_mode: &str,
 ) -> String
 ```
 
@@ -414,6 +429,7 @@ Public pure function that builds the `config.toml` content string. Extracted fro
 | `whatsapp_enabled = false` | `[channel.whatsapp] enabled = false` |
 | `google_email = Some(email)` | Appends `[google] account = "<email>"` section |
 | `google_email = None` | No `[google]` section in output |
+| `sandbox_mode` | `[sandbox] mode = "<value>"` (`"sandbox"`, `"rx"`, or `"rwx"`) |
 
 ### Configuration Template Structure
 
@@ -448,6 +464,9 @@ backend = "sqlite"
 db_path = "~/.omega/memory.db"
 max_context_messages = 50
 
+[sandbox]
+mode = "{sandbox_mode}"
+
 # Appended only when google_email is Some:
 [google]
 account = "{email}"
@@ -461,23 +480,25 @@ account = "{email}"
 - Memory backend: `sqlite`
 - Max context messages: `50`
 - Auth: Enabled
+- Sandbox mode: `sandbox` (recommended default, workspace-only isolation)
 - WhatsApp allowed_users: always `[]` (configured separately)
 
 ---
 
 ## Unit Tests
 
-### Test Suite: `tests` (5 tests)
+### Test Suite: `tests` (6 tests)
 
 All tests exercise the `generate_config()` pure function. No I/O mocking required.
 
 | Test | Parameters | Assertions |
 |------|-----------|------------|
-| `test_generate_config_full` | `("123:ABC", Some(42), true, Some("me@gmail.com"))` | Token present, user ID in array, telegram enabled, whatsapp enabled, google section present with email |
-| `test_generate_config_minimal` | `("", None, false, None)` | Empty token, empty allowed_users, telegram disabled, whatsapp disabled, no google section |
-| `test_generate_config_telegram_only` | `("tok:EN", Some(999), false, None)` | Token present, user ID in array, telegram enabled, whatsapp disabled, no google section |
-| `test_generate_config_google_only` | `("", None, false, Some("test@example.com"))` | Telegram disabled, google section present with email |
-| `test_generate_config_whatsapp_only` | `("", None, true, None)` | Whatsapp enabled, telegram disabled, no google section |
+| `test_generate_config_full` | `("123:ABC", Some(42), true, Some("me@gmail.com"), "sandbox")` | Token present, user ID in array, telegram enabled, whatsapp enabled, google section present with email, sandbox mode present |
+| `test_generate_config_minimal` | `("", None, false, None, "sandbox")` | Empty token, empty allowed_users, telegram disabled, whatsapp disabled, no google section, sandbox mode present |
+| `test_generate_config_telegram_only` | `("tok:EN", Some(999), false, None, "sandbox")` | Token present, user ID in array, telegram enabled, whatsapp disabled, no google section |
+| `test_generate_config_google_only` | `("", None, false, Some("test@example.com"), "sandbox")` | Telegram disabled, google section present with email |
+| `test_generate_config_whatsapp_only` | `("", None, true, None, "sandbox")` | Whatsapp enabled, telegram disabled, no google section |
+| `test_generate_config_sandbox_modes` | rx and rwx modes | Verifies `mode = "rx"` and `mode = "rwx"` appear correctly |
 
 ---
 

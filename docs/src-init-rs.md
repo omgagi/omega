@@ -457,7 +457,37 @@ Even if verification is ambiguous, the wizard still records the email in the con
 
 ---
 
-### Step 8: Generate Configuration File (< 1 second)
+### Step 8: Sandbox Mode Selection (< 10 seconds)
+
+**What the User Sees:**
+```
+◆  Sandbox mode
+│  ● Sandbox (Recommended) — Workspace only — no host filesystem access
+│  ○ Read-only — Read & execute on host, writes only in workspace
+│  ○ Full access — Unrestricted host access (power users)
+```
+
+**What's Happening:**
+The wizard uses `cliclack::select()` to let the user choose the security boundary for Claude Code CLI execution. The selected mode controls how far the AI can reach beyond its workspace directory (`~/.omega/workspace/`).
+
+**Three Modes:**
+
+| Mode | Config Value | Behavior |
+|------|-------------|----------|
+| **Sandbox** | `sandbox` | AI can only read/write inside `~/.omega/workspace/`. Default, safest. |
+| **Read-only** | `rx` | AI can read/execute anywhere on host, but only write inside workspace. |
+| **Full access** | `rwx` | AI has unrestricted filesystem access. For power users only. |
+
+**Why This Matters:**
+The sandbox mode is a key security decision. Most users should keep the default `sandbox` mode. The `rx` mode is useful when you want the AI to inspect your system but not modify files outside its workspace. The `rwx` mode removes all restrictions — only for users who understand the implications.
+
+**User Action:** Select one of the three options using arrow keys and Enter.
+
+**Time:** < 10 seconds
+
+---
+
+### Step 9: Generate Configuration File (< 1 second)
 
 > **Note:** Step numbering continues from Step 7 (Google Workspace). Steps 8-10 are the final wizard phases.
 
@@ -507,6 +537,9 @@ backend = "sqlite"
 db_path = "~/.omega/memory.db"
 max_context_messages = 50
 
+[sandbox]
+mode = "sandbox"
+
 [google]
 account = "you@gmail.com"
 ```
@@ -522,6 +555,7 @@ account = "you@gmail.com"
 | `[channel.telegram]` | Telegram integration (token, allowed users) |
 | `[channel.whatsapp]` | WhatsApp integration (enabled/disabled, allowed users) |
 | `[memory]` | Conversation storage (SQLite database settings) |
+| `[sandbox]` | Workspace isolation mode (sandbox/rx/rwx) |
 | `[google]` | Google Workspace account (only present if configured) |
 
 **Config Generation Logic:**
@@ -546,7 +580,7 @@ Current working directory (typically the project root). The user should run `ome
 
 ---
 
-### Step 9: System Service Installation (Optional, < 10 seconds)
+### Step 10: System Service Installation (Optional, < 10 seconds)
 
 **What the User Sees:**
 ```
@@ -574,7 +608,7 @@ For full service management details, see the [service documentation](src-service
 
 ---
 
-### Step 10: Success Message and Next Steps (Instant)
+### Step 11: Success Message and Next Steps (Instant)
 
 **What the User Sees:**
 ```
@@ -708,6 +742,9 @@ Here is a complete example of what a full wizard session looks like with all int
 ◇  OAuth approved
 ◇  Google Workspace connected!
 │
+◆  Sandbox mode
+│  Sandbox (Recommended)
+│
 ◇  Generated config.toml
 │
 ◆  Install Omega as a system service?
@@ -754,9 +791,10 @@ User runs: omega init
 6. User ID collected (if token provided)
 7. WhatsApp pairing via Yes/No toggle (or skipped)
 8. Google Workspace setup (if gog installed, or skipped)
-9. config.toml generated
-10. System service install offer (or skipped)
-11. Next steps + success outro
+9. Sandbox mode selection (sandbox/rx/rwx)
+10. config.toml generated
+11. System service install offer (or skipped)
+12. Next steps + success outro
        |
 [WIZARD ENDS]
        |

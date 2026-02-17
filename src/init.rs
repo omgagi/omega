@@ -81,7 +81,26 @@ pub async fn run() -> anyhow::Result<()> {
     // 7. Google Workspace setup.
     let google_email = run_google_setup()?;
 
-    // 8. Generate config.toml.
+    // 8. Sandbox mode.
+    let sandbox_mode: &str = cliclack::select("Sandbox mode")
+        .item(
+            "sandbox",
+            "Sandbox (Recommended)",
+            "Workspace only — no host filesystem access",
+        )
+        .item(
+            "rx",
+            "Read-only",
+            "Read & execute on host, writes only in workspace",
+        )
+        .item(
+            "rwx",
+            "Full access",
+            "Unrestricted host access (power users)",
+        )
+        .interact()?;
+
+    // 9. Generate config.toml.
     let config_path = "config.toml";
     if Path::new(config_path).exists() {
         cliclack::log::warning(
@@ -93,12 +112,13 @@ pub async fn run() -> anyhow::Result<()> {
             user_id,
             whatsapp_enabled,
             google_email.as_deref(),
+            sandbox_mode,
         );
         std::fs::write(config_path, config)?;
         cliclack::log::success("Generated config.toml")?;
     }
 
-    // 9. Offer service installation.
+    // 10. Offer service installation.
     let install_service: bool = cliclack::confirm("Install Omega as a system service?")
         .initial_value(true)
         .interact()?;
@@ -116,7 +136,7 @@ pub async fn run() -> anyhow::Result<()> {
         false
     };
 
-    // 10. Next steps.
+    // 11. Next steps.
     let mut steps =
         String::from("1. Review config.toml\n2. Run: omega start\n3. Send a message to your bot");
     if whatsapp_enabled {
@@ -142,6 +162,7 @@ pub fn generate_config(
     user_id: Option<i64>,
     whatsapp_enabled: bool,
     google_email: Option<&str>,
+    sandbox_mode: &str,
 ) -> String {
     let allowed_users = match user_id {
         Some(id) => format!("[{id}]"),
@@ -184,6 +205,9 @@ allowed_users = []
 backend = "sqlite"
 db_path = "~/.omega/memory.db"
 max_context_messages = 50
+
+[sandbox]
+mode = "{sandbox_mode}"
 "#
     );
 
@@ -488,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_generate_config_full() {
-        let config = generate_config("123:ABC", Some(42), true, Some("me@gmail.com"));
+        let config = generate_config("123:ABC", Some(42), true, Some("me@gmail.com"), "sandbox");
         assert!(config.contains("bot_token = \"123:ABC\""));
         assert!(config.contains("allowed_users = [42]"));
         assert!(
@@ -497,21 +521,23 @@ mod tests {
         );
         assert!(config.contains("[channel.whatsapp]\nenabled = true"));
         assert!(config.contains("[google]\naccount = \"me@gmail.com\""));
+        assert!(config.contains("[sandbox]\nmode = \"sandbox\""));
     }
 
     #[test]
     fn test_generate_config_minimal() {
-        let config = generate_config("", None, false, None);
+        let config = generate_config("", None, false, None, "sandbox");
         assert!(config.contains("bot_token = \"\""));
         assert!(config.contains("allowed_users = []"));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
         assert!(config.contains("[channel.whatsapp]\nenabled = false"));
         assert!(!config.contains("[google]"));
+        assert!(config.contains("mode = \"sandbox\""));
     }
 
     #[test]
     fn test_generate_config_telegram_only() {
-        let config = generate_config("tok:EN", Some(999), false, None);
+        let config = generate_config("tok:EN", Some(999), false, None, "sandbox");
         assert!(config.contains("bot_token = \"tok:EN\""));
         assert!(config.contains("allowed_users = [999]"));
         assert!(config.contains("[channel.telegram]\nenabled = true"));
@@ -521,16 +547,25 @@ mod tests {
 
     #[test]
     fn test_generate_config_google_only() {
-        let config = generate_config("", None, false, Some("test@example.com"));
+        let config = generate_config("", None, false, Some("test@example.com"), "sandbox");
         assert!(config.contains("[google]\naccount = \"test@example.com\""));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
     }
 
     #[test]
     fn test_generate_config_whatsapp_only() {
-        let config = generate_config("", None, true, None);
+        let config = generate_config("", None, true, None, "sandbox");
         assert!(config.contains("[channel.whatsapp]\nenabled = true"));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
         assert!(!config.contains("[google]"));
+    }
+
+    #[test]
+    fn test_generate_config_sandbox_modes() {
+        let rx = generate_config("", None, false, None, "rx");
+        assert!(rx.contains("mode = \"rx\""));
+
+        let rwx = generate_config("", None, false, None, "rwx");
+        assert!(rwx.contains("mode = \"rwx\""));
     }
 }
