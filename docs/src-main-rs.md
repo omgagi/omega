@@ -300,8 +300,8 @@ Omega is designed to support multiple AI providers. Currently, **Claude Code CLI
 
 When you run `omega start`:
 1. The code reads `provider.default` from config (currently only "claude-code" supported)
-2. Extracts provider-specific settings (max_turns, allowed_tools)
-3. Creates a ClaudeCodeProvider instance
+2. Extracts provider-specific settings (max_turns, allowed_tools, timeout_secs)
+3. Creates a ClaudeCodeProvider instance by calling `from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs)`
 4. The provider handles the actual Claude API calls
 
 **Future providers** (planned): Anthropic API, OpenAI, Ollama, OpenRouter. The factory function `build_provider()` makes adding new providers straightforward.

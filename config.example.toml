@@ -17,6 +17,7 @@ default = "claude-code"
 enabled = true
 max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
+timeout_secs = 600              # Max wait for CLI response (10 min ceiling)
 
 # Anthropic API (requires key)
 [provider.anthropic]

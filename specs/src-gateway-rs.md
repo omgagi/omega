@@ -317,13 +317,20 @@ pub struct Gateway {
 - This includes recent conversation history, relevant facts, and system prompt.
 - If error, abort typing task, send error message, and return.
 
-**Stage 6: Get Response from Provider (Lines 358-391)**
-- Call `self.provider.complete(&context)` to invoke the AI backend.
+**Stage 6: Get Response from Provider (async with status updates)**
+- Send a heads-up message to the user before calling the provider.
+- Spawn `provider.complete(&context)` as a background task via `tokio::spawn`.
+- Spawn a status updater task that sends "Still working on your request..." every 120 seconds.
+- Wait for the provider result; abort the status updater when the result arrives.
+- Map provider errors to user-friendly messages via `friendly_provider_error()`:
+  - On timeout -> "I took too long to respond. Please try again..."
+  - On other errors -> "Something went wrong. Please try again."
+  - On JoinError (task panic) -> "Something went wrong. Please try again."
 - On success, set `reply_target` from incoming message.
 - On error:
   - Abort typing task.
   - Audit the error with status `AuditStatus::Error`.
-  - Send error message.
+  - Send friendly error message.
   - Return.
 
 **Stage 5b: SCHEDULE Marker Extraction**
@@ -465,6 +472,18 @@ pub struct Gateway {
 3. Return `None` if file does not exist, is unreadable, or has only whitespace.
 4. Return `Some(content)` otherwise.
 
+### `fn friendly_provider_error(raw: &str) -> String`
+**Purpose:** Map raw provider error messages to user-friendly messages.
+
+**Parameters:**
+- `raw: &str` - The raw error message from the provider or task join error.
+
+**Returns:** `String` - A friendly, user-facing error message.
+
+**Logic:**
+1. If `raw` contains "timed out" or similar timeout indicators, return "I took too long to respond. Please try again..."
+2. Otherwise, return "Something went wrong. Please try again."
+
 ### `fn is_within_active_hours(start: &str, end: &str) -> bool`
 **Purpose:** Check if the current local time is within the active hours window.
 
@@ -583,6 +602,8 @@ pub struct Gateway {
 - **Scheduler loop:** Conditionally runs in a dedicated `tokio::spawn()` task (when `scheduler_config.enabled`).
 - **Heartbeat loop:** Conditionally runs in a dedicated `tokio::spawn()` task (when `heartbeat_config.enabled`).
 - **Typing repeater:** For each message, a separate `tokio::spawn()` task repeats typing every 5 seconds.
+- **Provider task:** For each message, `provider.complete()` is spawned via `tokio::spawn()` to run in the background.
+- **Status updater:** For each message, a status updater task is spawned that sends periodic "Still working..." messages every 120 seconds; aborted when the provider result arrives.
 
 ### Synchronization
 - **MPSC Channel:** All incoming messages from channels are collected on a single 256-capacity mpsc queue.
@@ -721,3 +742,18 @@ All interactions are logged to SQLite with:
 12. Scheduler loop only runs when `scheduler_config.enabled` is true.
 13. Heartbeat loop only runs when `heartbeat_config.enabled` is true.
 14. Heartbeat alerts are suppressed when the provider response contains `HEARTBEAT_OK`.
+15. Status updater is aborted when provider result arrives.
+
+## Tests
+
+### `test_friendly_provider_error_timeout`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `friendly_provider_error()` returns the timeout-specific friendly message when the raw error string contains a timeout indicator.
+
+### `test_friendly_provider_error_generic`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `friendly_provider_error()` returns the generic friendly message ("Something went wrong. Please try again.") when the raw error string does not contain a timeout indicator.

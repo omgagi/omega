@@ -114,8 +114,8 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
 1. Match on `cfg.provider.default` (string key from config)
 2. **"claude-code" case:**
    - Clone Claude Code provider config (or use defaults)
-   - Extract `max_turns` and `allowed_tools` settings
-   - Construct `ClaudeCodeProvider::from_config(max_turns, allowed_tools)`
+   - Extract `max_turns`, `allowed_tools`, and `timeout_secs` settings
+   - Construct `ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs)`
    - Return boxed trait object
 3. **Any other provider name:** bail with "unsupported provider" error
 
@@ -296,9 +296,9 @@ Loads TOML from file, merges environment variable overrides.
 ### Provider Config
 ```rust
 let cc = cfg.provider.claude_code.as_ref().cloned().unwrap_or_default();
-ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools)
+ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs)
 ```
-Extracts provider-specific settings; provides defaults if not specified.
+Extracts provider-specific settings (including `timeout_secs`); provides defaults if not specified.
 
 ### Channel Config
 ```rust

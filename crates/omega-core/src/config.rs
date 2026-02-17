@@ -79,6 +79,9 @@ pub struct ClaudeCodeConfig {
     pub max_turns: u32,
     #[serde(default = "default_allowed_tools")]
     pub allowed_tools: Vec<String>,
+    /// Subprocess timeout in seconds (default: 600 = 10 minutes).
+    #[serde(default = "default_timeout_secs")]
+    pub timeout_secs: u64,
 }
 
 impl Default for ClaudeCodeConfig {
@@ -87,6 +90,7 @@ impl Default for ClaudeCodeConfig {
             enabled: true,
             max_turns: 10,
             allowed_tools: default_allowed_tools(),
+            timeout_secs: default_timeout_secs(),
         }
     }
 }
@@ -330,6 +334,9 @@ fn default_heartbeat_interval() -> u64 {
 fn default_poll_interval() -> u64 {
     60
 }
+fn default_timeout_secs() -> u64 {
+    600
+}
 
 /// Expand `~` to home directory.
 pub fn shellexpand(path: &str) -> String {
@@ -522,4 +529,36 @@ pub fn load(path: &str) -> Result<Config, OmegaError> {
         .map_err(|e| OmegaError::Config(format!("failed to parse config: {}", e)))?;
 
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timeout_config_default() {
+        let cc = ClaudeCodeConfig::default();
+        assert_eq!(cc.timeout_secs, 600);
+    }
+
+    #[test]
+    fn test_timeout_config_from_toml() {
+        let toml_str = r#"
+            enabled = true
+            max_turns = 10
+            timeout_secs = 300
+        "#;
+        let cc: ClaudeCodeConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cc.timeout_secs, 300);
+    }
+
+    #[test]
+    fn test_timeout_config_default_when_missing() {
+        let toml_str = r#"
+            enabled = true
+            max_turns = 10
+        "#;
+        let cc: ClaudeCodeConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cc.timeout_secs, 600);
+    }
 }

@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tracing::{debug, error, warn};
 
-/// Default timeout for Claude Code CLI subprocess (2 minutes).
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+/// Default timeout for Claude Code CLI subprocess (10 minutes).
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Claude Code CLI provider configuration.
 pub struct ClaudeCodeProvider {
@@ -74,12 +74,12 @@ impl ClaudeCodeProvider {
     }
 
     /// Create a provider from config values.
-    pub fn from_config(max_turns: u32, allowed_tools: Vec<String>) -> Self {
+    pub fn from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64) -> Self {
         Self {
             session_id: None,
             max_turns,
             allowed_tools,
-            timeout: DEFAULT_TIMEOUT,
+            timeout: Duration::from_secs(timeout_secs),
         }
     }
 
@@ -256,5 +256,13 @@ mod tests {
         assert!(!provider.requires_api_key());
         assert_eq!(provider.max_turns, 10);
         assert_eq!(provider.allowed_tools.len(), 4);
+        assert_eq!(provider.timeout, Duration::from_secs(600));
+    }
+
+    #[test]
+    fn test_from_config_with_timeout() {
+        let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300);
+        assert_eq!(provider.max_turns, 5);
+        assert_eq!(provider.timeout, Duration::from_secs(300));
     }
 }

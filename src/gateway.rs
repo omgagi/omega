@@ -565,13 +565,46 @@ impl Gateway {
             }
         };
 
-        // --- 5. GET RESPONSE FROM PROVIDER ---
-        let response = match self.provider.complete(&context).await {
-            Ok(mut resp) => {
+        // --- 5. GET RESPONSE FROM PROVIDER (async with status updates) ---
+
+        // Send heads-up so the user knows we're working.
+        self.send_text(
+            &incoming,
+            "This may take a moment — I'll keep you updated every 2 minutes.",
+        )
+        .await;
+
+        // Spawn provider call as background task.
+        let provider = self.provider.clone();
+        let ctx = context.clone();
+        let provider_task = tokio::spawn(async move { provider.complete(&ctx).await });
+
+        // Spawn status updater: sends a message every 120s while waiting.
+        let status_channel = self.channels.get(&incoming.channel).cloned();
+        let status_target = incoming.reply_target.clone();
+        let status_handle = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+                if let (Some(ref ch), Some(ref target)) = (&status_channel, &status_target) {
+                    let msg = OutgoingMessage {
+                        text: "Still working on your request...".to_string(),
+                        metadata: MessageMetadata::default(),
+                        reply_target: Some(target.clone()),
+                    };
+                    let _ = ch.send(msg).await;
+                }
+            }
+        });
+
+        // Wait for the provider result.
+        let response = match provider_task.await {
+            Ok(Ok(mut resp)) => {
+                status_handle.abort();
                 resp.reply_target = incoming.reply_target.clone();
                 resp
             }
-            Err(e) => {
+            Ok(Err(e)) => {
+                status_handle.abort();
                 error!("provider error: {e}");
                 if let Some(h) = typing_handle {
                     h.abort();
@@ -594,7 +627,17 @@ impl Gateway {
                     })
                     .await;
 
-                self.send_text(&incoming, &format!("Provider error: {e}"))
+                let friendly = friendly_provider_error(&e.to_string());
+                self.send_text(&incoming, &friendly).await;
+                return;
+            }
+            Err(join_err) => {
+                status_handle.abort();
+                error!("provider task panicked: {join_err}");
+                if let Some(h) = typing_handle {
+                    h.abort();
+                }
+                self.send_text(&incoming, "Something went wrong. Please try again.")
                     .await;
                 return;
             }
@@ -922,6 +965,15 @@ fn read_heartbeat_file() -> Option<String> {
     }
 }
 
+/// Map raw provider errors to user-friendly messages.
+fn friendly_provider_error(raw: &str) -> String {
+    if raw.contains("timed out") {
+        "I took too long to respond. Please try again — sometimes complex requests need a second attempt.".to_string()
+    } else {
+        "Something went wrong. Please try again.".to_string()
+    }
+}
+
 /// Check if the current local time is within the active hours window.
 fn is_within_active_hours(start: &str, end: &str) -> bool {
     let now = chrono::Local::now().format("%H:%M").to_string();
@@ -1052,5 +1104,18 @@ mod tests {
         let msg = prompts.welcome.get("Klingon").unwrap_or(&default);
         assert!(msg.contains("Omega"));
         assert!(msg.contains("Rust"));
+    }
+
+    #[test]
+    fn test_friendly_provider_error_timeout() {
+        let msg = friendly_provider_error("claude CLI timed out after 600s");
+        assert!(msg.contains("too long"));
+        assert!(!msg.contains("timed out"));
+    }
+
+    #[test]
+    fn test_friendly_provider_error_generic() {
+        let msg = friendly_provider_error("failed to run claude CLI: No such file");
+        assert_eq!(msg, "Something went wrong. Please try again.");
     }
 }

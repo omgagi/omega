@@ -165,10 +165,14 @@ If context building fails (e.g., database error), an error message is sent immed
 
 ### Stage 6: Provider Call
 
-**What happens:** The gateway sends the enriched context to the AI provider and gets a response.
+**What happens:** The gateway sends the enriched context to the AI provider and gets a response, while keeping the user informed about progress.
 
 **Implementation:**
-- Calls `provider.complete(&context)`.
+1. **Heads-up message** -- Before calling the provider, the gateway sends a brief message to the user (e.g., indicating that the request is being processed). This provides immediate feedback so the user knows Omega received their message.
+2. **Background provider task** -- The `provider.complete(&context)` call is spawned as a background task. This allows the gateway to monitor progress concurrently.
+3. **Status updater** -- A separate background task is spawned that sends periodic "Still working..." messages to the user every 120 seconds. This prevents the user from thinking Omega has frozen during long-running agentic tasks.
+4. **Await result** -- The gateway awaits the provider task. When it completes, the status updater is cancelled.
+
 - The provider is typically the Claude Code CLI but can be swapped (OpenAI, Anthropic, Ollama, etc.).
 - The provider returns a `Response` with:
   - `text`: The assistant's answer.
@@ -177,13 +181,13 @@ If context building fails (e.g., database error), an error message is sent immed
   - `metadata.processing_time_ms`: How long the request took.
 
 **Why This Exists:**
-This is where the actual AI reasoning happens. Everything else in the pipeline is infrastructure.
+This is where the actual AI reasoning happens. Everything else in the pipeline is infrastructure. The heads-up message and periodic status updates ensure the user experience remains responsive even when the provider takes minutes to complete.
 
 **Error Handling:**
-If the provider fails, an error message is sent to the user and the message is dropped. The error is logged with full details.
+If the provider fails, the error is mapped to a friendly user-facing message (no raw error details are leaked to the user). The full error is logged internally with details for debugging. The friendly message is sent to the user and the pipeline stops.
 
 **Performance:**
-Provider calls are the slowest part of the pipeline (typically 2-30 seconds). Everything else is near-instant.
+Provider calls are the slowest part of the pipeline (typically 2-30 seconds, but can take up to 10 minutes for complex agentic tasks). The status updater keeps the user informed during long waits. Everything else is near-instant.
 
 ### Stage 6b: Schedule Marker Extraction
 
@@ -320,9 +324,12 @@ User sends message on Telegram
 │  ✗ Error? → Send error, audit, return   │
 │                                          │
 │ Stage 6: provider.complete()            │
-│  • Call Claude Code CLI (or other)      │
+│  • Send heads-up message to user        │
+│  • Spawn provider call as background    │
+│  • Spawn status updater (every 120s)    │
+│  • Await result, cancel updater         │
 │  ✓ Success? → Continue                  │
-│  ✗ Error? → Send error, audit, return   │
+│  ✗ Error? → Friendly msg, audit, return │
 │                                          │
 │ Stage 6b: extract_schedule_marker()     │
 │  • Scan response for SCHEDULE: line     │

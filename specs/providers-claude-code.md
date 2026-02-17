@@ -18,7 +18,7 @@
 | `omega_core::message` | `MessageMetadata`, `OutgoingMessage` |
 | `omega_core::traits` | `Provider` trait |
 | `serde` | `Deserialize` |
-| `std::time` | `Instant` |
+| `std::time` | `Duration`, `Instant` |
 | `tokio::process` | `Command` |
 | `tracing` | `debug`, `warn` |
 
@@ -35,6 +35,7 @@ Public struct. The provider that wraps the Claude Code CLI.
 | `session_id` | `Option<String>` | Private | Optional session ID passed to the CLI for conversation continuity across invocations. |
 | `max_turns` | `u32` | Private | Maximum number of agentic turns the CLI is allowed per single invocation. Default: `10`. |
 | `allowed_tools` | `Vec<String>` | Private | List of tool names the CLI is permitted to use. Default: `["Bash", "Read", "Write", "Edit"]`. |
+| `timeout` | `Duration` | Private | Maximum time to wait for the CLI subprocess to complete. Constructed from `Duration::from_secs(timeout_secs)`. Default: `600` seconds (10 minutes). |
 
 ### `ClaudeCliResponse`
 
@@ -67,19 +68,20 @@ Constructs a new `ClaudeCodeProvider` with default settings:
 - `session_id`: `None`
 - `max_turns`: `10`
 - `allowed_tools`: `["Bash", "Read", "Write", "Edit"]`
+- `timeout`: `Duration::from_secs(600)` (10 minutes)
 
 ```rust
 pub fn new() -> Self
 ```
 
-### `ClaudeCodeProvider::from_config(max_turns: u32, allowed_tools: Vec<String>) -> Self`
+### `ClaudeCodeProvider::from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64) -> Self`
 
 **Visibility:** Public
 
-Constructs a `ClaudeCodeProvider` from explicit configuration values. Sets `session_id` to `None`.
+Constructs a `ClaudeCodeProvider` from explicit configuration values. Sets `session_id` to `None` and `timeout` to `Duration::from_secs(timeout_secs)`.
 
 ```rust
-pub fn from_config(max_turns: u32, allowed_tools: Vec<String>) -> Self
+pub fn from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64) -> Self
 ```
 
 ### `ClaudeCodeProvider::check_cli() -> bool` (async)
@@ -250,6 +252,7 @@ Verifies the default constructor:
 - `requires_api_key()` returns `false`
 - `max_turns` is `10`
 - `allowed_tools` has 4 entries
+- `timeout` is `Duration::from_secs(600)`
 
 ```rust
 #[test]
@@ -259,6 +262,24 @@ fn test_default_provider() {
     assert!(!provider.requires_api_key());
     assert_eq!(provider.max_turns, 10);
     assert_eq!(provider.allowed_tools.len(), 4);
+    assert_eq!(provider.timeout, Duration::from_secs(600));
+}
+```
+
+### `test_from_config_with_timeout`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `from_config()` correctly sets the `timeout` field from the provided `timeout_secs` parameter:
+
+- Constructs a provider with `timeout_secs = 300`.
+- Asserts `timeout` is `Duration::from_secs(300)`.
+
+```rust
+#[test]
+fn test_from_config_with_timeout() {
+    let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300);
+    assert_eq!(provider.timeout, Duration::from_secs(300));
 }
 ```
 

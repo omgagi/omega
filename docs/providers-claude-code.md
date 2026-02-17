@@ -36,8 +36,9 @@ let provider = ClaudeCodeProvider::new();
 
 ```rust
 let provider = ClaudeCodeProvider::from_config(
-    20, // allow up to 20 agentic turns
-    vec!["Bash".into(), "Read".into()], // restrict to just Bash and Read
+    20,                                   // allow up to 20 agentic turns
+    vec!["Bash".into(), "Read".into()],   // restrict to just Bash and Read
+    600,                                  // timeout in seconds (10 minutes)
 );
 ```
 
@@ -59,6 +60,19 @@ The list of tools Claude is permitted to use during its agentic turns. Each tool
 | `Edit` | Edit existing files |
 
 If you want a more restricted provider (e.g., one that can only answer questions without touching the filesystem), pass a smaller list to `from_config`.
+
+### `timeout_secs`
+
+Controls how long Omega will wait for the Claude Code CLI to finish before aborting the subprocess. The default is `600` seconds (10 minutes), which serves as a ceiling to prevent runaway invocations from blocking the gateway indefinitely.
+
+This timeout is configurable via the `[provider.claude-code]` section in `config.toml`:
+
+```toml
+[provider.claude-code]
+timeout_secs = 600
+```
+
+If the CLI does not produce a response within the configured timeout, the subprocess is killed and Omega returns a friendly error message to the user. The 10-minute default is generous enough for complex multi-turn agentic tasks while still protecting against hangs.
 
 ---
 
@@ -183,12 +197,20 @@ If you see errors about nested sessions or `CLAUDECODE`, the env var removal mig
 
 ### Slow responses
 
-Claude Code CLI invocations can take anywhere from a few seconds to over a minute, depending on the complexity of the prompt and how many agentic turns are needed. The `processing_time_ms` field in the response metadata tells you exactly how long each invocation took.
+Claude Code CLI invocations can take anywhere from a few seconds to several minutes, depending on the complexity of the prompt and how many agentic turns are needed. The `processing_time_ms` field in the response metadata tells you exactly how long each invocation took.
+
+The default timeout is 600 seconds (10 minutes). If the CLI exceeds this limit, the subprocess is killed and the user receives a friendly error message. You can tune the timeout via `timeout_secs` in `[provider.claude-code]`:
+
+```toml
+[provider.claude-code]
+timeout_secs = 300   # 5-minute ceiling instead of 10
+```
 
 If responses are consistently slow, consider:
 
 - Reducing `max_turns` to limit how much work Claude does per invocation.
 - Simplifying the system prompt or reducing conversation history length.
+- Lowering `timeout_secs` to fail fast on runaway invocations.
 
 ### "(No response text returned)"
 

@@ -245,6 +245,7 @@ fn build_provider(cfg: &config::Config) -> anyhow::Result<Box<dyn Provider>> {
             Ok(Box::new(ClaudeCodeProvider::from_config(
                 cc.max_turns,
                 cc.allowed_tools,
+                cc.timeout_secs,
             )))
         }
         other => anyhow::bail!("unsupported provider: {other}"),

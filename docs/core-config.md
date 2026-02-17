@@ -55,6 +55,7 @@ default = "claude-code"
 enabled = true
 max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
+timeout_secs = 600
 
 [provider.anthropic]
 enabled = false
@@ -146,6 +147,7 @@ This is the primary, zero-config provider. It shells out to the `claude` CLI too
 | `enabled` | bool | `true` | Whether this provider is available for selection. |
 | `max_turns` | integer | `10` | Maximum number of agentic turns Claude Code can take per request. |
 | `allowed_tools` | array of strings | `["Bash", "Read", "Write", "Edit"]` | Which Claude Code tools the agent is allowed to use. |
+| `timeout_secs` | integer | `600` | Max seconds to wait for CLI response. 10-minute ceiling. |
 
 No API key is needed -- Claude Code uses the local CLI's authentication.
 

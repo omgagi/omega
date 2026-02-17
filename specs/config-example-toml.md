@@ -104,6 +104,7 @@ Local Claude Code CLI integration (zero-config, recommended default).
 | `enabled` | Boolean | `true` | Enable/disable this provider. When disabled, queries will not use this backend. |
 | `max_turns` | Integer | `10` | Maximum conversation turns (exchanges) before forcing a summary. Prevents runaway context growth. |
 | `allowed_tools` | Array[String] | `["Bash", "Read", "Write", "Edit"]` | Whitelist of tools the Claude Code provider can invoke. Restricts what operations are permitted. |
+| `timeout_secs` | Integer | `600` | Max wait time in seconds for CLI response (10-minute ceiling). Tunable per deployment. |
 
 **Authentication:**
 - No API key required. Uses local `claude` CLI authentication already configured on the system.
@@ -115,6 +116,7 @@ Local Claude Code CLI integration (zero-config, recommended default).
 enabled = true
 max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
+timeout_secs = 600
 ```
 
 #### `[provider.anthropic]`

@@ -63,6 +63,7 @@ default = "claude-code"
 enabled = true
 max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
+timeout_secs = 600
 ```
 
 **What this means:**
@@ -70,6 +71,7 @@ allowed_tools = ["Bash", "Read", "Write", "Edit"]
 - `enabled = true`: Turn it on.
 - `max_turns = 10`: Conversations auto-summarize after 10 exchanges (prevents runaway context).
 - `allowed_tools`: Let the AI use the `Bash`, `Read`, `Write`, `Edit` tools. Don't change this unless you know what you're doing.
+- `timeout_secs = 600`: Max seconds to wait for the CLI to respond. 10-minute ceiling prevents runaway invocations.
 
 **Setup:** Just ensure you have the `claude` CLI installed and authenticated:
 ```bash
@@ -439,6 +441,7 @@ default = "claude-code"
 enabled = true
 max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
+timeout_secs = 600
 
 [auth]
 enabled = false  # Just me, no restrictions

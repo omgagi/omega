@@ -62,7 +62,7 @@ Cargo workspace with 6 crates:
 
 Gateway event loop (`src/gateway.rs`):
 ```
-Message → Auth → Sanitize → Memory (context) → Provider → Schedule extract → Memory (store) → Audit → Send
+Message → Auth → Sanitize → Memory (context) → Heads-up → Provider (async + status updates) → Schedule extract → Memory (store) → Audit → Send
 ```
 
 Background loops (spawned in `gateway::run()`):
@@ -118,11 +118,13 @@ cargo build --release        # Optimized binary
 
 ## Provider Priority
 
-Claude Code CLI is the primary provider. It invokes `claude -p --output-format json` as a subprocess. The JSON response has this structure:
+Claude Code CLI is the primary provider. It invokes `claude -p --output-format json` as a subprocess with a configurable timeout (`timeout_secs`, default 600s / 10 minutes). The JSON response has this structure:
 ```json
 {"type": "result", "subtype": "success", "result": "...", "model": "...", "session_id": "..."}
 ```
 When `subtype` is `error_max_turns`, extract `result` if available, otherwise return a meaningful fallback.
+
+The gateway runs provider calls asynchronously with status updates: a heads-up message is sent before the call, and "Still working..." updates are sent every 2 minutes while waiting. Provider errors are mapped to friendly user-facing messages (no raw technical errors shown).
 
 ## Documentation
 

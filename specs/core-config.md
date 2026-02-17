@@ -108,9 +108,10 @@ When the config file is absent, the `load()` function explicitly constructs a `P
 | `enabled` | `bool` | `default_true()` | `true` |
 | `max_turns` | `u32` | `default_max_turns()` | `10` |
 | `allowed_tools` | `Vec<String>` | `default_allowed_tools()` | `["Bash", "Read", "Write", "Edit"]` |
+| `timeout_secs` | `u64` | `default_timeout_secs()` | `600` |
 
 Derives: `Debug, Clone, Serialize, Deserialize`
-Implements: `Default` (manual).
+Implements: `Default` (manual, sets `enabled` to `true`, `max_turns` to `default_max_turns()`, `allowed_tools` to `default_allowed_tools()`, `timeout_secs` to `default_timeout_secs()`).
 
 ### `AnthropicConfig`
 
@@ -266,6 +267,7 @@ All private functions in the module that supply serde defaults:
 | `default_max_context()` | `usize` | `50` |
 | `default_execution_time()` | `u64` | `30` |
 | `default_output_bytes()` | `usize` | `1_048_576` |
+| `default_timeout_secs()` | `u64` | `600` |
 | `default_heartbeat_interval()` | `u64` | `30` |
 | `default_poll_interval()` | `u64` | `60` |
 
@@ -378,3 +380,25 @@ Channel and provider sub-configs use `Option<T>` rather than `#[serde(default)]`
 | `[sandbox]` | `Config.sandbox` |
 | `[heartbeat]` | `Config.heartbeat` |
 | `[scheduler]` | `Config.scheduler` |
+
+---
+
+## Tests
+
+### `test_timeout_config_default`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `ClaudeCodeConfig::default()` sets `timeout_secs` to `600`.
+
+### `test_timeout_config_from_toml`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that a TOML config with an explicit `timeout_secs` value (e.g., `300`) is correctly deserialized into `ClaudeCodeConfig.timeout_secs`.
+
+### `test_timeout_config_default_when_missing`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that when `timeout_secs` is omitted from the TOML, the serde default function `default_timeout_secs()` supplies `600`.
