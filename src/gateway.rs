@@ -1391,7 +1391,7 @@ mod tests {
         let default = prompts.welcome.get("English").cloned().unwrap_or_default();
         let msg = prompts.welcome.get("Klingon").unwrap_or(&default);
         assert!(msg.contains("*OMEGA*"));
-        assert!(msg.contains("private"));
+        assert!(msg.contains("honor"));
     }
 
     #[test]

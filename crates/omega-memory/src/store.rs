@@ -906,7 +906,15 @@ fn build_system_prompt(
             !["welcomed", "preferred_language", "active_project"].contains(&k.as_str())
         })
         .count();
-    if real_facts < 3 {
+    if real_facts == 0 {
+        prompt.push_str(
+            "\n\nThis is your first conversation with this person. They just received your \
+             welcome message. Your priority right now is to get to know them — ask their name, \
+             what they do, what brings them here. Be warm and curious, like meeting someone \
+             you'll be working closely with. Don't answer their message mechanically — \
+             connect first.",
+        );
+    } else if real_facts < 3 {
         prompt.push_str(
             "\n\nYou're still getting to know this person. Naturally weave in a question \
              to learn about them — their name, what they do, what they care about — but \
@@ -1362,6 +1370,23 @@ mod tests {
         assert!(
             prompt.contains("still getting to know"),
             "should include onboarding hint with <3 real facts (only 1 real: name)"
+        );
+    }
+
+    #[test]
+    fn test_onboarding_first_conversation_with_zero_facts() {
+        let facts = vec![
+            ("welcomed".to_string(), "true".to_string()),
+            ("preferred_language".to_string(), "Spanish".to_string()),
+        ];
+        let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], "Spanish");
+        assert!(
+            prompt.contains("first conversation"),
+            "should include first-conversation hint with 0 real facts"
+        );
+        assert!(
+            !prompt.contains("still getting to know"),
+            "should NOT include the weaker hint when 0 real facts"
         );
     }
 
