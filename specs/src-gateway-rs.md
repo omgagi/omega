@@ -325,9 +325,11 @@ pub struct Gateway {
 - This includes recent conversation history, relevant facts, and system prompt.
 - If error, abort typing task, send error message, and return.
 
-**Stage 6: Get Response from Provider (async with delayed status updates)**
+**Stage 6: Get Response from Provider (async with delayed, localized status updates)**
+- Resolve the user's `preferred_language` fact from memory (defaults to English).
+- Get localized status messages via `status_messages(lang)`.
 - Spawn `provider.complete(&context)` as a background task via `tokio::spawn`.
-- Spawn a delayed status updater task: sends a first nudge ("This is taking a moment...") after 15 seconds, then "Still working on your request..." every 120 seconds. If the provider responds within 15 seconds, the updater is aborted and the user sees no extra messages.
+- Spawn a delayed status updater task: sends a localized first nudge after 15 seconds, then localized "Still working..." every 120 seconds. If the provider responds within 15 seconds, the updater is aborted and the user sees no extra messages.
 - Wait for the provider result; abort the status updater when the result arrives.
 - Map provider errors to user-friendly messages via `friendly_provider_error()`:
   - On timeout -> "I took too long to respond. Please try again..."
@@ -479,6 +481,16 @@ pub struct Gateway {
 3. Return `None` if file does not exist, is unreadable, or has only whitespace.
 4. Return `Some(content)` otherwise.
 
+### `fn status_messages(lang: &str) -> (&'static str, &'static str)`
+**Purpose:** Return localized status messages for the delayed provider nudge.
+
+**Parameters:**
+- `lang: &str` - Language name (e.g., "English", "Spanish").
+
+**Returns:** Tuple of `(first_nudge, still_working)` static strings.
+
+**Logic:** Match on language name. Supports English, Spanish, Portuguese, French, German, Italian, Dutch, Russian. Unknown languages fall back to English.
+
 ### `fn friendly_provider_error(raw: &str) -> String`
 **Purpose:** Map raw provider error messages to user-friendly messages.
 
@@ -610,7 +622,7 @@ pub struct Gateway {
 - **Heartbeat loop:** Conditionally runs in a dedicated `tokio::spawn()` task (when `heartbeat_config.enabled`).
 - **Typing repeater:** For each message, a separate `tokio::spawn()` task repeats typing every 5 seconds.
 - **Provider task:** For each message, `provider.complete()` is spawned via `tokio::spawn()` to run in the background.
-- **Status updater:** For each message, a delayed status updater task is spawned that sends a first nudge after 15 seconds, then periodic "Still working..." messages every 120 seconds; aborted when the provider result arrives. If the provider responds within 15 seconds, no status message is sent.
+- **Status updater:** For each message, a delayed status updater task is spawned that sends a localized first nudge after 15 seconds, then periodic localized "Still working..." messages every 120 seconds; aborted when the provider result arrives. If the provider responds within 15 seconds, no status message is sent. Messages are localized to the user's `preferred_language` fact via `status_messages()`.
 
 ### Synchronization
 - **MPSC Channel:** All incoming messages from channels are collected on a single 256-capacity mpsc queue.
@@ -764,3 +776,21 @@ Verifies that `friendly_provider_error()` returns the timeout-specific friendly 
 **Type:** Synchronous unit test (`#[test]`)
 
 Verifies that `friendly_provider_error()` returns the generic friendly message ("Something went wrong. Please try again.") when the raw error string does not contain a timeout indicator.
+
+### `test_status_messages_all_languages`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `status_messages()` returns non-empty nudge and still-working strings for all 8 supported languages.
+
+### `test_status_messages_unknown_falls_back_to_english`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `status_messages()` falls back to English for unrecognized language names.
+
+### `test_status_messages_spanish`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `status_messages("Spanish")` returns Spanish-language status messages.

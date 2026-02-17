@@ -593,6 +593,16 @@ impl Gateway {
         let ctx = context.clone();
         let provider_task = tokio::spawn(async move { provider.complete(&ctx).await });
 
+        // Resolve user language for status messages.
+        let user_lang = self
+            .memory
+            .get_fact(&incoming.sender_id, "preferred_language")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "English".to_string());
+        let (nudge_msg, still_msg) = status_messages(&user_lang);
+
         // Spawn delayed status updater: first nudge after 15s, then every 120s.
         // If the provider responds quickly, this gets aborted and the user sees nothing extra.
         let status_channel = self.channels.get(&incoming.channel).cloned();
@@ -602,7 +612,7 @@ impl Gateway {
             tokio::time::sleep(std::time::Duration::from_secs(15)).await;
             if let (Some(ref ch), Some(ref target)) = (&status_channel, &status_target) {
                 let msg = OutgoingMessage {
-                    text: "This is taking a moment — I'll keep you updated.".to_string(),
+                    text: nudge_msg.to_string(),
                     metadata: MessageMetadata::default(),
                     reply_target: Some(target.clone()),
                 };
@@ -613,7 +623,7 @@ impl Gateway {
                 tokio::time::sleep(std::time::Duration::from_secs(120)).await;
                 if let (Some(ref ch), Some(ref target)) = (&status_channel, &status_target) {
                     let msg = OutgoingMessage {
-                        text: "Still working on your request...".to_string(),
+                        text: still_msg.to_string(),
                         metadata: MessageMetadata::default(),
                         reply_target: Some(target.clone()),
                     };
@@ -991,6 +1001,45 @@ fn read_heartbeat_file() -> Option<String> {
     }
 }
 
+/// Return localized status messages for the delayed provider nudge.
+/// Returns `(first_nudge, still_working)`.
+fn status_messages(lang: &str) -> (&'static str, &'static str) {
+    match lang {
+        "Spanish" => (
+            "Esto va a tomar un momento — te mantendré informado.",
+            "Sigo trabajando en tu solicitud...",
+        ),
+        "Portuguese" => (
+            "Isso vai levar um momento — vou te manter informado.",
+            "Ainda estou trabalhando no seu pedido...",
+        ),
+        "French" => (
+            "Cela prend un moment — je vous tiendrai informé.",
+            "Je travaille encore sur votre demande...",
+        ),
+        "German" => (
+            "Das dauert einen Moment — ich halte dich auf dem Laufenden.",
+            "Ich arbeite noch an deiner Anfrage...",
+        ),
+        "Italian" => (
+            "Ci vorrà un momento — ti terrò aggiornato.",
+            "Sto ancora lavorando alla tua richiesta...",
+        ),
+        "Dutch" => (
+            "Dit duurt even — ik hou je op de hoogte.",
+            "Ik werk nog aan je verzoek...",
+        ),
+        "Russian" => (
+            "Это займёт немного времени — я буду держать вас в курсе.",
+            "Всё ещё работаю над вашим запросом...",
+        ),
+        _ => (
+            "This is taking a moment — I'll keep you updated.",
+            "Still working on your request...",
+        ),
+    }
+}
+
 /// Map raw provider errors to user-friendly messages.
 fn friendly_provider_error(raw: &str) -> String {
     if raw.contains("timed out") {
@@ -1143,5 +1192,38 @@ mod tests {
     fn test_friendly_provider_error_generic() {
         let msg = friendly_provider_error("failed to run claude CLI: No such file");
         assert_eq!(msg, "Something went wrong. Please try again.");
+    }
+
+    #[test]
+    fn test_status_messages_all_languages() {
+        let languages = [
+            "English",
+            "Spanish",
+            "Portuguese",
+            "French",
+            "German",
+            "Italian",
+            "Dutch",
+            "Russian",
+        ];
+        for lang in &languages {
+            let (nudge, still) = status_messages(lang);
+            assert!(!nudge.is_empty(), "nudge for {lang} should not be empty");
+            assert!(!still.is_empty(), "still for {lang} should not be empty");
+        }
+    }
+
+    #[test]
+    fn test_status_messages_unknown_falls_back_to_english() {
+        let (nudge, still) = status_messages("Klingon");
+        assert!(nudge.contains("taking a moment"));
+        assert!(still.contains("Still working"));
+    }
+
+    #[test]
+    fn test_status_messages_spanish() {
+        let (nudge, still) = status_messages("Spanish");
+        assert!(nudge.contains("tomar un momento"));
+        assert!(still.contains("trabajando"));
     }
 }

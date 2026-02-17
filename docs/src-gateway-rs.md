@@ -172,7 +172,7 @@ If context building fails (e.g., database error), an error message is sent immed
 
 **Implementation:**
 1. **Background provider task** -- The `provider.complete(&context)` call is spawned as a background task. This allows the gateway to monitor progress concurrently.
-2. **Delayed status updater** -- A separate background task is spawned with a two-phase approach: after 15 seconds of waiting, it sends a first nudge ("This is taking a moment — I'll keep you updated."). Then, every 120 seconds thereafter, it sends "Still working on your request..." If the provider responds within 15 seconds (the common case), the updater is aborted and the user sees no extra messages — just the typing indicator followed by the answer.
+2. **Delayed status updater** -- The user's `preferred_language` fact is resolved from memory (defaults to English), and localized messages are obtained via `status_messages()`. A separate background task is spawned with a two-phase approach: after 15 seconds of waiting, it sends a localized first nudge. Then, every 120 seconds thereafter, it sends a localized "Still working..." message. If the provider responds within 15 seconds (the common case), the updater is aborted and the user sees no extra messages — just the typing indicator followed by the answer. Supported languages: English, Spanish, Portuguese, French, German, Italian, Dutch, Russian.
 3. **Await result** -- The gateway awaits the provider task. When it completes, the status updater is cancelled.
 
 - The provider is typically the Claude Code CLI but can be swapped (OpenAI, Anthropic, Ollama, etc.).
