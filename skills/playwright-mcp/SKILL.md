@@ -2,7 +2,7 @@
 name = "playwright-mcp"
 description = "Browser automation via Playwright MCP."
 requires = ["npx"]
-trigger = "browse|website|click|screenshot|navigate|scrape|web page"
+trigger = "browse|website|click|screenshot|navigate|scrape|web page|navegar|captura|pantalla|página web|sitio web|hacer clic|raspar|navegador|site|cliquer|capture|écran|page web|naviguer|gratter|Webseite|klicken|Bildschirmfoto|navigieren|scrapen|sito|clicca|schermata|navigare|raschiare|pagina web|klikken|schermafbeelding|webscrapen|webpagina|bladeren|браузер|сайт|скриншот|нажать|страница|перейти"
 
 [mcp.playwright]
 command = "npx"
