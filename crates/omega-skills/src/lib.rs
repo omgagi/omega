@@ -26,6 +26,10 @@ const BUNDLED_SKILLS: &[(&str, &str)] = &[
         "playwright-mcp",
         include_str!("../../../skills/playwright-mcp/SKILL.md"),
     ),
+    (
+        "skill-creator",
+        include_str!("../../../skills/skill-creator/SKILL.md"),
+    ),
 ];
 
 /// Deploy bundled skills to `{data_dir}/skills/{name}/SKILL.md`, creating
