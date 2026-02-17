@@ -10,9 +10,13 @@
 
 ## Purpose
 
-`omega-sandbox` is the secure execution environment for the Omega agent. Its responsibility is to provide a controlled, resource-limited context in which shell commands and scripts can be run on behalf of the user, with strict guardrails around which commands are allowed, which filesystem paths are accessible, and how much time and output a single execution may consume.
+`omega-sandbox` is the secure execution environment for the Omega agent. Its responsibility is to provide a controlled context in which the AI provider operates, using a combination of workspace directory confinement and system prompt constraints to enforce operating boundaries.
 
-The crate is currently a **placeholder**. The `lib.rs` file contains only a module-level doc comment and no types, traits, functions, or submodules. Implementation is planned for Phase 4 of the project roadmap.
+The sandbox design uses a mode-based approach (`SandboxMode` enum in `omega-core`) rather than command-level allowlists. The three modes -- `sandbox`, `rx`, and `rwx` -- control the provider's working directory and the system prompt constraints injected before each interaction. The actual enforcement is handled via:
+1. **Working directory confinement:** The provider subprocess `current_dir` is set to `~/.omega/workspace/` in sandbox and rx modes.
+2. **System prompt injection:** Mode-specific constraint text is prepended to the system prompt, instructing the provider about its operating boundaries.
+
+The crate is currently a **placeholder**. The `lib.rs` file contains only a module-level doc comment and no types, traits, functions, or submodules. The core sandbox logic (mode enum, prompt constraints) lives in `omega-core::config`. Future implementation in this crate may add process-level isolation.
 
 ## Current Contents
 
@@ -63,27 +67,34 @@ The crate's `Cargo.toml` already declares the dependencies it will need once imp
 
 ## Configuration Surface
 
-The sandbox is already fully configurable through `omega-core::config::SandboxConfig`:
+The sandbox is configurable through `omega-core::config::SandboxConfig` and `omega-core::config::SandboxMode`:
 
 ```rust
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SandboxMode {
+    #[default]
+    Sandbox,
+    Rx,
+    Rwx,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SandboxConfig {
-    pub enabled: bool,                    // default: true
-    pub allowed_commands: Vec<String>,    // default: [] (empty = allow all, or deny all -- TBD)
-    pub blocked_paths: Vec<String>,       // default: []
-    pub max_execution_time_secs: u64,     // default: 30
-    pub max_output_bytes: usize,          // default: 1_048_576 (1 MiB)
+    #[serde(default)]
+    pub mode: SandboxMode,
 }
 ```
 
-The example configuration (`config.example.toml`) demonstrates a typical setup:
+`SandboxMode` methods:
+- `prompt_constraint(&self, workspace_path: &str) -> Option<String>` -- returns mode-specific system prompt constraint text. `Sandbox` returns SANDBOX mode instructions referencing the workspace path. `Rx` returns READ-ONLY mode instructions. `Rwx` returns `None`.
+- `display_name(&self) -> &str` -- returns `"sandbox"`, `"rx"`, or `"rwx"`.
+
+The example configuration (`config.example.toml`) demonstrates the setup:
 
 ```toml
 [sandbox]
-enabled = true
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]
-blocked_paths = ["/etc/shadow", "/etc/passwd"]
-max_execution_time_secs = 30
-max_output_bytes = 1048576
+mode = "sandbox"   # "sandbox" | "rx" | "rwx"
 ```
 
 ---
@@ -106,73 +117,52 @@ This variant is manually constructed (no `#[from]` conversion). All sandbox erro
 | Integration | Location | Description |
 |-------------|----------|-------------|
 | Root Cargo.toml | `Cargo.toml` | Listed as workspace member and dependency |
-| Config | `omega-core::config::SandboxConfig` | Configuration struct with defaults |
+| Config | `omega-core::config::SandboxConfig` | Configuration struct with `mode: SandboxMode` field |
+| SandboxMode enum | `omega-core::config::SandboxMode` | Mode enum with `prompt_constraint()` and `display_name()` methods |
 | Error | `omega-core::error::OmegaError::Sandbox` | Error variant for sandbox failures |
-| Gateway | `src/gateway.rs` | Will need wiring to route execution requests through the sandbox |
+| main.rs | `src/main.rs` | Creates `~/.omega/workspace/` directory, resolves sandbox mode, passes workspace path to `build_provider()` and sandbox mode/prompt to `Gateway::new()` |
+| Gateway | `src/gateway.rs` | Stores `sandbox_mode` and `sandbox_prompt` fields; injects sandbox constraint into system prompt; logs sandbox mode at startup |
+| Provider | `omega-providers::claude_code` | `ClaudeCodeProvider` accepts `working_dir: Option<PathBuf>` and sets `current_dir` on subprocess |
+| Commands | `src/commands.rs` | `CommandContext` includes `sandbox_mode` field; `/status` displays it |
 | Skills | `omega-skills` | Future skills may invoke sandbox for command execution |
 | Binary | `Cargo.toml` (root) | Already declared as a dependency of the binary |
 
 ---
 
-## Planned Architecture
+## Current Architecture
 
-Based on the configuration surface, error integration, project roadmap (Phase 4), and the crate description ("Secure execution environment for Omega"), the following architecture is anticipated:
+The sandbox design follows the "less is more" principle. Rather than implementing a complex process-level sandbox with command allowlists and path blocklists, the current approach uses two complementary mechanisms:
 
-### Core Trait (planned)
+### 1. Working Directory Confinement
 
-A `Sandbox` trait (or equivalent) that provides an async interface for command execution:
+In `sandbox` and `rx` modes, the provider subprocess `current_dir` is set to `~/.omega/workspace/`. This directory is automatically created by `main.rs` at startup. The provider naturally operates within this directory.
 
-```rust
-#[async_trait]
-pub trait Sandbox: Send + Sync {
-    /// Execute a command within the sandbox constraints.
-    async fn execute(&self, command: &str, args: &[&str]) -> Result<ExecutionResult, OmegaError>;
+### 2. System Prompt Constraints
 
-    /// Check if a command is allowed by the current policy.
-    fn is_allowed(&self, command: &str) -> bool;
+`SandboxMode::prompt_constraint()` returns mode-specific instructions that are prepended to the system prompt:
 
-    /// Check if a filesystem path is accessible.
-    fn path_allowed(&self, path: &str) -> bool;
-}
-```
+| Mode | Constraint Behavior |
+|------|-------------------|
+| `Sandbox` | Instructs the provider to confine all operations to the workspace directory |
+| `Rx` | Instructs the provider to only read files; no writes, deletes, or command execution |
+| `Rwx` | No constraint injected (unrestricted) |
 
-### Execution Result (planned)
-
-A struct to capture command output:
-
-```rust
-pub struct ExecutionResult {
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: i32,
-    pub duration_ms: u64,
-    pub truncated: bool,
-}
-```
-
-### Policy Engine (planned)
-
-Enforcement logic that maps `SandboxConfig` fields to runtime decisions:
-
-| Config Field | Policy |
-|-------------|--------|
-| `enabled` | Master toggle -- if `false`, all execution requests are denied |
-| `allowed_commands` | Allowlist of executable names; commands not on the list are rejected |
-| `blocked_paths` | Denylist of filesystem paths; commands accessing these paths are rejected |
-| `max_execution_time_secs` | Timeout after which the child process is killed |
-| `max_output_bytes` | Maximum combined stdout + stderr size; output is truncated beyond this limit |
-
-### Security Considerations (planned)
+### Security Considerations
 
 | Concern | Mitigation |
 |---------|------------|
-| Command injection | Parse and validate command name against allowlist before execution |
-| Path traversal | Resolve symlinks and canonicalize paths before checking against blocklist |
-| Resource exhaustion (time) | Enforce `max_execution_time_secs` via `tokio::time::timeout` |
-| Resource exhaustion (output) | Truncate output at `max_output_bytes` |
-| Privilege escalation | Omega already refuses to run as root (guard in `main.rs`) |
-| Environment leakage | Strip or filter sensitive environment variables before passing to child process |
-| Shell metacharacters | Execute commands directly via `tokio::process::Command` rather than through a shell |
+| Filesystem access | Working directory confinement + system prompt instructions |
+| Write operations | `Rx` mode explicitly forbids writes via prompt constraint |
+| Privilege escalation | Omega refuses to run as root (guard in `main.rs`) |
+| Environment leakage | `CLAUDECODE` env var removed from provider subprocess |
+| Default safety | `SandboxMode::Sandbox` is the default, ensuring new installations start confined |
+
+## Planned Extensions
+
+Future implementation in this crate may add:
+- Process-level isolation (e.g., Linux namespaces, macOS sandbox profiles)
+- Runtime enforcement beyond prompt-based constraints
+- Execution result capture and audit logging
 
 ---
 
@@ -193,16 +183,17 @@ Enforcement logic that maps `SandboxConfig` fields to runtime decisions:
 | Component | Status |
 |-----------|--------|
 | Crate scaffolding (Cargo.toml, lib.rs) | Complete |
-| Configuration (`SandboxConfig`) | Complete (in omega-core) |
+| Configuration (`SandboxConfig` with `SandboxMode`) | Complete (in omega-core) |
+| `SandboxMode` enum with `prompt_constraint()` and `display_name()` | Complete (in omega-core) |
 | Error variant (`OmegaError::Sandbox`) | Complete (in omega-core) |
 | Example config (`config.example.toml` sandbox section) | Complete |
-| Sandbox trait / interface | Not started |
-| Command execution engine | Not started |
-| Policy enforcement (allowlist, blocklist, limits) | Not started |
-| Timeout enforcement | Not started |
-| Output truncation | Not started |
-| Gateway integration | Not started |
-| Unit tests | Not started |
-| Integration tests | Not started |
+| Workspace directory creation (`~/.omega/workspace/`) | Complete (in main.rs) |
+| Provider working directory confinement | Complete (in omega-providers) |
+| System prompt constraint injection | Complete (in gateway.rs) |
+| Sandbox mode in `/status` command | Complete (in commands.rs) |
+| Startup logging of sandbox mode | Complete (in gateway.rs) |
+| Unit tests for SandboxMode | Complete (in omega-core) |
+| Process-level isolation | Not started (planned) |
+| Runtime enforcement beyond prompt constraints | Not started (planned) |
 
-This crate is scheduled for Phase 4 of the Omega roadmap, alongside alternative providers, the skills system, a cron scheduler, and WhatsApp integration.
+The core sandbox functionality (mode-based confinement via working directory and system prompt) is complete. The `omega-sandbox` crate itself remains a placeholder for future process-level isolation features.

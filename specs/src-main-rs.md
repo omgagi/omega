@@ -101,11 +101,12 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
 
 ---
 
-### `build_provider(cfg: &config::Config) -> anyhow::Result<Box<dyn Provider>>`
+### `build_provider(cfg: &config::Config, workspace_path: Option<PathBuf>) -> anyhow::Result<Box<dyn Provider>>`
 **Purpose:** Factory function to instantiate the configured provider from config.
 
 **Parameters:**
 - `cfg: &config::Config` — Parsed configuration object
+- `workspace_path: Option<PathBuf>` — Optional workspace directory path passed to the provider for sandbox confinement
 
 **Returns:**
 - `anyhow::Result<Box<dyn Provider>>` — Trait object or error
@@ -115,7 +116,7 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
 2. **"claude-code" case:**
    - Clone Claude Code provider config (or use defaults)
    - Extract `max_turns`, `allowed_tools`, and `timeout_secs` settings
-   - Construct `ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs)`
+   - Construct `ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, workspace_path)`
    - Return boxed trait object
 3. **Any other provider name:** bail with "unsupported provider" error
 
@@ -203,8 +204,19 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
    - Never overwrites existing files (preserves user edits)
    - Then `Prompts::load()` picks up the freshly deployed files
 
+1c. **Workspace directory creation**
+   - Resolve the expanded `data_dir` path (e.g., `~/.omega`)
+   - Create `{data_dir}/workspace/` directory if it does not exist via `std::fs::create_dir_all()`
+   - This directory serves as the sandbox working directory for the provider
+   - Compute `workspace_path` as `Option<PathBuf>` for passing to `build_provider()`
+
+1d. **Sandbox mode logging**
+   - Read `cfg.sandbox.mode` to determine the active sandbox mode
+   - Log the sandbox mode at INFO level (e.g., `"Sandbox mode: sandbox"`)
+   - Compute `sandbox_prompt` via `cfg.sandbox.mode.prompt_constraint(&workspace_path_str)` for injection into the gateway
+
 2. **Build provider**
-   - Call `build_provider(&cfg)` to instantiate
+   - Call `build_provider(&cfg, workspace_path)` to instantiate with optional workspace directory
    - Wrap in Arc (atomic reference counting) for thread-safe sharing
 
 3. **Verify provider availability**
@@ -236,7 +248,7 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
    - Pass `projects` to `Gateway::new()`.
 
 8. **Start gateway**
-   - Create Gateway instance with provider, channels, memory, auth, channel config, projects
+   - Create Gateway instance with provider, channels, memory, auth, channel config, projects, sandbox mode display name, and sandbox prompt
    - Call `gw.run().await?` to enter event loop
    - Blocks indefinitely processing messages from channels
    - Terminates on signal (graceful shutdown) or error
@@ -307,9 +319,9 @@ Loads TOML from file, merges environment variable overrides.
 ### Provider Config
 ```rust
 let cc = cfg.provider.claude_code.as_ref().cloned().unwrap_or_default();
-ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs)
+ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, workspace_path)
 ```
-Extracts provider-specific settings (including `timeout_secs`); provides defaults if not specified.
+Extracts provider-specific settings (including `timeout_secs`) and passes the workspace path for sandbox confinement; provides defaults if not specified.
 
 ### Channel Config
 ```rust

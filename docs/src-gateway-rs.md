@@ -120,7 +120,21 @@ Commands are fast, deterministic, and don't require AI reasoning. They provide s
 **Why This Exists:**
 Different platforms render text differently. WhatsApp does not support markdown tables or headers, while Telegram has full markdown support. Telling the AI about the platform prevents it from producing formatting that looks broken on the user's end.
 
-### Stage 3c: Group Chat Rules
+### Stage 3c: Sandbox Mode Prompt Injection
+
+**What happens:** The gateway injects sandbox mode rules into the system prompt so the AI provider knows its filesystem boundaries.
+
+**Implementation:**
+- Reads the `sandbox.mode` from the config (one of `sandbox`, `rx`, or `rwx`).
+- Appends a rules block to the system prompt describing what the AI is allowed to do:
+  - **sandbox mode**: "Your workspace is `~/.omega/workspace/`. You may only read, write, and execute within this directory. Do not attempt to access files or run commands outside the workspace."
+  - **rx mode**: "Your workspace is `~/.omega/workspace/`. You may read files and execute commands anywhere on the host, but you may only write files within the workspace."
+  - **rwx mode**: "You have full access to the host filesystem. You may read, write, and execute anywhere."
+
+**Why This Exists:**
+The sandbox mode is enforced at two levels: the Claude Code CLI is started with `current_dir` set to the workspace, and the system prompt tells the AI about its boundaries. The prompt injection is the soft enforcement layer -- it relies on the AI provider respecting the instructions. This complements the hard enforcement of `current_dir`.
+
+### Stage 3d: Group Chat Rules
 
 **What happens:** If the message is from a group chat, additional behavior rules are injected into the system prompt.
 
@@ -225,7 +239,7 @@ Provider calls are the slowest part of the pipeline (typically 2-30 seconds, but
 - If so, log the suppression and return immediately — no storage, no audit, no message sent.
 
 **Why This Exists:**
-This is the other half of group chat awareness. The group rules (Stage 3c) tell the AI to say `SILENT` when it should stay quiet. This stage enforces the suppression so the user never sees an empty or meaningless response.
+This is the other half of group chat awareness. The group rules (Stage 3d) tell the AI to say `SILENT` when it should stay quiet. This stage enforces the suppression so the user never sees an empty or meaningless response.
 
 ### Stage 6b: Schedule Marker Extraction
 
@@ -382,7 +396,12 @@ User sends message on Telegram
 │  • WhatsApp: avoid tables/headers       │
 │  • Telegram: markdown supported         │
 │                                          │
-│ Stage 3c: Group chat rules (if group)   │
+│ Stage 3c: Sandbox mode prompt injection │
+│  • sandbox: workspace only              │
+│  • rx: read+exec host, write workspace  │
+│  • rwx: full host access                │
+│                                          │
+│ Stage 3d: Group chat rules (if group)   │
 │  • Only respond when mentioned/asked    │
 │  • Don't leak private facts             │
 │  • Say SILENT to stay quiet             │
@@ -627,7 +646,7 @@ The gateway uses a **single-threaded, async architecture**:
 
 ## Configuration
 
-The gateway accepts two config sources:
+The gateway accepts several config sources:
 
 ### AuthConfig
 ```toml
@@ -646,6 +665,14 @@ allowed_users = [123456789, 987654321]  # Empty = allow all
 ```
 
 Controls per-channel settings. For Telegram, the allowed_users list is a whitelist. An empty list allows anyone (useful for testing).
+
+### SandboxConfig
+```toml
+[sandbox]
+mode = "sandbox"   # "sandbox" | "rx" | "rwx"
+```
+
+Controls the AI provider's filesystem access level. The gateway reads `sandbox.mode` and injects the corresponding rules into the system prompt during Stage 3c of the processing pipeline. The sandbox mode is also stored on the gateway struct so it can be passed to the `CommandContext` for the `/status` command.
 
 ## Observability
 

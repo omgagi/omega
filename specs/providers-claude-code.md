@@ -36,6 +36,7 @@ Public struct. The provider that wraps the Claude Code CLI.
 | `max_turns` | `u32` | Private | Maximum number of agentic turns the CLI is allowed per single invocation. Default: `10`. |
 | `allowed_tools` | `Vec<String>` | Private | List of tool names the CLI is permitted to use. Default: `["Bash", "Read", "Write", "Edit"]`. |
 | `timeout` | `Duration` | Private | Maximum time to wait for the CLI subprocess to complete. Constructed from `Duration::from_secs(timeout_secs)`. Default: `600` seconds (10 minutes). |
+| `working_dir` | `Option<PathBuf>` | Private | Optional working directory for the CLI subprocess. When `Some`, sets the `current_dir` on the subprocess `Command`. Used by sandbox mode to confine the provider to a workspace directory (e.g., `~/.omega/workspace/`). Default: `None`. |
 
 ### `ClaudeCliResponse`
 
@@ -69,19 +70,20 @@ Constructs a new `ClaudeCodeProvider` with default settings:
 - `max_turns`: `10`
 - `allowed_tools`: `["Bash", "Read", "Write", "Edit"]`
 - `timeout`: `Duration::from_secs(600)` (10 minutes)
+- `working_dir`: `None`
 
 ```rust
 pub fn new() -> Self
 ```
 
-### `ClaudeCodeProvider::from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64) -> Self`
+### `ClaudeCodeProvider::from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64, working_dir: Option<PathBuf>) -> Self`
 
 **Visibility:** Public
 
-Constructs a `ClaudeCodeProvider` from explicit configuration values. Sets `session_id` to `None` and `timeout` to `Duration::from_secs(timeout_secs)`.
+Constructs a `ClaudeCodeProvider` from explicit configuration values. Sets `session_id` to `None`, `timeout` to `Duration::from_secs(timeout_secs)`, and `working_dir` to the provided value.
 
 ```rust
-pub fn from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64) -> Self
+pub fn from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64, working_dir: Option<PathBuf>) -> Self
 ```
 
 ### `ClaudeCodeProvider::check_cli() -> bool` (async)
@@ -127,17 +129,19 @@ The core method. Invokes the Claude Code CLI as a subprocess and parses the resu
          [--allowedTools <tool>]...
    ```
 
-3. **Environment sanitization:** Removes the `CLAUDECODE` environment variable via `cmd.env_remove("CLAUDECODE")` to prevent the CLI from detecting a nested session and erroring out.
+3. **Working directory:** If `self.working_dir` is `Some(path)`, sets `cmd.current_dir(path)` on the subprocess so the CLI operates within the specified workspace directory.
 
-4. **Timing:** Records `Instant::now()` before execution and computes elapsed milliseconds after.
+4. **Environment sanitization:** Removes the `CLAUDECODE` environment variable via `cmd.env_remove("CLAUDECODE")` to prevent the CLI from detecting a nested session and erroring out.
 
-5. **Subprocess execution:** Awaits `cmd.output()`. If the spawn itself fails (e.g., binary not found), returns `OmegaError::Provider` with the I/O error message.
+5. **Timing:** Records `Instant::now()` before execution and computes elapsed milliseconds after.
 
-6. **Exit code check:** If the process exits with a non-zero status, reads stderr and returns `OmegaError::Provider` with the exit code and stderr content.
+6. **Subprocess execution:** Awaits `cmd.output()`. If the spawn itself fails (e.g., binary not found), returns `OmegaError::Provider` with the I/O error message.
 
-7. **JSON parsing:** Attempts `serde_json::from_str::<ClaudeCliResponse>(&stdout)`.
+7. **Exit code check:** If the process exits with a non-zero status, reads stderr and returns `OmegaError::Provider` with the exit code and stderr content.
 
-8. **Response extraction** (on successful parse):
+8. **JSON parsing:** Attempts `serde_json::from_str::<ClaudeCliResponse>(&stdout)`.
+
+9. **Response extraction** (on successful parse):
    - If `subtype == "error_max_turns"`: logs a warning but continues to extract whatever result exists.
    - If `result` is `Some` and non-empty: uses it as the response text.
    - If `result` is `None` or empty:
@@ -145,9 +149,9 @@ The core method. Invokes the Claude Code CLI as a subprocess and parses the resu
      - Otherwise: returns `"(No response text returned)"`.
    - Extracts `model` from the response.
 
-9. **JSON parse failure fallback:** If serde fails, logs a warning and uses the raw stdout (trimmed) as the response text. `model` is set to `None`.
+10. **JSON parse failure fallback:** If serde fails, logs a warning and uses the raw stdout (trimmed) as the response text. `model` is set to `None`.
 
-10. **Return value:** Constructs and returns an `OutgoingMessage`:
+11. **Return value:** Constructs and returns an `OutgoingMessage`:
 
 ```rust
 OutgoingMessage {
@@ -185,6 +189,10 @@ The subprocess is invoked with the following arguments:
 | Variable | Action | Reason |
 |----------|--------|--------|
 | `CLAUDECODE` | Removed | Prevents the CLI from detecting a nested Claude Code session and refusing to run. |
+
+**Working directory:**
+
+When `working_dir` is `Some(path)`, the subprocess is started with `current_dir` set to the given path. This confines the CLI to the workspace directory (e.g., `~/.omega/workspace/`) when sandbox mode is active.
 
 ---
 
@@ -253,6 +261,7 @@ Verifies the default constructor:
 - `max_turns` is `10`
 - `allowed_tools` has 4 entries
 - `timeout` is `Duration::from_secs(600)`
+- `working_dir` is `None`
 
 ```rust
 #[test]
@@ -263,6 +272,7 @@ fn test_default_provider() {
     assert_eq!(provider.max_turns, 10);
     assert_eq!(provider.allowed_tools.len(), 4);
     assert_eq!(provider.timeout, Duration::from_secs(600));
+    assert!(provider.working_dir.is_none());
 }
 ```
 
@@ -272,14 +282,36 @@ fn test_default_provider() {
 
 Verifies that `from_config()` correctly sets the `timeout` field from the provided `timeout_secs` parameter:
 
-- Constructs a provider with `timeout_secs = 300`.
+- Constructs a provider with `timeout_secs = 300` and `working_dir = None`.
 - Asserts `timeout` is `Duration::from_secs(300)`.
 
 ```rust
 #[test]
 fn test_from_config_with_timeout() {
-    let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300);
+    let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300, None);
     assert_eq!(provider.timeout, Duration::from_secs(300));
+}
+```
+
+### `test_from_config_with_working_dir`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `from_config()` correctly sets the `working_dir` field when provided:
+
+- Constructs a provider with `working_dir = Some(PathBuf::from("/tmp/workspace"))`.
+- Asserts `working_dir` is `Some(PathBuf::from("/tmp/workspace"))`.
+
+```rust
+#[test]
+fn test_from_config_with_working_dir() {
+    let provider = ClaudeCodeProvider::from_config(
+        10,
+        vec!["Bash".into()],
+        600,
+        Some(PathBuf::from("/tmp/workspace")),
+    );
+    assert_eq!(provider.working_dir, Some(PathBuf::from("/tmp/workspace")));
 }
 ```
 

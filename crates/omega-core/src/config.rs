@@ -194,31 +194,56 @@ impl Default for MemoryConfig {
     }
 }
 
-/// Sandbox config.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SandboxConfig {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default)]
-    pub allowed_commands: Vec<String>,
-    #[serde(default)]
-    pub blocked_paths: Vec<String>,
-    #[serde(default = "default_execution_time")]
-    pub max_execution_time_secs: u64,
-    #[serde(default = "default_output_bytes")]
-    pub max_output_bytes: usize,
+/// Sandbox mode — controls how far Claude Code can reach beyond the workspace.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SandboxMode {
+    /// Workspace only — no host access (default, safest).
+    #[default]
+    Sandbox,
+    /// Read & execute on host, writes only inside workspace.
+    Rx,
+    /// Full host access (for power users).
+    Rwx,
 }
 
-impl Default for SandboxConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            allowed_commands: Vec::new(),
-            blocked_paths: Vec::new(),
-            max_execution_time_secs: default_execution_time(),
-            max_output_bytes: default_output_bytes(),
+impl SandboxMode {
+    /// Return the system prompt constraint for this mode, or `None` for unrestricted.
+    pub fn prompt_constraint(&self, workspace_path: &str) -> Option<String> {
+        match self {
+            Self::Sandbox => Some(format!(
+                "You are in SANDBOX mode. Your working directory is {workspace_path}.\n\
+                 You MUST only create, modify, and read files within this directory.\n\
+                 Do NOT access, read, or modify any files outside your working directory.\n\
+                 You have full network access (curl, wget, API calls).\n\
+                 Install dependencies locally (npm install, pip install --target, etc)."
+            )),
+            Self::Rx => Some(format!(
+                "You are in READ-ONLY mode. Your working directory is {workspace_path}.\n\
+                 You may READ files anywhere on the host filesystem to inspect and analyze.\n\
+                 You may EXECUTE read-only commands (ls, cat, grep, ps, etc).\n\
+                 You MUST only WRITE or CREATE files inside your working directory ({workspace_path}).\n\
+                 Do NOT modify, delete, or create files outside your working directory."
+            )),
+            Self::Rwx => None,
         }
     }
+
+    /// Human-readable name for display (e.g. in `/status`).
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::Sandbox => "sandbox",
+            Self::Rx => "rx",
+            Self::Rwx => "rwx",
+        }
+    }
+}
+
+/// Sandbox config.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SandboxConfig {
+    #[serde(default)]
+    pub mode: SandboxMode,
 }
 
 /// Heartbeat configuration — periodic AI check-ins.
@@ -322,12 +347,6 @@ fn default_db_path() -> String {
 }
 fn default_max_context() -> usize {
     50
-}
-fn default_execution_time() -> u64 {
-    30
-}
-fn default_output_bytes() -> usize {
-    1_048_576
 }
 fn default_heartbeat_interval() -> u64 {
     30
@@ -593,6 +612,60 @@ mod tests {
         "#;
         let cc: ClaudeCodeConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(cc.timeout_secs, 600);
+    }
+
+    #[test]
+    fn test_sandbox_mode_default_is_sandbox() {
+        let mode = SandboxMode::default();
+        assert_eq!(mode, SandboxMode::Sandbox);
+        assert_eq!(mode.display_name(), "sandbox");
+    }
+
+    #[test]
+    fn test_sandbox_mode_from_toml() {
+        let toml_str = r#"mode = "sandbox""#;
+        let cfg: SandboxConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.mode, SandboxMode::Sandbox);
+
+        let toml_str = r#"mode = "rx""#;
+        let cfg: SandboxConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.mode, SandboxMode::Rx);
+
+        let toml_str = r#"mode = "rwx""#;
+        let cfg: SandboxConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.mode, SandboxMode::Rwx);
+    }
+
+    #[test]
+    fn test_sandbox_mode_default_when_missing() {
+        let toml_str = "";
+        let cfg: SandboxConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.mode, SandboxMode::Sandbox);
+    }
+
+    #[test]
+    fn test_sandbox_mode_prompt_constraint() {
+        let ws = "/home/user/.omega/workspace";
+
+        let constraint = SandboxMode::Sandbox.prompt_constraint(ws);
+        assert!(constraint.is_some());
+        assert!(constraint.as_ref().unwrap().contains("SANDBOX mode"));
+        assert!(constraint.as_ref().unwrap().contains(ws));
+
+        let constraint = SandboxMode::Rx.prompt_constraint(ws);
+        assert!(constraint.is_some());
+        assert!(constraint.as_ref().unwrap().contains("READ-ONLY mode"));
+        assert!(constraint.as_ref().unwrap().contains(ws));
+
+        let constraint = SandboxMode::Rwx.prompt_constraint(ws);
+        assert!(constraint.is_none());
+    }
+
+    #[test]
+    fn test_sandbox_mode_display_names() {
+        assert_eq!(SandboxMode::Sandbox.display_name(), "sandbox");
+        assert_eq!(SandboxMode::Rx.display_name(), "rx");
+        assert_eq!(SandboxMode::Rwx.display_name(), "rwx");
     }
 
     #[test]

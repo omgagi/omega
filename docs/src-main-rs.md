@@ -195,7 +195,11 @@ Ensure projects directory exists (~/.omega/projects/)
     ↓
 Load all projects from projects/*/INSTRUCTIONS.md
     ↓
-Build Claude Code provider
+Create workspace directory (~/.omega/workspace/) if not present
+    ↓
+Log sandbox mode (e.g., "Sandbox mode: sandbox")
+    ↓
+Build Claude Code provider (with working_dir set to workspace)
     ↓
 Check if Claude CLI available
     ├─ Not available? → STOP with error
@@ -311,8 +315,10 @@ Omega is designed to support multiple AI providers. Currently, **Claude Code CLI
 When you run `omega start`:
 1. The code reads `provider.default` from config (currently only "claude-code" supported)
 2. Extracts provider-specific settings (max_turns, allowed_tools, timeout_secs)
-3. Creates a ClaudeCodeProvider instance by calling `from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs)`
-4. The provider handles the actual Claude API calls
+3. Resolves the workspace directory (`~/.omega/workspace/`) and ensures it exists
+4. Logs the active sandbox mode (sandbox, rx, or rwx)
+5. Creates a ClaudeCodeProvider instance by calling `from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, Some(workspace_dir))`
+6. The provider handles the actual Claude API calls
 
 **Future providers** (planned): Anthropic API, OpenAI, Ollama, OpenRouter. The factory function `build_provider()` makes adding new providers straightforward.
 

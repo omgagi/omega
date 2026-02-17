@@ -53,7 +53,8 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [skills-lib.md](skills-lib.md) — Skill loader + project loader (skills from `~/.omega/skills/*/SKILL.md`, projects from `~/.omega/projects/*/INSTRUCTIONS.md`)
 
 ### Milestone 8: omega-sandbox
-- [sandbox.md](sandbox.md) — Secure execution environment (planned)
+- [sandbox-lib.md](sandbox-lib.md) — 3-level workspace sandbox (sandbox/rx/rwx modes)
+- [sandbox-cargo-toml.md](sandbox-cargo-toml.md) — Sandbox crate Cargo.toml
 
 ## Architecture Diagram
 
@@ -82,7 +83,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 ## Data Flow
 
 ```
-Message → Auth → Sanitize → Memory (context) → Provider → SCHEDULE extract → Memory (store) → Audit → Send
+Message → Auth → Sanitize → Sandbox constraint → Memory (context) → Provider → SCHEDULE extract → Memory (store) → Audit → Send
 
 Background:
   Scheduler: poll due_tasks → channel.send(reminder) → complete_task

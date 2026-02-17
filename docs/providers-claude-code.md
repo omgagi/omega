@@ -36,9 +36,10 @@ let provider = ClaudeCodeProvider::new();
 
 ```rust
 let provider = ClaudeCodeProvider::from_config(
-    20,                                   // allow up to 20 agentic turns
-    vec!["Bash".into(), "Read".into()],   // restrict to just Bash and Read
-    600,                                  // timeout in seconds (10 minutes)
+    20,                                                   // allow up to 20 agentic turns
+    vec!["Bash".into(), "Read".into()],                   // restrict to just Bash and Read
+    600,                                                  // timeout in seconds (10 minutes)
+    Some(PathBuf::from("/home/user/.omega/workspace")),   // working directory
 );
 ```
 
@@ -60,6 +61,12 @@ The list of tools Claude is permitted to use during its agentic turns. Each tool
 | `Edit` | Edit existing files |
 
 If you want a more restricted provider (e.g., one that can only answer questions without touching the filesystem), pass a smaller list to `from_config`.
+
+### `working_dir`
+
+An optional `PathBuf` that sets the current working directory for the Claude Code CLI subprocess. When set, the CLI process is spawned with `current_dir` pointed at this path, which confines the AI's default file operations to the specified directory.
+
+In practice this is always set to `~/.omega/workspace/` (the sandbox workspace). The gateway resolves this path from the sandbox configuration and passes it to `from_config()`. This ensures that regardless of sandbox mode, the CLI starts in the workspace directory.
 
 ### `timeout_secs`
 
@@ -116,6 +123,18 @@ cmd.env_remove("CLAUDECODE");
 This is important. If Omega itself is running inside a Claude Code session (for development or testing), the CLI would detect the `CLAUDECODE` env var and refuse to start, thinking it is a nested invocation. Removing the variable prevents this issue.
 
 No other environment variables are modified. The CLI inherits the rest of Omega's environment, including `PATH` and any authentication tokens the CLI needs.
+
+### Working Directory
+
+When `working_dir` is set (which it always is in normal operation), the subprocess is spawned with `current_dir` pointed at `~/.omega/workspace/`:
+
+```rust
+if let Some(ref dir) = self.working_dir {
+    cmd.current_dir(dir);
+}
+```
+
+This ensures the Claude Code CLI starts in the sandbox workspace directory. Combined with the sandbox mode rules injected into the system prompt, this provides the filesystem isolation boundary for the AI provider.
 
 ---
 

@@ -282,31 +282,28 @@ max_context_messages = 50
 
 For a new installation, leave these at defaults.
 
-## Step 7: Configure Security Sandbox
+## Step 7: Configure the Sandbox
 
-The `[sandbox]` section protects your system from accidental damage.
+The `[sandbox]` section controls how much host access the AI provider has.
 
 ```toml
 [sandbox]
-enabled = true
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]
-blocked_paths = ["/etc/shadow", "/etc/passwd"]
-max_execution_time_secs = 30
-max_output_bytes = 1048576
+mode = "sandbox"   # "sandbox" | "rx" | "rwx"
 ```
 
 **What this means:**
-- **`enabled = true`:** Omega can only run commands in the `allowed_commands` list. This is a safety feature.
-- **`allowed_commands`:** List of safe commands. The default set is good for development (git, cargo, npm, python, file reading).
-- **`blocked_paths`:** Files Omega can never access (even via allowed commands). `/etc/shadow` and `/etc/passwd` are system files—don't change this.
-- **`max_execution_time_secs = 30`:** Commands timeout after 30 seconds (prevents infinite loops).
-- **`max_output_bytes = 1048576`:** Limit output to ~1 MB (prevents memory exhaustion).
+- **`mode = "sandbox"`** (default): The AI is confined to `~/.omega/workspace/`. It cannot read, write, or execute anything outside that directory. This is the safest option.
+- **`mode = "rx"`**: The AI can read files and execute commands anywhere on the host, but it can only write files inside `~/.omega/workspace/`. Good for inspecting your system without risk of modification.
+- **`mode = "rwx"`**: Full host access. The AI can read, write, and execute anywhere. Only use this if you fully trust the AI provider.
+
+The workspace directory `~/.omega/workspace/` is created automatically on startup. The Claude Code CLI always runs with its working directory set to the workspace, regardless of mode.
 
 **When to change:**
-- **Adding more commands:** If you ask Omega to use a tool it doesn't have (e.g., `docker`), add it: `["ls", "cat", ..., "docker"]`.
-- **Removing commands:** If you don't trust a provider with `npm`, remove it.
+- **You want the AI to inspect system files:** Switch to `rx` mode.
+- **You want the AI to manage files on your system:** Switch to `rwx` mode.
+- **You want maximum isolation:** Keep the default `sandbox` mode.
 
-For now, keep defaults.
+For now, keep the default.
 
 ## Step 8: Configure the Scheduler (Task Queue)
 
@@ -455,11 +452,7 @@ db_path = "~/.omega/memory.db"
 max_context_messages = 50
 
 [sandbox]
-enabled = true
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]
-blocked_paths = ["/etc/shadow", "/etc/passwd"]
-max_execution_time_secs = 30
-max_output_bytes = 1048576
+mode = "sandbox"
 ```
 
 ### Scenario 2: Personal Telegram Bot (Anthropic API)
@@ -493,11 +486,7 @@ db_path = "~/.omega/memory.db"
 max_context_messages = 50
 
 [sandbox]
-enabled = true
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]
-blocked_paths = ["/etc/shadow", "/etc/passwd"]
-max_execution_time_secs = 30
-max_output_bytes = 1048576
+mode = "sandbox"
 ```
 
 ### Scenario 3: Multi-User Team (OpenRouter)
@@ -531,11 +520,7 @@ db_path = "~/.omega/memory.db"
 max_context_messages = 75  # More context for complex discussions
 
 [sandbox]
-enabled = true
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python", "docker"]
-blocked_paths = ["/etc/shadow", "/etc/passwd", "/root"]
-max_execution_time_secs = 60  # Longer timeout for CI/CD tasks
-max_output_bytes = 2097152  # 2 MB for verbose output
+mode = "rwx"  # Team bot needs full host access for CI/CD tasks
 ```
 
 ## Troubleshooting
@@ -587,12 +572,15 @@ If auth is enabled, your user ID must be in `allowed_users`. Find it:
    allowed_users = [123456789]
    ```
 
-### "Command not allowed"
+### "Cannot access files outside workspace"
 
-If you ask Omega to use a tool it can't, add it to `allowed_commands`:
+If the AI reports it cannot access files on your system, your sandbox mode may be too restrictive. Switch to a more permissive mode:
 
 ```toml
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python", "docker"]
+[sandbox]
+mode = "rx"    # Read and execute on host, write only in workspace
+# or
+mode = "rwx"   # Full host access
 ```
 
 ### "Database is locked"

@@ -106,11 +106,7 @@ channel = "telegram"
 reply_target = ""
 
 [sandbox]
-enabled = true
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]
-blocked_paths = ["/etc/shadow", "/etc/passwd"]
-max_execution_time_secs = 30
-max_output_bytes = 1048576
+mode = "sandbox"   # "sandbox" | "rx" | "rwx"
 ```
 
 Every section except `[omega]` can be omitted entirely and Omega will use defaults.
@@ -232,15 +228,23 @@ The scheduler delivers reminders and recurring tasks that users create through n
 
 The heartbeat calls the AI provider periodically to perform a health check. If the provider responds with `HEARTBEAT_OK`, the result is suppressed (log only). Otherwise, the response is sent as an alert to the configured channel and reply target. An optional `~/.omega/HEARTBEAT.md` file can contain a checklist for the AI to evaluate.
 
-### `[sandbox]` -- Command Execution Safety
+### `[sandbox]` -- Workspace Isolation
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | bool | `true` | Whether the sandbox is active. |
-| `allowed_commands` | array of strings | `[]` | Commands the sandbox will allow. An empty list in the default means no commands are pre-approved (the example config suggests common safe ones). |
-| `blocked_paths` | array of strings | `[]` | File paths the sandbox will refuse to access. |
-| `max_execution_time_secs` | integer | `30` | Maximum wall-clock seconds for any single command. |
-| `max_output_bytes` | integer | `1048576` | Maximum output size (1 MiB) before truncation. |
+| `mode` | string | `"sandbox"` | Sandbox mode. One of `"sandbox"`, `"rx"`, or `"rwx"`. |
+
+The sandbox controls how much host access the AI provider has. The workspace directory `~/.omega/workspace/` is created automatically on startup and serves as the AI's working directory.
+
+**Sandbox modes:**
+
+| Mode | Workspace Access | Host Read | Host Write | Host Execute | Use Case |
+|------|-----------------|-----------|------------|--------------|----------|
+| `sandbox` | Full | No | No | No | Default. AI is confined to `~/.omega/workspace/`. No host access. |
+| `rx` | Full | Yes | No | Yes | AI can read and execute anywhere on the host, but writes are restricted to `~/.omega/workspace/`. |
+| `rwx` | Full | Yes | Yes | Yes | Full host access. For power users who trust the AI provider. |
+
+The `SandboxMode` enum in `omega-core::config` maps directly to these three modes. The mode is injected into the system prompt so the AI provider knows its boundaries, and it is displayed by the `/status` command.
 
 ## Environment Variables
 

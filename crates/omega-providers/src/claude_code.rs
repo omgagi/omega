@@ -11,6 +11,7 @@ use omega_core::{
     traits::Provider,
 };
 use serde::Deserialize;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tracing::{debug, error, warn};
@@ -28,6 +29,8 @@ pub struct ClaudeCodeProvider {
     allowed_tools: Vec<String>,
     /// Subprocess timeout.
     timeout: Duration,
+    /// Working directory for the CLI subprocess (sandbox workspace).
+    working_dir: Option<PathBuf>,
 }
 
 /// JSON response from `claude -p --output-format json`.
@@ -70,16 +73,23 @@ impl ClaudeCodeProvider {
                 "Edit".to_string(),
             ],
             timeout: DEFAULT_TIMEOUT,
+            working_dir: None,
         }
     }
 
     /// Create a provider from config values.
-    pub fn from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64) -> Self {
+    pub fn from_config(
+        max_turns: u32,
+        allowed_tools: Vec<String>,
+        timeout_secs: u64,
+        working_dir: Option<PathBuf>,
+    ) -> Self {
         Self {
             session_id: None,
             max_turns,
             allowed_tools,
             timeout: Duration::from_secs(timeout_secs),
+            working_dir,
         }
     }
 
@@ -143,6 +153,12 @@ impl ClaudeCodeProvider {
         let mut cmd = Command::new("claude");
         // Remove CLAUDECODE env var so the CLI doesn't think it's nested.
         cmd.env_remove("CLAUDECODE");
+
+        // Set working directory for sandbox isolation.
+        if let Some(ref dir) = self.working_dir {
+            cmd.current_dir(dir);
+        }
+
         cmd.arg("-p")
             .arg(prompt)
             .arg("--output-format")
@@ -257,12 +273,22 @@ mod tests {
         assert_eq!(provider.max_turns, 10);
         assert_eq!(provider.allowed_tools.len(), 4);
         assert_eq!(provider.timeout, Duration::from_secs(600));
+        assert!(provider.working_dir.is_none());
     }
 
     #[test]
     fn test_from_config_with_timeout() {
-        let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300);
+        let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300, None);
         assert_eq!(provider.max_turns, 5);
         assert_eq!(provider.timeout, Duration::from_secs(300));
+        assert!(provider.working_dir.is_none());
+    }
+
+    #[test]
+    fn test_from_config_with_working_dir() {
+        let dir = PathBuf::from("/home/user/.omega/workspace");
+        let provider =
+            ClaudeCodeProvider::from_config(10, vec!["Bash".into()], 600, Some(dir.clone()));
+        assert_eq!(provider.working_dir, Some(dir));
     }
 }

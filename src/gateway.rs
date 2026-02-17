@@ -37,6 +37,8 @@ pub struct Gateway {
     skills: Vec<omega_skills::Skill>,
     projects: Vec<omega_skills::Project>,
     uptime: Instant,
+    sandbox_mode: String,
+    sandbox_prompt: Option<String>,
 }
 
 impl Gateway {
@@ -54,6 +56,8 @@ impl Gateway {
         data_dir: String,
         skills: Vec<omega_skills::Skill>,
         projects: Vec<omega_skills::Project>,
+        sandbox_mode: String,
+        sandbox_prompt: Option<String>,
     ) -> Self {
         let audit = AuditLogger::new(memory.pool().clone());
         Self {
@@ -70,20 +74,23 @@ impl Gateway {
             skills,
             projects,
             uptime: Instant::now(),
+            sandbox_mode,
+            sandbox_prompt,
         }
     }
 
     /// Run the main event loop.
     pub async fn run(&mut self) -> anyhow::Result<()> {
         info!(
-            "Omega gateway running | provider: {} | channels: {} | auth: {}",
+            "Omega gateway running | provider: {} | channels: {} | auth: {} | sandbox: {}",
             self.provider.name(),
             self.channels.keys().cloned().collect::<Vec<_>>().join(", "),
             if self.auth_config.enabled {
                 "enforced"
             } else {
                 "disabled"
-            }
+            },
+            self.sandbox_mode
         );
 
         let (tx, mut rx) = mpsc::channel::<IncomingMessage>(256);
@@ -543,6 +550,7 @@ impl Gateway {
                 provider_name: self.provider.name(),
                 skills: &self.skills,
                 projects: &self.projects,
+                sandbox_mode: &self.sandbox_mode,
             };
             let response = commands::handle(cmd, &ctx).await;
 
@@ -622,6 +630,12 @@ impl Gateway {
                 prompt
                     .push_str("\n\nCurrent heartbeat checklist (items monitored periodically):\n");
                 prompt.push_str(&checklist);
+            }
+
+            // Sandbox mode constraint.
+            if let Some(ref constraint) = self.sandbox_prompt {
+                prompt.push_str("\n\n");
+                prompt.push_str(constraint);
             }
 
             prompt

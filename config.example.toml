@@ -81,8 +81,7 @@ reply_target = ""               # Chat ID for delivery
 # --- Security ---
 
 [sandbox]
-enabled = true
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]
-blocked_paths = ["/etc/shadow", "/etc/passwd"]
-max_execution_time_secs = 30
-max_output_bytes = 1048576
+mode = "sandbox"   # "sandbox" | "rx" | "rwx"
+# sandbox = workspace only, no host access (default, safest)
+# rx      = can read & execute on host, writes only in workspace
+# rwx     = full host access (for power users)

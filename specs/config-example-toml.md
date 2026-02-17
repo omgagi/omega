@@ -357,34 +357,35 @@ reply_target = ""               # Chat ID for delivery
 
 ## Section: `[sandbox]`
 
-Command execution security sandbox configuration.
+Sandbox mode configuration. Controls how the AI provider interacts with the filesystem and system resources via system prompt constraints and working directory confinement.
 
 ### Keys
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | Boolean | `true` | Enable/disable sandbox enforcement. When `true`, restricts which commands can be executed. When `false`, all commands are allowed (dangerous). |
-| `allowed_commands` | Array[String] | `["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]` | Whitelist of command names that the provider can execute via `Bash` tool. If a command is not in this list, execution is blocked. |
-| `blocked_paths` | Array[String] | `["/etc/shadow", "/etc/passwd"]` | Blacklist of file paths that cannot be accessed (read, write, delete). Prevents access to sensitive system files. |
-| `max_execution_time_secs` | Integer | `30` | Maximum walltime (in seconds) for a single command execution. Prevents resource exhaustion and infinite loops. |
-| `max_output_bytes` | Integer | `1048576` | Maximum output size (in bytes) captured from a command. Approximately 1 MB (1048576 bytes). Prevents memory exhaustion from large output. |
+| `mode` | String | `"sandbox"` | Sandbox operating mode. Valid values: `"sandbox"`, `"rx"`, `"rwx"`. Controls both the working directory and the system prompt constraints injected for the provider. |
+
+**Mode Values:**
+
+| Mode | Working Directory | System Prompt Constraint | Description |
+|------|------------------|-------------------------|-------------|
+| `"sandbox"` | `~/.omega/workspace/` | SANDBOX mode instructions (confine to workspace) | Default. Provider is confined to the workspace directory. System prompt instructs the provider to only operate within the workspace path. |
+| `"rx"` | `~/.omega/workspace/` | READ-ONLY mode instructions (no writes, no deletes, no commands) | Read-only mode. Provider receives system prompt instructions allowing read access but forbidding writes, deletes, and command execution. |
+| `"rwx"` | None (no confinement) | None (no constraint injected) | Unrestricted mode. No sandbox prompt constraint is injected and no working directory is set on the provider subprocess. |
 
 **Example:**
 ```toml
 [sandbox]
-enabled = true
-allowed_commands = ["ls", "cat", "grep", "find", "git", "cargo", "npm", "python"]
-blocked_paths = ["/etc/shadow", "/etc/passwd"]
-max_execution_time_secs = 30
-max_output_bytes = 1048576
+mode = "sandbox"   # "sandbox" | "rx" | "rwx"
 ```
 
 ### Notes
 
-- **Security Sensitive:** Sandbox controls prevent malicious or accidental system damage.
-- **Command Matching:** Checks the base command name (e.g., `ls` in `/usr/bin/ls`). Sub-invocations (pipes, redirection) are still restricted.
-- **Path Blocking:** Applied to file operations within tools like `Read`, `Write`, `Edit`, `Bash`.
+- **Security Sensitive:** Sandbox mode controls the level of filesystem access granted to the AI provider.
+- **Workspace Directory:** In `sandbox` and `rx` modes, the provider subprocess `current_dir` is set to `~/.omega/workspace/`, which is automatically created at startup.
+- **System Prompt Injection:** The sandbox constraint text is prepended to the system prompt before context building, giving the provider explicit instructions about its operating boundaries.
 - **Root Check:** Omega explicitly refuses to run as root (uid 0) to prevent privilege escalation risks.
+- **Default Safety:** The default mode is `"sandbox"`, ensuring new installations start with filesystem confinement enabled.
 
 ---
 
@@ -428,7 +429,7 @@ The config file should contain empty string values (`api_key = ""`) for these fi
 1. Use a secrets manager (e.g., 1Password, Bitwarden, HashiCorp Vault) to store keys.
 2. Inject secrets via environment variables at runtime.
 3. Enable `auth.enabled = true` and populate `allowed_users` to restrict access.
-4. Set `sandbox.enabled = true` and maintain a minimal `allowed_commands` list.
+4. Keep `sandbox.mode = "sandbox"` (the default) unless you explicitly need broader access.
 5. Monitor `~/.omega/omega.log` for suspicious activity.
 6. Review `~/.omega/memory.db` audit trail periodically.
 
@@ -475,7 +476,7 @@ The config file should contain empty string values (`api_key = ""`) for these fi
 | **"provider not enabled"** | Verify `[provider.<name>] enabled = true` and that it's set as `default`. |
 | **"API key not found"** | Check env var is set: `echo $ANTHROPIC_API_KEY`. Ensure it's exported, not just set. |
 | **"Access denied"** | If `auth.enabled = true`, add your user ID to `allowed_users` in the channel config. |
-| **Command not allowed** | Add command to `sandbox.allowed_commands` if safe to do so. |
+| **Provider restricted** | Check `sandbox.mode` — use `"rwx"` for unrestricted access, or `"rx"` for read-only. Default `"sandbox"` confines to workspace. |
 | **Database locked** | Ensure no other Omega instance is running. Delete `memory.db` if corrupted. |
 
 ---

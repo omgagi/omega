@@ -8,13 +8,14 @@ use clap::{Parser, Subcommand};
 use omega_channels::telegram::TelegramChannel;
 use omega_channels::whatsapp::WhatsAppChannel;
 use omega_core::{
-    config::{self, Prompts},
+    config::{self, shellexpand, Prompts},
     context::Context,
     traits::Provider,
 };
 use omega_memory::Store;
 use omega_providers::claude_code::ClaudeCodeProvider;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Parser)]
@@ -109,8 +110,25 @@ async fn main() -> anyhow::Result<()> {
             omega_skills::ensure_projects_dir(&cfg.omega.data_dir);
             let projects = omega_skills::load_projects(&cfg.omega.data_dir);
 
-            // Build provider.
-            let provider: Arc<dyn omega_core::traits::Provider> = Arc::from(build_provider(&cfg)?);
+            // Create workspace directory for sandbox isolation.
+            let workspace_path = {
+                let expanded = shellexpand(&cfg.omega.data_dir);
+                let ws = PathBuf::from(&expanded).join("workspace");
+                if let Err(e) = std::fs::create_dir_all(&ws) {
+                    anyhow::bail!("failed to create workspace {}: {e}", ws.display());
+                }
+                ws
+            };
+
+            // Build provider with workspace as working directory.
+            let provider: Arc<dyn omega_core::traits::Provider> =
+                Arc::from(build_provider(&cfg, &workspace_path)?);
+
+            tracing::info!(
+                "sandbox mode: {} | workspace: {}",
+                cfg.sandbox.mode.display_name(),
+                workspace_path.display()
+            );
 
             if !provider.is_available().await {
                 anyhow::bail!("provider '{}' is not available", provider.name());
@@ -152,6 +170,10 @@ async fn main() -> anyhow::Result<()> {
                 anyhow::bail!("Self-check failed. Fix the issues above before starting.");
             }
 
+            // Compute sandbox prompt constraint.
+            let sandbox_mode = cfg.sandbox.mode;
+            let sandbox_prompt = sandbox_mode.prompt_constraint(&workspace_path.to_string_lossy());
+
             // Build and run gateway.
             println!("Ω OMEGA — Starting agent...");
             let mut gw = gateway::Gateway::new(
@@ -166,6 +188,8 @@ async fn main() -> anyhow::Result<()> {
                 cfg.omega.data_dir.clone(),
                 skills,
                 projects,
+                sandbox_mode.display_name().to_string(),
+                sandbox_prompt,
             );
             gw.run().await?;
         }
@@ -215,7 +239,16 @@ async fn main() -> anyhow::Result<()> {
 
             let prompt = message.join(" ");
             let cfg = config::load(&cli.config)?;
-            let provider = build_provider(&cfg)?;
+
+            // Ensure workspace exists for ask command too.
+            let workspace_path = {
+                let expanded = shellexpand(&cfg.omega.data_dir);
+                let ws = PathBuf::from(&expanded).join("workspace");
+                let _ = std::fs::create_dir_all(&ws);
+                ws
+            };
+
+            let provider = build_provider(&cfg, &workspace_path)?;
 
             if !provider.is_available().await {
                 anyhow::bail!(
@@ -242,7 +275,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Build the configured provider.
-fn build_provider(cfg: &config::Config) -> anyhow::Result<Box<dyn Provider>> {
+fn build_provider(
+    cfg: &config::Config,
+    workspace_path: &std::path::Path,
+) -> anyhow::Result<Box<dyn Provider>> {
     match cfg.provider.default.as_str() {
         "claude-code" => {
             let cc = cfg
@@ -255,6 +291,7 @@ fn build_provider(cfg: &config::Config) -> anyhow::Result<Box<dyn Provider>> {
                 cc.max_turns,
                 cc.allowed_tools,
                 cc.timeout_secs,
+                Some(workspace_path.to_path_buf()),
             )))
         }
         other => anyhow::bail!("unsupported provider: {other}"),

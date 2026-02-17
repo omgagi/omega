@@ -80,7 +80,8 @@ omega_core
 | `TelegramConfig` | Debug, Clone, Serialize, Deserialize | Telegram bot settings (enabled, bot_token, allowed_users) |
 | `WhatsAppConfig` | Debug, Clone, Serialize, Deserialize | WhatsApp bridge settings (enabled, bridge_url, phone_number) |
 | `MemoryConfig` | Debug, Clone, Serialize, Deserialize | Memory backend settings (backend, db_path, max_context_messages) |
-| `SandboxConfig` | Debug, Clone, Serialize, Deserialize | Sandbox settings (enabled, allowed_commands, blocked_paths, limits) |
+| `SandboxConfig` | Debug, Clone, Default, Serialize, Deserialize | Sandbox settings (mode: SandboxMode) |
+| `SandboxMode` | Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize | Sandbox mode enum (Sandbox, Rx, Rwx) |
 
 **Public Functions:**
 
@@ -108,8 +109,6 @@ omega_core
 | `default_memory_backend()` | `String` | `"sqlite"` |
 | `default_db_path()` | `String` | `"~/.omega/memory.db"` |
 | `default_max_context()` | `usize` | `50` |
-| `default_execution_time()` | `u64` | `30` |
-| `default_output_bytes()` | `usize` | `1_048_576` (1 MiB) |
 
 **`load()` Flow:**
 1. Convert `path` to `std::path::Path`.

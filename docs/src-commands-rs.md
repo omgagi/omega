@@ -21,6 +21,7 @@ Commands are special messages that start with a forward slash (`/`) and provide 
 *Ω OMEGA* Status
 Uptime: 2h 15m 30s
 Provider: Claude Code CLI
+Sandbox: sandbox
 Database: 1.4 MB
 ```
 
@@ -28,6 +29,7 @@ Database: 1.4 MB
 - Check if Omega is responsive and healthy
 - Monitor database growth over time
 - Verify which AI provider is configured
+- Confirm the active sandbox mode (sandbox, rx, or rwx)
 
 ---
 

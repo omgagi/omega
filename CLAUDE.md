@@ -58,18 +58,18 @@ Cargo workspace with 6 crates:
 | `omega-channels` | Messaging platforms (Telegram, WhatsApp) |
 | `omega-memory` | SQLite storage, conversation history, audit log, scheduled tasks |
 | `omega-skills` | Skill loader + project loader — skills from `~/.omega/skills/*/SKILL.md`, projects from `~/.omega/projects/*/INSTRUCTIONS.md` |
-| `omega-sandbox` | Secure command execution (planned) |
+| `omega-sandbox` | 3-level workspace sandbox (sandbox/rx/rwx modes) |
 
 Gateway event loop (`src/gateway.rs`):
 ```
-Message → Auth → Sanitize → Platform Hint → Group Rules → Heartbeat awareness → Memory (context) → Heads-up → Provider (async + status updates) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
+Message → Auth → Sanitize → Platform Hint → Group Rules → Heartbeat awareness → Sandbox constraint → Memory (context) → Heads-up → Provider (async + status updates) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
 ```
 
 Background loops (spawned in `gateway::run()`):
 - **Scheduler**: polls `scheduled_tasks` table every 60s, delivers due reminders via channel
 - **Heartbeat**: periodic context-aware provider check-in (default 30min), enriched with user facts + recent summaries, skips when no `~/.omega/HEARTBEAT.md` checklist is configured, suppresses `HEARTBEAT_OK`, alerts otherwise
 
-Bot commands (`src/commands.rs`): `/help`, `/forget`, `/tasks`, `/cancel <id>`, `/language`, `/skills`, `/projects`, `/project` — dispatched via `commands::handle(cmd, &CommandContext)` where `CommandContext` groups store, channel, sender, text, uptime, provider name, skills, and projects into a single struct.
+Bot commands (`src/commands.rs`): `/help`, `/forget`, `/tasks`, `/cancel <id>`, `/language`, `/skills`, `/projects`, `/project` — dispatched via `commands::handle(cmd, &CommandContext)` where `CommandContext` groups store, channel, sender, text, uptime, provider name, skills, projects, and sandbox mode into a single struct.
 
 CLI commands: `start`, `status`, `ask`, `init`, `service install|uninstall|status`
 
@@ -103,6 +103,7 @@ cargo build --release        # Optimized binary
 - Prompt sanitization in `omega-core/src/sanitize.rs` neutralizes injection patterns before they reach the provider.
 - Auth is enforced per-channel via `allowed_users` in config.
 - `config.toml` is gitignored — never commit secrets.
+- **Sandbox**: 3-level workspace isolation (`~/.omega/workspace/`). Claude Code CLI always runs with `current_dir` set to the workspace. Modes: `sandbox` (default, workspace only), `rx` (read/execute host, write workspace), `rwx` (full access). System prompt enforces boundaries per mode.
 
 ## File Conventions
 
@@ -113,6 +114,7 @@ cargo build --release        # Optimized binary
 - Welcome messages: `~/.omega/WELCOME.toml` (auto-deployed on first run, `[messages]` table keyed by language, read at startup)
 - Skills: `~/.omega/skills/*/SKILL.md` (auto-deployed on first run, TOML frontmatter + instructions, scanned at startup)
 - Projects: `~/.omega/projects/*/INSTRUCTIONS.md` (user-created, directory name = project name, scanned at startup)
+- Workspace: `~/.omega/workspace/` (sandbox working directory, created on startup)
 - Heartbeat checklist: `~/.omega/HEARTBEAT.md` (optional, read by heartbeat loop)
 - Logs: `~/.omega/omega.log`
 - Service (macOS): `~/Library/LaunchAgents/com.omega-cortex.omega.plist`
@@ -120,7 +122,7 @@ cargo build --release        # Optimized binary
 
 ## Provider Priority
 
-Claude Code CLI is the primary provider. It invokes `claude -p --output-format json` as a subprocess with a configurable timeout (`timeout_secs`, default 600s / 10 minutes). The JSON response has this structure:
+Claude Code CLI is the primary provider. It invokes `claude -p --output-format json` as a subprocess with `current_dir` set to `~/.omega/workspace/` and a configurable timeout (`timeout_secs`, default 600s / 10 minutes). The JSON response has this structure:
 ```json
 {"type": "result", "subtype": "success", "result": "...", "model": "...", "session_id": "..."}
 ```
@@ -140,4 +142,4 @@ Always consult these before modifying or extending the codebase:
 - **Phase 1** (complete): Workspace, core types, Claude Code provider, CLI (`omega ask`)
 - **Phase 2** (complete): Memory, Telegram channel, gateway, audit log, auth, sanitization, LaunchAgent
 - **Phase 3** (complete): Conversation boundaries, summaries, facts extraction, enriched context, typing indicator, bot commands, system prompt upgrade, self-check, graceful shutdown, exponential backoff, init wizard
-- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, sandbox, WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, Soul personality in system prompt, guided fact-extraction schema
+- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, 3-level sandbox (sandbox/rx/rwx workspace isolation), WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, Soul personality in system prompt, guided fact-extraction schema

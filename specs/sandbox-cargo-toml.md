@@ -123,7 +123,7 @@ The workspace uses Cargo resolver version `2` (set in the root `Cargo.toml`), wh
 
 ## Notes
 
-- The crate is currently a **scaffold**. The `src/lib.rs` file contains only a module-level doc comment. The dependency list represents the anticipated baseline for implementation.
+- The crate is currently a **scaffold**. The `src/lib.rs` file contains only a module-level doc comment. The core sandbox logic (`SandboxMode` enum, `SandboxConfig` struct, `prompt_constraint()` method) lives in `omega-core::config`. This crate's dependency list represents the anticipated baseline for future process-level isolation implementation.
 - The crate does **not** depend on `serde_json`, `uuid`, or `chrono`. These may be added during Phase 4 implementation when execution results need serialization, unique session tracking, and timing.
 - The crate does **not** depend on `async-trait`. If sandbox behavior is exposed via a trait (e.g., `Executor`), this dependency will need to be added.
 - The crate does **not** declare any `[[bin]]`, `[[example]]`, or `[[bench]]` targets. It is a pure library crate.

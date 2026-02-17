@@ -13,6 +13,7 @@ pub struct CommandContext<'a> {
     pub provider_name: &'a str,
     pub skills: &'a [omega_skills::Skill],
     pub projects: &'a [omega_skills::Project],
+    pub sandbox_mode: &'a str,
 }
 
 /// Known bot commands.
@@ -59,7 +60,9 @@ impl Command {
 /// Handle a command and return the response text.
 pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
     match cmd {
-        Command::Status => handle_status(ctx.store, ctx.uptime, ctx.provider_name).await,
+        Command::Status => {
+            handle_status(ctx.store, ctx.uptime, ctx.provider_name, ctx.sandbox_mode).await
+        }
         Command::Memory => handle_memory(ctx.store, ctx.sender_id).await,
         Command::History => handle_history(ctx.store, ctx.channel, ctx.sender_id).await,
         Command::Facts => handle_facts(ctx.store, ctx.sender_id).await,
@@ -84,7 +87,12 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
     }
 }
 
-async fn handle_status(store: &Store, uptime: &Instant, provider_name: &str) -> String {
+async fn handle_status(
+    store: &Store,
+    uptime: &Instant,
+    provider_name: &str,
+    sandbox_mode: &str,
+) -> String {
     let elapsed = uptime.elapsed();
     let hours = elapsed.as_secs() / 3600;
     let minutes = (elapsed.as_secs() % 3600) / 60;
@@ -100,6 +108,7 @@ async fn handle_status(store: &Store, uptime: &Instant, provider_name: &str) -> 
         "*Ω OMEGA* Status\n\
          Uptime: {hours}h {minutes}m {secs}s\n\
          Provider: {provider_name}\n\
+         Sandbox: {sandbox_mode}\n\
          Database: {db_size}"
     )
 }
