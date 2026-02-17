@@ -535,6 +535,7 @@ impl Store {
             system_prompt,
             history,
             current_message: incoming.text.clone(),
+            mcp_servers: Vec::new(),
         })
     }
 

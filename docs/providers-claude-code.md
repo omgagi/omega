@@ -83,6 +83,46 @@ If the CLI does not produce a response within the configured timeout, the subpro
 
 ---
 
+## MCP Server Integration
+
+When the `Context` contains MCP servers (populated by skill trigger matching), the provider writes a local settings file before invoking the CLI and cleans it up afterward.
+
+### Public API
+
+- **`mcp_tool_patterns(servers: &[McpServer]) -> Vec<String>`** -- generates `--allowedTools` patterns for MCP tools. Each server produces a pattern in the form `mcp__<name>__*`, which allows the CLI to use any tool exposed by that MCP server.
+
+### Internal Helpers
+
+- **`write_mcp_settings(workspace: &Path, servers: &[McpServer])`** -- writes a `{workspace}/.claude/settings.local.json` file containing the `mcpServers` configuration in the JSON format expected by the Claude Code CLI:
+
+  ```json
+  {
+    "mcpServers": {
+      "playwright": {
+        "command": "npx",
+        "args": ["@anthropic/playwright-mcp"]
+      }
+    }
+  }
+  ```
+
+  Creates the `.claude/` directory if it does not exist.
+
+- **`cleanup_mcp_settings(path: &Path)`** -- removes the `settings.local.json` file after the CLI invocation completes, so MCP configuration does not leak between invocations.
+
+### Updated `complete()` Flow
+
+1. If `context.mcp_servers` is non-empty, calls `write_mcp_settings()` to deploy the settings file.
+2. Generates extra allowed-tool patterns via `mcp_tool_patterns()`.
+3. Calls `run_cli()` with the extra allowed tools appended to the base set.
+4. After the CLI returns (success or failure), calls `cleanup_mcp_settings()` to remove the settings file.
+
+### Updated `run_cli()` Signature
+
+`run_cli()` now accepts an additional `extra_allowed_tools: &[String]` parameter. These patterns are appended as additional `--allowedTools` arguments to the CLI command, alongside the base tool list (`Bash`, `Read`, `Write`, `Edit`).
+
+---
+
 ## JSON Response Format
 
 The CLI outputs a JSON object with this shape:

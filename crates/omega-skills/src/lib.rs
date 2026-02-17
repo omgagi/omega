@@ -4,7 +4,9 @@
 //! definitions and exposes them to the system prompt so the AI knows what
 //! tools are available.
 
+use omega_core::context::McpServer;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
@@ -19,6 +21,10 @@ const BUNDLED_SKILLS: &[(&str, &str)] = &[
     (
         "google-workspace",
         include_str!("../../../skills/google-workspace/SKILL.md"),
+    ),
+    (
+        "playwright-mcp",
+        include_str!("../../../skills/playwright-mcp/SKILL.md"),
     ),
 ];
 
@@ -119,6 +125,18 @@ pub struct Skill {
     pub available: bool,
     /// Absolute path to the `SKILL.md` file.
     pub path: PathBuf,
+    /// Pipe-separated trigger keywords (e.g. "browse|website|click").
+    pub trigger: Option<String>,
+    /// MCP servers this skill declares.
+    pub mcp_servers: Vec<McpServer>,
+}
+
+/// MCP server definition in TOML frontmatter (`[mcp.name]`).
+#[derive(Debug, Deserialize)]
+struct McpFrontmatter {
+    command: String,
+    #[serde(default)]
+    args: Vec<String>,
 }
 
 /// Frontmatter parsed from a `SKILL.md` file (TOML or YAML).
@@ -130,6 +148,10 @@ struct SkillFrontmatter {
     requires: Vec<String>,
     #[serde(default)]
     homepage: String,
+    #[serde(default)]
+    trigger: Option<String>,
+    #[serde(default)]
+    mcp: HashMap<String, McpFrontmatter>,
 }
 
 /// Scan `{data_dir}/skills/*/SKILL.md` and return all valid skill definitions.
@@ -156,6 +178,15 @@ pub fn load_skills(data_dir: &str) -> Vec<Skill> {
             continue;
         };
         let available = fm.requires.iter().all(|t| which_exists(t));
+        let mcp_servers = fm
+            .mcp
+            .into_iter()
+            .map(|(name, mfm)| McpServer {
+                name,
+                command: mfm.command,
+                args: mfm.args,
+            })
+            .collect();
         skills.push(Skill {
             name: fm.name,
             description: fm.description,
@@ -163,6 +194,8 @@ pub fn load_skills(data_dir: &str) -> Vec<Skill> {
             homepage: fm.homepage,
             available,
             path: skill_file,
+            trigger: fm.trigger,
+            mcp_servers,
         });
     }
 
@@ -242,6 +275,8 @@ fn parse_yaml_frontmatter(block: &str) -> Option<SkillFrontmatter> {
     let mut description = None;
     let mut requires = Vec::new();
     let mut homepage = String::new();
+    let mut trigger = None;
+    let mut mcp = HashMap::new();
     let mut metadata_line = None;
 
     for line in block.lines() {
@@ -254,7 +289,18 @@ fn parse_yaml_frontmatter(block: &str) -> Option<SkillFrontmatter> {
                 "description" => description = Some(unquote(val)),
                 "homepage" => homepage = unquote(val),
                 "requires" => requires = parse_yaml_list(val),
+                "trigger" => trigger = Some(unquote(val)),
                 "metadata" => metadata_line = Some(val.to_string()),
+                k if k.starts_with("mcp-") => {
+                    // `mcp-<name>: <command> <args...>`
+                    let server_name = k.strip_prefix("mcp-").unwrap_or("").to_string();
+                    if !server_name.is_empty() && !val.is_empty() {
+                        let parts: Vec<&str> = val.split_whitespace().collect();
+                        let command = parts.first().unwrap_or(&"").to_string();
+                        let args = parts[1..].iter().map(|s| s.to_string()).collect();
+                        mcp.insert(server_name, McpFrontmatter { command, args });
+                    }
+                }
                 _ => {}
             }
         }
@@ -272,6 +318,8 @@ fn parse_yaml_frontmatter(block: &str) -> Option<SkillFrontmatter> {
         description: description?,
         requires,
         homepage,
+        trigger,
+        mcp,
     })
 }
 
@@ -322,6 +370,39 @@ fn unquote(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Match user message against skill triggers and return activated MCP servers.
+///
+/// Each skill's `trigger` is a pipe-separated list of keywords. If any keyword
+/// is found (case-insensitive substring match) in the message, that skill's
+/// MCP servers are included. Unavailable skills are skipped. Results are
+/// deduplicated by server name.
+pub fn match_skill_triggers(skills: &[Skill], message: &str) -> Vec<McpServer> {
+    let lower = message.to_lowercase();
+    let mut seen = std::collections::HashSet::new();
+    let mut servers = Vec::new();
+
+    for skill in skills {
+        if !skill.available || skill.mcp_servers.is_empty() {
+            continue;
+        }
+        let Some(ref trigger) = skill.trigger else {
+            continue;
+        };
+        let matched = trigger
+            .split('|')
+            .any(|kw| !kw.trim().is_empty() && lower.contains(&kw.trim().to_lowercase()));
+        if matched {
+            for srv in &skill.mcp_servers {
+                if seen.insert(srv.name.clone()) {
+                    servers.push(srv.clone());
+                }
+            }
+        }
+    }
+
+    servers
 }
 
 // ---------------------------------------------------------------------------
@@ -509,6 +590,8 @@ description = \"No deps.\"
                 homepage: "https://gogcli.sh".into(),
                 available: true,
                 path: PathBuf::from("/home/user/.omega/skills/gog/SKILL.md"),
+                trigger: None,
+                mcp_servers: Vec::new(),
             },
             Skill {
                 name: "missing".into(),
@@ -517,6 +600,8 @@ description = \"No deps.\"
                 homepage: String::new(),
                 available: false,
                 path: PathBuf::from("/home/user/.omega/skills/missing/SKILL.md"),
+                trigger: None,
+                mcp_servers: Vec::new(),
             },
         ];
         let prompt = build_skill_prompt(&skills);
@@ -702,6 +787,188 @@ description = \"No deps.\"
         install_bundled_skills(tmp.to_str().unwrap());
         let after = std::fs::read_to_string(&dest).unwrap();
         assert_eq!(after, "custom", "should not overwrite user edits");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // --- MCP trigger + skill tests ---
+
+    #[test]
+    fn test_parse_toml_frontmatter_with_trigger_and_mcp() {
+        let content = r#"---
+name = "playwright-mcp"
+description = "Browser automation via Playwright MCP."
+requires = ["npx"]
+trigger = "browse|website|click"
+
+[mcp.playwright]
+command = "npx"
+args = ["@playwright/mcp", "--headless"]
+---
+
+Body text.
+"#;
+        let fm = parse_skill_file(content).unwrap();
+        assert_eq!(fm.name, "playwright-mcp");
+        assert_eq!(fm.trigger, Some("browse|website|click".to_string()));
+        assert_eq!(fm.mcp.len(), 1);
+        assert_eq!(fm.mcp["playwright"].command, "npx");
+        assert_eq!(
+            fm.mcp["playwright"].args,
+            vec!["@playwright/mcp", "--headless"]
+        );
+    }
+
+    #[test]
+    fn test_parse_yaml_frontmatter_with_mcp_key() {
+        let content = "\
+---
+name: browser-tool
+description: Browser automation.
+requires: [npx]
+trigger: browse|website
+mcp-playwright: npx @playwright/mcp --headless
+---
+";
+        let fm = parse_skill_file(content).unwrap();
+        assert_eq!(fm.trigger, Some("browse|website".to_string()));
+        assert_eq!(fm.mcp.len(), 1);
+        assert_eq!(fm.mcp["playwright"].command, "npx");
+        assert_eq!(
+            fm.mcp["playwright"].args,
+            vec!["@playwright/mcp", "--headless"]
+        );
+    }
+
+    #[test]
+    fn test_skill_without_trigger_or_mcp() {
+        let content = "\
+---
+name = \"simple\"
+description = \"No trigger or MCP.\"
+---
+";
+        let fm = parse_skill_file(content).unwrap();
+        assert!(fm.trigger.is_none());
+        assert!(fm.mcp.is_empty());
+    }
+
+    fn make_skill(
+        name: &str,
+        available: bool,
+        trigger: Option<&str>,
+        mcp_servers: Vec<McpServer>,
+    ) -> Skill {
+        Skill {
+            name: name.into(),
+            description: String::new(),
+            requires: Vec::new(),
+            homepage: String::new(),
+            available,
+            path: PathBuf::from("/test"),
+            trigger: trigger.map(String::from),
+            mcp_servers,
+        }
+    }
+
+    fn make_mcp(name: &str) -> McpServer {
+        McpServer {
+            name: name.into(),
+            command: "npx".into(),
+            args: vec![format!("@{name}/mcp")],
+        }
+    }
+
+    #[test]
+    fn test_trigger_matching_basic() {
+        let skills = vec![make_skill(
+            "pw",
+            true,
+            Some("browse|website"),
+            vec![make_mcp("playwright")],
+        )];
+        let servers = match_skill_triggers(&skills, "please browse google.com");
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "playwright");
+    }
+
+    #[test]
+    fn test_trigger_matching_no_match() {
+        let skills = vec![make_skill(
+            "pw",
+            true,
+            Some("browse|website"),
+            vec![make_mcp("playwright")],
+        )];
+        let servers = match_skill_triggers(&skills, "what is the weather?");
+        assert!(servers.is_empty());
+    }
+
+    #[test]
+    fn test_trigger_matching_case_insensitive() {
+        let skills = vec![make_skill(
+            "pw",
+            true,
+            Some("Browse|Website"),
+            vec![make_mcp("playwright")],
+        )];
+        let servers = match_skill_triggers(&skills, "BROWSE google.com");
+        assert_eq!(servers.len(), 1);
+    }
+
+    #[test]
+    fn test_trigger_matching_skips_unavailable() {
+        let skills = vec![make_skill(
+            "pw",
+            false,
+            Some("browse|website"),
+            vec![make_mcp("playwright")],
+        )];
+        let servers = match_skill_triggers(&skills, "browse google.com");
+        assert!(servers.is_empty());
+    }
+
+    #[test]
+    fn test_trigger_matching_deduplicates() {
+        let skills = vec![
+            make_skill("a", true, Some("browse"), vec![make_mcp("playwright")]),
+            make_skill("b", true, Some("website"), vec![make_mcp("playwright")]),
+        ];
+        let servers = match_skill_triggers(&skills, "browse a website");
+        assert_eq!(servers.len(), 1, "should deduplicate by server name");
+    }
+
+    #[test]
+    fn test_trigger_matching_no_trigger_field() {
+        let skills = vec![make_skill("pw", true, None, vec![make_mcp("playwright")])];
+        let servers = match_skill_triggers(&skills, "browse google.com");
+        assert!(servers.is_empty());
+    }
+
+    #[test]
+    fn test_trigger_matching_no_mcp_servers() {
+        let skills = vec![make_skill("pw", true, Some("browse"), Vec::new())];
+        let servers = match_skill_triggers(&skills, "browse google.com");
+        assert!(servers.is_empty());
+    }
+
+    #[test]
+    fn test_load_skills_with_trigger_and_mcp() {
+        let tmp = std::env::temp_dir().join("__omega_test_skills_mcp__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let skill_dir = tmp.join("skills/pw");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname = \"pw\"\ndescription = \"Browser.\"\nrequires = [\"ls\"]\ntrigger = \"browse\"\n\n[mcp.playwright]\ncommand = \"npx\"\nargs = [\"@playwright/mcp\"]\n---\n",
+        )
+        .unwrap();
+
+        let skills = load_skills(tmp.to_str().unwrap());
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].trigger, Some("browse".to_string()));
+        assert_eq!(skills[0].mcp_servers.len(), 1);
+        assert_eq!(skills[0].mcp_servers[0].name, "playwright");
+        assert_eq!(skills[0].mcp_servers[0].command, "npx");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

@@ -45,5 +45,15 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 ### Commands
 - [commands.md](commands.md) — Bot command reference (/status, /memory, /history, /facts, /forget, /tasks, /cancel, /skills, /projects, /project, /help)
 
+### Skills & MCP
+- [skills-lib.md](skills-lib.md) — Skill loader, trigger matching, MCP server definitions
+- [skills-cargo-toml.md](skills-cargo-toml.md) — omega-skills Cargo manifest and dependency guide
+
+### Core
+- [core-context.md](core-context.md) — Context struct, McpServer, conversation history, prompt flattening
+
+### Provider Internals
+- [providers-claude-code.md](providers-claude-code.md) — Claude Code CLI provider, MCP settings, JSON response handling
+
 ### Development
 - [development.md](development.md) — Build, test, lint, code conventions, contribution guidelines

@@ -25,14 +25,15 @@ Cargo manifest for the `omega-skills` crate — a generic skill loader that scan
 
 | Dependency | Resolved Version | Purpose |
 |------------|------------------|---------|
-| `serde`    | `1` (derive)     | Deserialize TOML frontmatter |
-| `toml`     | `0.8`            | Parse TOML frontmatter from skill files |
-| `tracing`  | `0.1`            | Warn on invalid skill files |
+| `serde`      | `1` (derive)     | Deserialize TOML frontmatter |
+| `toml`       | `0.8`            | Parse TOML frontmatter from skill files |
+| `tracing`    | `0.1`            | Warn on invalid skill files |
+| `omega-core` | workspace        | `McpServer` type for MCP server declarations |
 
 All dependencies use workspace versions.
 
 ## Notes
 
-- Minimal dependency set — only what's needed for file parsing and logging
+- Minimal dependency set — only what's needed for file parsing, logging, and MCP types
 - No async runtime needed — skill loading is synchronous at startup
-- No `omega-core` dependency — the loader is self-contained
+- Depends on `omega-core` for the `McpServer` type used in skill MCP server declarations

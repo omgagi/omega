@@ -12,8 +12,8 @@ Gateway is the central event loop orchestrator that connects messaging channels,
 The gateway manages the asynchronous event loop that processes incoming messages through a deterministic pipeline:
 
 ```
-Message → Auth → Sanitize → Command Check → Typing → Context → Provider →
-Memory Store → Audit Log → Send
+Message → Auth → Sanitize → Command Check → Typing → Context → MCP Trigger Match →
+Provider (MCP settings write → CLI → MCP cleanup) → Memory Store → Audit Log → Send
 ```
 
 The gateway runs continuously, listening for messages from registered channels via an mpsc channel, and spawns a background task for periodic conversation summarization.
@@ -357,6 +357,11 @@ pub struct Gateway {
 - Call `self.memory.build_context(&clean_incoming, &self.prompts.system)` to build enriched context (using the potentially project-enriched system prompt).
 - This includes recent conversation history, relevant facts, and system prompt.
 - If error, abort typing task, send error message, and return.
+
+**Stage 5b: MCP Trigger Matching**
+- Call `omega_skills::match_skill_triggers(&self.skills, &clean_incoming.text)` to check if the message matches any skill triggers.
+- If matched, populate `context.mcp_servers` with the declared MCP servers from matching skills.
+- The provider will use these to write temporary `.claude/settings.local.json` and add `mcp__<name>__*` to `--allowedTools`.
 
 **Stage 6: Get Response from Provider (async with delayed, localized status updates)**
 - Resolve the user's `preferred_language` fact from memory (defaults to English).

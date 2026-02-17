@@ -13,7 +13,22 @@ When you send a message to Omega, the AI provider does not just see your latest 
 
 The `Context` struct is the container for all of this information. It is created once per incoming message and handed to the AI provider, which uses it to generate a response.
 
-## The Two Structs
+## The Three Structs
+
+### McpServer
+
+An MCP (Model Context Protocol) server definition. Each entry describes an external tool server that the AI provider should connect to during its invocation.
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpServer {
+    pub name: String,       // unique server identifier (e.g. "playwright")
+    pub command: String,    // executable to launch (e.g. "npx")
+    pub args: Vec<String>,  // arguments passed to the command
+}
+```
+
+`McpServer` is populated at runtime by the gateway via `omega_skills::match_skill_triggers()`, which matches incoming messages against skill trigger keywords and collects the MCP server definitions from matched skills.
 
 ### ContextEntry
 
@@ -34,13 +49,16 @@ The full package sent to the AI provider.
 
 ```rust
 pub struct Context {
-    pub system_prompt: String,        // instructions for the AI
-    pub history: Vec<ContextEntry>,   // previous messages (oldest first)
-    pub current_message: String,      // the message to respond to
+    pub system_prompt: String,            // instructions for the AI
+    pub history: Vec<ContextEntry>,       // previous messages (oldest first)
+    pub current_message: String,          // the message to respond to
+    pub mcp_servers: Vec<McpServer>,      // MCP servers for this invocation
 }
 ```
 
-Together, these three fields give the provider everything it needs to generate a relevant, contextual reply.
+The `mcp_servers` field is annotated with `#[serde(default)]` so it deserializes as an empty `Vec` when absent. `Context::new()` initializes it to `Vec::new()`.
+
+Together, these four fields give the provider everything it needs to generate a relevant, contextual reply -- including which external tool servers to connect to.
 
 ## How Context Flows Through the System
 
@@ -58,6 +76,7 @@ This produces a context with:
 - The default system prompt: *"You are OMEGA Ω, a personal AI assistant running on the user's own server. You are helpful, concise, and action-oriented."*
 - Empty history (no previous messages).
 - Your message as the current message.
+- Empty `mcp_servers` (no MCP tool servers).
 
 Simple contexts are lightweight and disposable. They are used when there is no conversation to continue -- just a one-off question.
 

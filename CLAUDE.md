@@ -57,12 +57,12 @@ Cargo workspace with 6 crates:
 | `omega-providers` | AI backends (Claude Code CLI, Anthropic, OpenAI, Ollama, OpenRouter) |
 | `omega-channels` | Messaging platforms (Telegram, WhatsApp) |
 | `omega-memory` | SQLite storage, conversation history, audit log, scheduled tasks |
-| `omega-skills` | Skill loader + project loader — skills from `~/.omega/skills/*/SKILL.md` (TOML or YAML frontmatter), projects from `~/.omega/projects/*/INSTRUCTIONS.md` |
+| `omega-skills` | Skill loader + project loader — skills from `~/.omega/skills/*/SKILL.md` (TOML or YAML frontmatter), projects from `~/.omega/projects/*/INSTRUCTIONS.md`, trigger-based MCP server activation |
 | `omega-sandbox` | OS-level filesystem enforcement — Seatbelt (macOS), Landlock (Linux) — restricts writes to workspace + /tmp + ~/.claude in sandbox/rx modes |
 
 Gateway event loop (`src/gateway.rs`):
 ```
-Message → Auth → Sanitize → Platform Hint → Group Rules → Heartbeat awareness → Sandbox constraint → Memory (context) → Heads-up → Provider (async + status updates) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
+Message → Auth → Sanitize → Platform Hint → Group Rules → Heartbeat awareness → Sandbox constraint → Memory (context) → MCP trigger match → Heads-up → Provider (MCP settings write → async CLI + status updates → MCP cleanup) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
 ```
 
 Background loops (spawned in `gateway::run()`):
@@ -122,7 +122,7 @@ cargo build --release        # Optimized binary
 
 ## Provider Priority
 
-Claude Code CLI is the primary provider. It invokes `claude -p --output-format json` as a subprocess with `current_dir` set to `~/.omega/workspace/` and a configurable timeout (`timeout_secs`, default 600s / 10 minutes). The JSON response has this structure:
+Claude Code CLI is the primary provider. It invokes `claude -p --output-format json` as a subprocess with `current_dir` set to `~/.omega/workspace/` and a configurable timeout (`timeout_secs`, default 600s / 10 minutes). When skills declare MCP servers and the user message matches a trigger keyword, the provider writes a temporary `{workspace}/.claude/settings.local.json` with `mcpServers` config, adds `mcp__<name>__*` to `--allowedTools`, and cleans up the settings file after the CLI completes. The JSON response has this structure:
 ```json
 {"type": "result", "subtype": "success", "result": "...", "model": "...", "session_id": "..."}
 ```
@@ -142,4 +142,4 @@ Always consult these before modifying or extending the codebase:
 - **Phase 1** (complete): Workspace, core types, Claude Code provider, CLI (`omega ask`)
 - **Phase 2** (complete): Memory, Telegram channel, gateway, audit log, auth, sanitization, LaunchAgent
 - **Phase 3** (complete): Conversation boundaries, summaries, facts extraction, enriched context, typing indicator, bot commands, system prompt upgrade, self-check, graceful shutdown, exponential backoff, init wizard
-- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, 3-level sandbox (sandbox/rx/rwx workspace isolation + OS-level write enforcement via Seatbelt/Landlock), WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, Soul personality in system prompt, guided fact-extraction schema
+- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, skill-declared MCP servers (trigger-based activation, dynamic `.claude/settings.local.json` + `--allowedTools` injection), 3-level sandbox (sandbox/rx/rwx workspace isolation + OS-level write enforcement via Seatbelt/Landlock), WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, Soul personality in system prompt, guided fact-extraction schema

@@ -658,6 +658,11 @@ impl Gateway {
             }
         };
 
+        // --- 4b. MATCH SKILL TRIGGERS FOR MCP SERVERS ---
+        let mcp_servers = omega_skills::match_skill_triggers(&self.skills, &clean_incoming.text);
+        let mut context = context;
+        context.mcp_servers = mcp_servers;
+
         // --- 5. GET RESPONSE FROM PROVIDER (async with status updates) ---
 
         // Spawn provider call as background task.

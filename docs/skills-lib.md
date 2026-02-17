@@ -2,7 +2,11 @@
 
 ## What is this crate?
 
-`omega-skills` is a generic skill loader. It scans `~/.omega/skills/*/SKILL.md` for skill definitions and makes them available to the AI via the system prompt.
+`omega-skills` is a generic skill loader. It scans `~/.omega/skills/*/SKILL.md` for skill definitions and makes them available to the AI via the system prompt. It also handles MCP (Model Context Protocol) server matching via trigger keywords.
+
+### Dependencies
+
+- `omega-core` -- shared types including `McpServer`
 
 ## How It Works
 
@@ -60,10 +64,65 @@ The parser tries TOML first, then falls back to YAML-style `key: value` parsing.
 | `description` | Yes | One-line description for the AI |
 | `requires` | No | List of CLI tools that must be on `$PATH` |
 | `homepage` | No | URL for reference |
+| `trigger` | No | Pipe-separated keywords for MCP activation (e.g. `"browser\|web\|scrape"`) |
+| `mcp` (TOML) / `mcp-<name>` (YAML) | No | MCP server definitions (see below) |
+
+### MCP Server Definitions
+
+Skills can declare MCP servers that are activated when the skill's trigger keywords match an incoming message. There are two syntax variants depending on frontmatter format:
+
+**TOML format** -- use a `[mcp.<name>]` table:
+
+```markdown
+---
+name = "playwright-mcp"
+description = "Browser automation via Playwright MCP."
+requires = ["npx"]
+homepage = "https://playwright.dev"
+trigger = "browser|web|scrape|screenshot|crawl"
+
+[mcp.playwright]
+command = "npx"
+args = ["@anthropic/playwright-mcp"]
+---
+
+# Full usage instructions here
+```
+
+**YAML format** -- use the `mcp-<name>` shorthand:
+
+```markdown
+---
+name: playwright-mcp
+description: Browser automation via Playwright MCP.
+requires: [npx]
+homepage: https://playwright.dev
+trigger: browser|web|scrape|screenshot|crawl
+mcp-playwright:
+  command: npx
+  args: ["@anthropic/playwright-mcp"]
+---
+
+# Full usage instructions here
+```
+
+Both formats produce a `Skill` struct with `trigger: Option<String>` and `mcp_servers: Vec<McpServer>` populated accordingly.
+
+## MCP Trigger Matching
+
+The public function `match_skill_triggers(skills, message) -> Vec<McpServer>` scans all loaded skills for trigger keyword matches against the incoming message:
+
+1. For each skill with a `trigger` field, splits the value on `|` to get individual keywords.
+2. Performs case-insensitive substring matching against the message text.
+3. Skips skills that are not available (i.e., their required CLI tools are missing).
+4. Collects all `mcp_servers` from matched skills.
+5. Deduplicates by server name -- if two skills declare the same MCP server, it appears only once.
+
+The returned `Vec<McpServer>` is set on the `Context` before it is passed to the provider.
 
 ## Bot Command
 
-`/skills` — Lists all loaded skills with their availability status.
+`/skills` -- Lists all loaded skills with their availability status.
 
 ## Bundled Skills
 
@@ -73,6 +132,7 @@ Core skills live in `skills/` at the repo root and are embedded into the binary 
 |-----------|-------|
 | `claude-code/SKILL.md` | Claude Code CLI (`claude`) |
 | `google-workspace/SKILL.md` | Google Workspace CLI (`gog`) |
+| `playwright-mcp/SKILL.md` | Browser automation via Playwright MCP (`npx`) |
 
 To add a new bundled skill: create the directory with a `SKILL.md` file in `skills/`, then add it to the `BUNDLED_SKILLS` const in `crates/omega-skills/src/lib.rs`.
 

@@ -6,16 +6,16 @@
 use async_trait::async_trait;
 use omega_core::{
     config::SandboxMode,
-    context::Context,
+    context::{Context, McpServer},
     error::OmegaError,
     message::{MessageMetadata, OutgoingMessage},
     traits::Provider,
 };
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// Default timeout for Claude Code CLI subprocess (10 minutes).
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
@@ -130,7 +130,32 @@ impl Provider for ClaudeCodeProvider {
         let prompt = context.to_prompt_string();
         let start = Instant::now();
 
-        let output = self.run_cli(&prompt).await?;
+        // Write MCP settings if any servers are declared.
+        let mcp_settings_path = if !context.mcp_servers.is_empty() {
+            if let Some(ref dir) = self.working_dir {
+                match write_mcp_settings(dir, &context.mcp_servers) {
+                    Ok(path) => Some(path),
+                    Err(e) => {
+                        warn!("failed to write MCP settings: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let extra_tools = mcp_tool_patterns(&context.mcp_servers);
+        let result = self.run_cli(&prompt, &extra_tools).await;
+
+        // Always cleanup MCP settings, regardless of success or failure.
+        if let Some(ref path) = mcp_settings_path {
+            cleanup_mcp_settings(path);
+        }
+
+        let output = result?;
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -155,7 +180,11 @@ impl Provider for ClaudeCodeProvider {
 
 impl ClaudeCodeProvider {
     /// Run the claude CLI subprocess with a timeout.
-    async fn run_cli(&self, prompt: &str) -> Result<std::process::Output, OmegaError> {
+    async fn run_cli(
+        &self,
+        prompt: &str,
+        extra_allowed_tools: &[String],
+    ) -> Result<std::process::Output, OmegaError> {
         let mut cmd = match self.working_dir {
             Some(ref dir) => {
                 let mut c = omega_sandbox::sandboxed_command("claude", self.sandbox_mode, dir);
@@ -181,6 +210,10 @@ impl ClaudeCodeProvider {
 
         // Allowed tools.
         for tool in &self.allowed_tools {
+            cmd.arg("--allowedTools").arg(tool);
+        }
+        // MCP tool patterns from skill triggers.
+        for tool in extra_allowed_tools {
             cmd.arg("--allowedTools").arg(tool);
         }
 
@@ -269,6 +302,72 @@ impl ClaudeCodeProvider {
     }
 }
 
+/// Write `.claude/settings.local.json` with MCP server configuration.
+///
+/// Claude Code reads this file from `current_dir` on startup.
+fn write_mcp_settings(workspace: &Path, servers: &[McpServer]) -> Result<PathBuf, OmegaError> {
+    let claude_dir = workspace.join(".claude");
+    std::fs::create_dir_all(&claude_dir)
+        .map_err(|e| OmegaError::Provider(format!("failed to create .claude dir: {e}")))?;
+
+    let path = claude_dir.join("settings.local.json");
+
+    let mut mcp_servers = serde_json::Map::new();
+    for srv in servers {
+        let mut entry = serde_json::Map::new();
+        entry.insert(
+            "command".to_string(),
+            serde_json::Value::String(srv.command.clone()),
+        );
+        entry.insert(
+            "args".to_string(),
+            serde_json::Value::Array(
+                srv.args
+                    .iter()
+                    .map(|a| serde_json::Value::String(a.clone()))
+                    .collect(),
+            ),
+        );
+        mcp_servers.insert(srv.name.clone(), serde_json::Value::Object(entry));
+    }
+
+    let mut root = serde_json::Map::new();
+    root.insert(
+        "mcpServers".to_string(),
+        serde_json::Value::Object(mcp_servers),
+    );
+
+    let json = serde_json::to_string_pretty(&root)
+        .map_err(|e| OmegaError::Provider(format!("failed to serialize MCP settings: {e}")))?;
+
+    std::fs::write(&path, json)
+        .map_err(|e| OmegaError::Provider(format!("failed to write MCP settings: {e}")))?;
+
+    info!("mcp: wrote settings to {}", path.display());
+    Ok(path)
+}
+
+/// Remove the temporary MCP settings file.
+fn cleanup_mcp_settings(path: &Path) {
+    if path.exists() {
+        if let Err(e) = std::fs::remove_file(path) {
+            warn!("mcp: failed to cleanup {}: {e}", path.display());
+        } else {
+            debug!("mcp: cleaned up {}", path.display());
+        }
+    }
+}
+
+/// Generate `--allowedTools` patterns for MCP servers.
+///
+/// Each server gets a `mcp__<name>__*` wildcard pattern.
+pub fn mcp_tool_patterns(servers: &[McpServer]) -> Vec<String> {
+    servers
+        .iter()
+        .map(|s| format!("mcp__{}__*", s.name))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,5 +422,66 @@ mod tests {
             SandboxMode::Rx,
         );
         assert_eq!(provider.sandbox_mode, SandboxMode::Rx);
+    }
+
+    // --- MCP tests ---
+
+    #[test]
+    fn test_mcp_tool_patterns_empty() {
+        assert!(mcp_tool_patterns(&[]).is_empty());
+    }
+
+    #[test]
+    fn test_mcp_tool_patterns() {
+        let servers = vec![
+            McpServer {
+                name: "playwright".into(),
+                command: "npx".into(),
+                args: vec!["@playwright/mcp".into()],
+            },
+            McpServer {
+                name: "postgres".into(),
+                command: "npx".into(),
+                args: vec!["@pg/mcp".into()],
+            },
+        ];
+        let patterns = mcp_tool_patterns(&servers);
+        assert_eq!(patterns, vec!["mcp__playwright__*", "mcp__postgres__*"]);
+    }
+
+    #[test]
+    fn test_write_and_cleanup_mcp_settings() {
+        let tmp = std::env::temp_dir().join("__omega_test_mcp_settings__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let servers = vec![McpServer {
+            name: "playwright".into(),
+            command: "npx".into(),
+            args: vec!["@playwright/mcp".into(), "--headless".into()],
+        }];
+
+        let path = write_mcp_settings(&tmp, &servers).unwrap();
+        assert!(path.exists());
+
+        // Verify JSON structure.
+        let content = std::fs::read_to_string(&path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let mcp = &parsed["mcpServers"]["playwright"];
+        assert_eq!(mcp["command"], "npx");
+        assert_eq!(mcp["args"][0], "@playwright/mcp");
+        assert_eq!(mcp["args"][1], "--headless");
+
+        // Cleanup.
+        cleanup_mcp_settings(&path);
+        assert!(!path.exists());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_cleanup_mcp_settings_nonexistent() {
+        // Should not panic on missing file.
+        cleanup_mcp_settings(Path::new("/tmp/__omega_nonexistent_mcp_settings__"));
     }
 }

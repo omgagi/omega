@@ -1859,6 +1859,7 @@ dependencies = [
 name = "omega-skills"
 version = "0.1.0"
 dependencies = [
+ "omega-core",
  "serde",
  "toml",
  "tracing",

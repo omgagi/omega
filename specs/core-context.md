@@ -31,6 +31,20 @@ pub struct ContextEntry {
 
 ---
 
+### `McpServer`
+
+An MCP server declared by a skill, activated dynamically based on message trigger matching.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `String` | Server name (used as the key in Claude settings and for `--allowedTools` patterns). |
+| `command` | `String` | Command to launch the server (e.g., `"npx"`). |
+| `args` | `Vec<String>` | Command-line arguments (e.g., `["@playwright/mcp", "--headless"]`). |
+
+**Traits derived:** `Debug`, `Clone`, `Serialize`, `Deserialize`, `Default`.
+
+---
+
 ### `Context`
 
 The complete conversation context passed to an AI provider for a single request.
@@ -44,6 +58,9 @@ pub struct Context {
     pub history: Vec<ContextEntry>,
     /// The current user message.
     pub current_message: String,
+    /// MCP servers to activate for this request.
+    #[serde(default)]
+    pub mcp_servers: Vec<McpServer>,
 }
 ```
 
@@ -52,6 +69,7 @@ pub struct Context {
 | `system_prompt` | `String` | Instructions prepended to every provider call. Configures the AI's persona and behavioral guidelines. |
 | `history` | `Vec<ContextEntry>` | Previous conversation turns, ordered oldest-first (chronological). Populated by the memory store or left empty for one-shot requests. |
 | `current_message` | `String` | The user's latest message that the provider must respond to. |
+| `mcp_servers` | `Vec<McpServer>` | MCP servers to activate for this request. Populated by skill trigger matching in the gateway. Default: empty. |
 
 **Traits derived:** `Debug`, `Clone`, `Serialize`, `Deserialize`.
 
@@ -76,6 +94,7 @@ pub fn new(message: &str) -> Self
 - `system_prompt` is set to the value returned by `default_system_prompt()`.
 - `history` is an empty `Vec`.
 - `current_message` is a clone of `message`.
+- `mcp_servers` is an empty `Vec`.
 
 **Usage sites:**
 - `src/main.rs` -- the `omega ask` CLI command creates a one-shot context for a single prompt with no history.
@@ -232,6 +251,13 @@ Both `Context` and `ContextEntry` derive `Serialize` and `Deserialize`. This all
 - Deserialized from stored representations if context caching is added.
 
 Currently, serialization is not explicitly used in the codebase but is available for future use.
+
+## Tests
+
+- `test_mcp_server_serde_roundtrip`: McpServer serializes and deserializes correctly (round-trip).
+- `test_context_new_has_empty_mcp_servers`: `Context::new()` initializes `mcp_servers` to an empty `Vec`.
+- `test_context_with_mcp_servers_serde`: Context with populated `mcp_servers` serializes and deserializes correctly.
+- `test_context_deserialize_without_mcp_servers`: Deserializing a Context JSON without the `mcp_servers` field succeeds with an empty default (backwards compatibility).
 
 ## Invariants
 

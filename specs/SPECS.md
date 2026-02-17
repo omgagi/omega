@@ -50,7 +50,8 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [memory-migration-005.md](memory-migration-005.md) — Scheduled tasks table migration
 
 ### Milestone 7: omega-skills
-- [skills-lib.md](skills-lib.md) — Skill loader + project loader (skills from `~/.omega/skills/*/SKILL.md`, projects from `~/.omega/projects/*/INSTRUCTIONS.md`)
+- [skills-lib.md](skills-lib.md) — Skill loader + project loader + MCP trigger matching (skills from `~/.omega/skills/*/SKILL.md`, projects from `~/.omega/projects/*/INSTRUCTIONS.md`)
+- [skills-cargo-toml.md](skills-cargo-toml.md) — omega-skills crate Cargo.toml
 
 ### Milestone 8: omega-sandbox
 - [sandbox-lib.md](sandbox-lib.md) — 3-level workspace sandbox (sandbox/rx/rwx modes)

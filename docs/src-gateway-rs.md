@@ -205,6 +205,23 @@ User: Thanks. What about my location?
 **Error Handling:**
 If context building fails (e.g., database error), an error message is sent immediately and the message is dropped. The provider is never called.
 
+### Stage 5b: MCP Trigger Matching
+
+**What happens:** The gateway checks if the user's message matches any skill-declared trigger keywords and, if so, attaches the corresponding MCP servers to the context.
+
+**Implementation:**
+1. Call `omega_skills::match_skill_triggers(&self.skills, &clean_incoming.text)`.
+2. This performs case-insensitive substring matching against pipe-separated keywords in each skill's `trigger` field.
+3. Only available skills (all required CLIs installed) are considered.
+4. Matched MCP servers are deduplicated by server name.
+5. The resulting `Vec<McpServer>` is set on `context.mcp_servers`.
+
+**Why This Exists:**
+MCP servers extend Claude Code with tools like browser automation (Playwright). Rather than loading all MCP servers on every invocation (which adds token overhead), triggers ensure servers are only activated when the user's message indicates they're needed. For example, "browse google.com" activates the Playwright MCP server, but "what's the weather?" does not.
+
+**What happens downstream:**
+The Claude Code provider reads `context.mcp_servers` and, if non-empty, writes a temporary `{workspace}/.claude/settings.local.json` with the MCP server configuration and adds `mcp__<name>__*` patterns to `--allowedTools`. The settings file is cleaned up after the CLI completes.
+
 ### Stage 6: Provider Call
 
 **What happens:** The gateway sends the enriched context to the AI provider and gets a response, while keeping the user informed about progress.

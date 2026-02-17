@@ -13,7 +13,7 @@
 | Crate | Items Used |
 |-------|-----------|
 | `async_trait` | `async_trait` macro |
-| `omega_core::context` | `Context` |
+| `omega_core::context` | `Context`, `McpServer` |
 | `omega_core::error` | `OmegaError` |
 | `omega_core::message` | `MessageMetadata`, `OutgoingMessage` |
 | `omega_core::traits` | `Provider` trait |
@@ -21,6 +21,7 @@
 | `std::time` | `Duration`, `Instant` |
 | `tokio::process` | `Command` |
 | `tracing` | `debug`, `warn` |
+| `std::path` | `Path`, `PathBuf` |
 
 ---
 
@@ -102,6 +103,59 @@ pub async fn check_cli() -> bool
 
 Delegates to `Self::new()`.
 
+### `mcp_tool_patterns(servers: &[McpServer]) -> Vec<String>`
+
+**Visibility:** Public (free function)
+
+Generates `--allowedTools` wildcard patterns from MCP servers. Each server produces a pattern of the form `mcp__<name>__*`.
+
+```rust
+pub fn mcp_tool_patterns(servers: &[McpServer]) -> Vec<String>
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `servers` | `&[McpServer]` | Slice of MCP server definitions. |
+
+**Returns:** A `Vec<String>` of tool patterns (e.g., `["mcp__playwright__*"]`). Empty input produces empty output.
+
+### `write_mcp_settings(workspace: &Path, servers: &[McpServer]) -> Result<PathBuf, OmegaError>`
+
+**Visibility:** Private
+
+Creates `{workspace}/.claude/settings.local.json` with MCP server configuration. Creates the `.claude/` directory if it does not exist.
+
+```rust
+fn write_mcp_settings(workspace: &Path, servers: &[McpServer]) -> Result<PathBuf, OmegaError>
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `workspace` | `&Path` | The workspace directory (e.g., `~/.omega/workspace/`). |
+| `servers` | `&[McpServer]` | MCP servers to configure. |
+
+**Returns:** `Ok(PathBuf)` with the path to the written settings file, or `Err(OmegaError)` on I/O failure.
+
+### `cleanup_mcp_settings(path: &Path)`
+
+**Visibility:** Private
+
+Removes the temporary MCP settings file. Logs a warning on failure instead of panicking.
+
+```rust
+fn cleanup_mcp_settings(path: &Path)
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | `&Path` | Path to the settings file to remove. |
+
 ---
 
 ## `Provider` Trait Implementation
@@ -122,36 +176,42 @@ The core method. Invokes the Claude Code CLI as a subprocess and parses the resu
 
 1. **Prompt construction:** Calls `context.to_prompt_string()` to flatten the `Context` (system prompt + history + current message) into a single string.
 
-2. **Command assembly:** Builds the subprocess command:
+2. **MCP setup:** If `context.mcp_servers` is non-empty:
+   - Calls `write_mcp_settings()` to create `{workspace}/.claude/settings.local.json` with MCP server configuration.
+   - Calls `mcp_tool_patterns()` to generate `--allowedTools` wildcard patterns for the MCP servers.
+
+3. **Command assembly:** Builds the subprocess command:
    ```
    claude -p <prompt> --output-format json --max-turns <N>
          [--session-id <id>]
          [--allowedTools <tool>]...
    ```
 
-3. **Working directory:** If `self.working_dir` is `Some(path)`, sets `cmd.current_dir(path)` on the subprocess so the CLI operates within the specified workspace directory.
+4. **Working directory:** If `self.working_dir` is `Some(path)`, sets `cmd.current_dir(path)` on the subprocess so the CLI operates within the specified workspace directory.
 
-4. **Environment sanitization:** Removes the `CLAUDECODE` environment variable via `cmd.env_remove("CLAUDECODE")` to prevent the CLI from detecting a nested session and erroring out.
+5. **Environment sanitization:** Removes the `CLAUDECODE` environment variable via `cmd.env_remove("CLAUDECODE")` to prevent the CLI from detecting a nested session and erroring out.
 
-5. **Timing:** Records `Instant::now()` before execution and computes elapsed milliseconds after.
+6. **Timing:** Records `Instant::now()` before execution and computes elapsed milliseconds after.
 
-6. **Subprocess execution:** Awaits `cmd.output()`. If the spawn itself fails (e.g., binary not found), returns `OmegaError::Provider` with the I/O error message.
+7. **Subprocess execution:** Awaits `cmd.output()`. If the spawn itself fails (e.g., binary not found), returns `OmegaError::Provider` with the I/O error message.
 
-7. **Exit code check:** If the process exits with a non-zero status, reads stderr and returns `OmegaError::Provider` with the exit code and stderr content.
+8. **Exit code check:** If the process exits with a non-zero status, reads stderr and returns `OmegaError::Provider` with the exit code and stderr content.
 
-8. **JSON parsing:** Attempts `serde_json::from_str::<ClaudeCliResponse>(&stdout)`.
+9. **JSON parsing:** Attempts `serde_json::from_str::<ClaudeCliResponse>(&stdout)`.
 
-9. **Response extraction** (on successful parse):
-   - If `subtype == "error_max_turns"`: logs a warning but continues to extract whatever result exists.
-   - If `result` is `Some` and non-empty: uses it as the response text.
-   - If `result` is `None` or empty:
-     - If `is_error == true`: returns `"Error from Claude: <subtype>"`.
-     - Otherwise: returns `"(No response text returned)"`.
-   - Extracts `model` from the response.
+10. **Response extraction** (on successful parse):
+    - If `subtype == "error_max_turns"`: logs a warning but continues to extract whatever result exists.
+    - If `result` is `Some` and non-empty: uses it as the response text.
+    - If `result` is `None` or empty:
+      - If `is_error == true`: returns `"Error from Claude: <subtype>"`.
+      - Otherwise: returns `"(No response text returned)"`.
+    - Extracts `model` from the response.
 
-10. **JSON parse failure fallback:** If serde fails, logs a warning and uses the raw stdout (trimmed) as the response text. `model` is set to `None`.
+11. **JSON parse failure fallback:** If serde fails, logs a warning and uses the raw stdout (trimmed) as the response text. `model` is set to `None`.
 
-11. **Return value:** Constructs and returns an `OutgoingMessage`:
+12. **MCP cleanup:** If MCP settings were written in step 2, calls `cleanup_mcp_settings()` to remove the temporary settings file. Cleanup runs on both success and error paths.
+
+13. **Return value:** Constructs and returns an `OutgoingMessage`:
 
 ```rust
 OutgoingMessage {
@@ -173,6 +233,15 @@ Delegates to `Self::check_cli()`. Returns `true` if the `claude` binary is insta
 ---
 
 ## CLI Invocation Detail
+
+### `run_cli(prompt, extra_allowed_tools)` (private, async)
+
+Private helper that assembles and executes the `claude` CLI subprocess. Called by `complete()`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `prompt` | `&str` | The flattened prompt string. |
+| `extra_allowed_tools` | `&[String]` | Additional `--allowedTools` entries (e.g., MCP tool patterns). Appended to the provider's base `allowed_tools` list. |
 
 The subprocess is invoked with the following arguments:
 
@@ -314,6 +383,30 @@ fn test_from_config_with_working_dir() {
     assert_eq!(provider.working_dir, Some(PathBuf::from("/tmp/workspace")));
 }
 ```
+
+### `test_mcp_tool_patterns_empty`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `mcp_tool_patterns()` returns an empty `Vec` when given an empty slice of MCP servers.
+
+### `test_mcp_tool_patterns`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `mcp_tool_patterns()` generates correct `mcp__<name>__*` patterns for each MCP server in the input slice.
+
+### `test_write_and_cleanup_mcp_settings`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `write_mcp_settings()` writes a valid JSON structure to `{workspace}/.claude/settings.local.json`, and that `cleanup_mcp_settings()` removes the file afterwards.
+
+### `test_cleanup_mcp_settings_nonexistent`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `cleanup_mcp_settings()` does not panic when called with a path to a non-existent file.
 
 **Note:** There are no integration tests that actually invoke the `claude` CLI, as that would require the binary to be installed in CI.
 
