@@ -81,39 +81,54 @@ pub enum Command {
 
 ---
 
+## CommandContext Struct
+
+### `CommandContext<'a>`
+
+Groups all execution context for command handling into a single struct, avoiding excessive positional arguments.
+
+```rust
+pub struct CommandContext<'a> {
+    pub store: &'a Store,
+    pub channel: &'a str,
+    pub sender_id: &'a str,
+    pub text: &'a str,
+    pub uptime: &'a Instant,
+    pub provider_name: &'a str,
+    pub skills: &'a [omega_skills::Skill],
+    pub projects: &'a [omega_skills::Project],
+}
+```
+
+| Field | Purpose |
+|-------|---------|
+| `store` | Reference to the memory store (SQLite-backed) |
+| `channel` | Messaging channel identifier (e.g., "telegram", "whatsapp") |
+| `sender_id` | User identifier within the channel |
+| `text` | Full original message text (used by `/cancel`, `/language`, `/project` to extract arguments) |
+| `uptime` | Process start time (for elapsed duration calculation) |
+| `provider_name` | Active AI provider name (e.g., "Claude Code CLI") |
+| `skills` | Slice of loaded skill definitions (for `/skills` command) |
+| `projects` | Slice of loaded project definitions (for `/projects` and `/project` commands) |
+
+---
+
 ## Command Handler
 
-### Function: `handle(cmd, store, channel, sender_id, text, uptime, provider_name, projects) -> String`
-
-**Location:** Lines 38–57
+### Function: `handle(cmd, ctx) -> String`
 
 **Signature:**
 ```rust
-pub async fn handle(
-    cmd: Command,
-    store: &Store,
-    channel: &str,
-    sender_id: &str,
-    text: &str,
-    uptime: &Instant,
-    provider_name: &str,
-    projects: &[omega_skills::Project],
-) -> String
+pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String
 ```
 
 **Parameters:**
 - `cmd`: The parsed command enum variant
-- `store`: Reference to the memory store (SQLite-backed)
-- `channel`: Messaging channel identifier (e.g., "telegram", "whatsapp")
-- `sender_id`: User identifier within the channel
-- `text`: The full original message text (used by `/cancel` to extract the task ID argument)
-- `uptime`: Process start time (for elapsed duration calculation)
-- `provider_name`: Active AI provider name (e.g., "Claude Code CLI")
-- `projects`: Slice of loaded project definitions (for `/projects` and `/project` commands)
+- `ctx`: Grouped execution context (see `CommandContext` above)
 
 **Return:** Formatted response text to send back to the user
 
-**Dispatch:** Routes each command variant to its handler function (lines 47–56)
+**Dispatch:** Routes each command variant to its handler function, passing only the fields each handler needs from `ctx`
 
 ---
 

@@ -3,6 +3,18 @@
 use omega_memory::Store;
 use std::time::Instant;
 
+/// Grouped context for command execution.
+pub struct CommandContext<'a> {
+    pub store: &'a Store,
+    pub channel: &'a str,
+    pub sender_id: &'a str,
+    pub text: &'a str,
+    pub uptime: &'a Instant,
+    pub provider_name: &'a str,
+    pub skills: &'a [omega_skills::Skill],
+    pub projects: &'a [omega_skills::Project],
+}
+
 /// Known bot commands.
 pub enum Command {
     Status,
@@ -45,30 +57,28 @@ impl Command {
 }
 
 /// Handle a command and return the response text.
-#[allow(clippy::too_many_arguments)]
-pub async fn handle(
-    cmd: Command,
-    store: &Store,
-    channel: &str,
-    sender_id: &str,
-    text: &str,
-    uptime: &Instant,
-    provider_name: &str,
-    skills: &[omega_skills::Skill],
-    projects: &[omega_skills::Project],
-) -> String {
+pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
     match cmd {
-        Command::Status => handle_status(store, uptime, provider_name).await,
-        Command::Memory => handle_memory(store, sender_id).await,
-        Command::History => handle_history(store, channel, sender_id).await,
-        Command::Facts => handle_facts(store, sender_id).await,
-        Command::Forget => handle_forget(store, channel, sender_id).await,
-        Command::Tasks => handle_tasks(store, sender_id).await,
-        Command::Cancel => handle_cancel(store, sender_id, text).await,
-        Command::Language => handle_language(store, sender_id, text).await,
-        Command::Skills => handle_skills(skills),
-        Command::Projects => handle_projects(store, sender_id, projects).await,
-        Command::Project => handle_project(store, channel, sender_id, text, projects).await,
+        Command::Status => handle_status(ctx.store, ctx.uptime, ctx.provider_name).await,
+        Command::Memory => handle_memory(ctx.store, ctx.sender_id).await,
+        Command::History => handle_history(ctx.store, ctx.channel, ctx.sender_id).await,
+        Command::Facts => handle_facts(ctx.store, ctx.sender_id).await,
+        Command::Forget => handle_forget(ctx.store, ctx.channel, ctx.sender_id).await,
+        Command::Tasks => handle_tasks(ctx.store, ctx.sender_id).await,
+        Command::Cancel => handle_cancel(ctx.store, ctx.sender_id, ctx.text).await,
+        Command::Language => handle_language(ctx.store, ctx.sender_id, ctx.text).await,
+        Command::Skills => handle_skills(ctx.skills),
+        Command::Projects => handle_projects(ctx.store, ctx.sender_id, ctx.projects).await,
+        Command::Project => {
+            handle_project(
+                ctx.store,
+                ctx.channel,
+                ctx.sender_id,
+                ctx.text,
+                ctx.projects,
+            )
+            .await
+        }
         Command::WhatsApp => handle_whatsapp(),
         Command::Help => handle_help(),
     }

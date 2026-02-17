@@ -534,18 +534,17 @@ impl Gateway {
 
         // --- 3. COMMAND DISPATCH ---
         if let Some(cmd) = commands::Command::parse(&clean_incoming.text) {
-            let response = commands::handle(
-                cmd,
-                &self.memory,
-                &incoming.channel,
-                &incoming.sender_id,
-                &clean_incoming.text,
-                &self.uptime,
-                self.provider.name(),
-                &self.skills,
-                &self.projects,
-            )
-            .await;
+            let ctx = commands::CommandContext {
+                store: &self.memory,
+                channel: &incoming.channel,
+                sender_id: &incoming.sender_id,
+                text: &clean_incoming.text,
+                uptime: &self.uptime,
+                provider_name: self.provider.name(),
+                skills: &self.skills,
+                projects: &self.projects,
+            };
+            let response = commands::handle(cmd, &ctx).await;
 
             // Intercept WHATSAPP_QR marker from /whatsapp command.
             if response.trim() == "WHATSAPP_QR" {
