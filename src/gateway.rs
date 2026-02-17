@@ -615,6 +615,15 @@ impl Gateway {
                     prompt = format!("{instructions}\n\n---\n\n{prompt}");
                 }
             }
+
+            // Heartbeat awareness: show current checklist items so Claude knows
+            // what is already monitored.
+            if let Some(checklist) = read_heartbeat_file() {
+                prompt
+                    .push_str("\n\nCurrent heartbeat checklist (items monitored periodically):\n");
+                prompt.push_str(&checklist);
+            }
+
             prompt
         };
 
@@ -794,6 +803,23 @@ impl Gateway {
                 info!("language switched to '{lang}' for {}", incoming.sender_id);
             }
             response.text = strip_lang_switch(&response.text);
+        }
+
+        // --- 5e. EXTRACT HEARTBEAT_ADD / HEARTBEAT_REMOVE MARKERS ---
+        let heartbeat_actions = extract_heartbeat_markers(&response.text);
+        if !heartbeat_actions.is_empty() {
+            apply_heartbeat_changes(&heartbeat_actions);
+            for action in &heartbeat_actions {
+                match action {
+                    HeartbeatAction::Add(item) => {
+                        info!("heartbeat: added '{item}' to checklist");
+                    }
+                    HeartbeatAction::Remove(item) => {
+                        info!("heartbeat: removed '{item}' from checklist");
+                    }
+                }
+            }
+            response.text = strip_heartbeat_markers(&response.text);
         }
 
         // --- 6. STORE IN MEMORY ---
@@ -1057,6 +1083,114 @@ fn read_heartbeat_file() -> Option<String> {
     } else {
         Some(content)
     }
+}
+
+/// Action extracted from a `HEARTBEAT_ADD:` or `HEARTBEAT_REMOVE:` marker.
+#[derive(Debug, Clone, PartialEq)]
+enum HeartbeatAction {
+    Add(String),
+    Remove(String),
+}
+
+/// Extract all `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` markers from response text.
+fn extract_heartbeat_markers(text: &str) -> Vec<HeartbeatAction> {
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if let Some(item) = trimmed.strip_prefix("HEARTBEAT_ADD:") {
+                let item = item.trim();
+                if item.is_empty() {
+                    None
+                } else {
+                    Some(HeartbeatAction::Add(item.to_string()))
+                }
+            } else if let Some(item) = trimmed.strip_prefix("HEARTBEAT_REMOVE:") {
+                let item = item.trim();
+                if item.is_empty() {
+                    None
+                } else {
+                    Some(HeartbeatAction::Remove(item.to_string()))
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Strip all `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` lines from response text.
+fn strip_heartbeat_markers(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.starts_with("HEARTBEAT_ADD:") && !trimmed.starts_with("HEARTBEAT_REMOVE:")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Apply heartbeat add/remove actions to `~/.omega/HEARTBEAT.md`.
+///
+/// Creates the file if missing. Prevents duplicate adds. Uses case-insensitive
+/// partial matching for removes. Skips comment lines (`#`) during removal.
+fn apply_heartbeat_changes(actions: &[HeartbeatAction]) {
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => return,
+    };
+    let path = format!("{home}/.omega/HEARTBEAT.md");
+
+    // Read existing lines (or start empty).
+    let mut lines: Vec<String> = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.to_string())
+        .collect();
+
+    for action in actions {
+        match action {
+            HeartbeatAction::Add(item) => {
+                // Prevent duplicates (case-insensitive).
+                let already_exists = lines.iter().any(|l| {
+                    let trimmed = l.trim();
+                    !trimmed.starts_with('#')
+                        && trimmed.trim_start_matches("- ").eq_ignore_ascii_case(item)
+                });
+                if !already_exists {
+                    lines.push(format!("- {item}"));
+                }
+            }
+            HeartbeatAction::Remove(item) => {
+                let needle = item.to_lowercase();
+                lines.retain(|l| {
+                    let trimmed = l.trim();
+                    // Never remove comment lines.
+                    if trimmed.starts_with('#') {
+                        return true;
+                    }
+                    let content = trimmed.trim_start_matches("- ").to_lowercase();
+                    // Remove if content contains the needle (partial match).
+                    !content.contains(&needle)
+                });
+            }
+        }
+    }
+
+    // Write back.
+    let content = lines.join("\n");
+    // Ensure parent directory exists.
+    let dir = format!("{home}/.omega");
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(
+        &path,
+        if content.is_empty() {
+            content
+        } else {
+            content + "\n"
+        },
+    );
 }
 
 /// Return localized status messages for the delayed provider nudge.
@@ -1329,5 +1463,130 @@ mod tests {
             content.contains("dossier"),
             "bundled facts section should include privacy framing"
         );
+    }
+
+    // --- Heartbeat marker tests ---
+
+    #[test]
+    fn test_extract_heartbeat_add() {
+        let text = "Sure, I'll monitor that.\nHEARTBEAT_ADD: Check exercise habits";
+        let actions = extract_heartbeat_markers(text);
+        assert_eq!(
+            actions,
+            vec![HeartbeatAction::Add("Check exercise habits".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_extract_heartbeat_remove() {
+        let text = "I'll stop monitoring that.\nHEARTBEAT_REMOVE: exercise";
+        let actions = extract_heartbeat_markers(text);
+        assert_eq!(
+            actions,
+            vec![HeartbeatAction::Remove("exercise".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_extract_heartbeat_multiple() {
+        let text =
+            "Updating your checklist.\nHEARTBEAT_ADD: Water plants\nHEARTBEAT_REMOVE: old task";
+        let actions = extract_heartbeat_markers(text);
+        assert_eq!(
+            actions,
+            vec![
+                HeartbeatAction::Add("Water plants".to_string()),
+                HeartbeatAction::Remove("old task".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extract_heartbeat_empty_ignored() {
+        let text = "HEARTBEAT_ADD: \nHEARTBEAT_REMOVE:   \nSome response.";
+        let actions = extract_heartbeat_markers(text);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_strip_heartbeat_markers() {
+        let text = "Sure, I'll monitor that.\nHEARTBEAT_ADD: Check exercise habits\nDone!";
+        let result = strip_heartbeat_markers(text);
+        assert_eq!(result, "Sure, I'll monitor that.\nDone!");
+    }
+
+    #[test]
+    fn test_strip_heartbeat_both_types() {
+        let text = "Response.\nHEARTBEAT_ADD: new item\nHEARTBEAT_REMOVE: old item\nEnd.";
+        let result = strip_heartbeat_markers(text);
+        assert_eq!(result, "Response.\nEnd.");
+    }
+
+    #[test]
+    fn test_apply_heartbeat_add() {
+        // Use a temp dir to avoid touching real ~/.omega/HEARTBEAT.md.
+        let tmp = std::env::temp_dir().join("omega_test_hb_add");
+        let _ = std::fs::create_dir_all(&tmp);
+        let path = tmp.join("HEARTBEAT.md");
+        std::fs::write(&path, "# My checklist\n- Existing item\n").unwrap();
+
+        // Temporarily override HOME for the test.
+        let original_home = std::env::var("HOME").unwrap();
+        let fake_home = tmp.parent().unwrap().join("omega_test_hb_add_home");
+        let _ = std::fs::create_dir_all(fake_home.join(".omega"));
+        std::fs::write(
+            fake_home.join(".omega/HEARTBEAT.md"),
+            "# My checklist\n- Existing item\n",
+        )
+        .unwrap();
+        std::env::set_var("HOME", &fake_home);
+
+        apply_heartbeat_changes(&[HeartbeatAction::Add("New item".to_string())]);
+
+        let content = std::fs::read_to_string(fake_home.join(".omega/HEARTBEAT.md")).unwrap();
+        assert!(content.contains("- Existing item"), "should keep existing");
+        assert!(content.contains("- New item"), "should add new item");
+
+        // Duplicate add should not create a second entry.
+        apply_heartbeat_changes(&[HeartbeatAction::Add("New item".to_string())]);
+        let content = std::fs::read_to_string(fake_home.join(".omega/HEARTBEAT.md")).unwrap();
+        assert_eq!(
+            content.matches("New item").count(),
+            1,
+            "should not duplicate"
+        );
+
+        // Restore HOME and clean up.
+        std::env::set_var("HOME", &original_home);
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&fake_home);
+    }
+
+    #[test]
+    fn test_apply_heartbeat_remove() {
+        let fake_home = std::env::temp_dir().join("omega_test_hb_remove_home");
+        let _ = std::fs::create_dir_all(fake_home.join(".omega"));
+        std::fs::write(
+            fake_home.join(".omega/HEARTBEAT.md"),
+            "# My checklist\n- Check exercise habits\n- Water the plants\n",
+        )
+        .unwrap();
+
+        let original_home = std::env::var("HOME").unwrap();
+        std::env::set_var("HOME", &fake_home);
+
+        apply_heartbeat_changes(&[HeartbeatAction::Remove("exercise".to_string())]);
+
+        let content = std::fs::read_to_string(fake_home.join(".omega/HEARTBEAT.md")).unwrap();
+        assert!(!content.contains("exercise"), "should remove exercise line");
+        assert!(
+            content.contains("Water the plants"),
+            "should keep other items"
+        );
+        assert!(content.contains("# My checklist"), "should keep comments");
+
+        // Restore HOME and clean up.
+        std::env::set_var("HOME", &original_home);
+        let _ = std::fs::remove_dir_all(&fake_home);
     }
 }

@@ -859,6 +859,15 @@ fn build_system_prompt(
          Only include the marker if the user explicitly asks for a reminder or scheduled task.",
     );
 
+    prompt.push_str(
+        "\n\nWhen the user asks you to monitor, watch, keep an eye on, or add something to \
+         your periodic checklist, include this marker on its own line at the END of your response:\n\
+         HEARTBEAT_ADD: <description>\n\
+         When the user asks to stop monitoring, unwatch, or remove something from the checklist:\n\
+         HEARTBEAT_REMOVE: <description>\n\
+         Only include the marker if the user explicitly asks to add or remove a monitored item.",
+    );
+
     prompt
 }
 

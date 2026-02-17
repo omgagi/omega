@@ -271,6 +271,31 @@ When a user says "speak in French" in a regular message, the AI detects the inte
 **Error Handling:**
 If the store fails to persist the language, the error is logged but the response is still sent.
 
+### Stage 6d: Heartbeat Marker Extraction
+
+**What happens:** After language switch extraction, the gateway scans the response for `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` markers. If found, the heartbeat checklist file is updated and the markers are stripped from the response.
+
+**Implementation:**
+- Calls `extract_heartbeat_markers(&response.text)` to find all `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` lines.
+- If any markers are found:
+  - Calls `apply_heartbeat_changes(&actions)` to update `~/.omega/HEARTBEAT.md`:
+    - **Add**: Appends `- {item}` to the file. Prevents duplicate adds (case-insensitive).
+    - **Remove**: Removes lines containing the keyword (case-insensitive partial match). Comment lines (`#`) are never removed.
+  - Logs each action at INFO level.
+  - Calls `strip_heartbeat_markers()` to remove the marker lines from the response.
+
+**Marker Format:**
+```
+HEARTBEAT_ADD: Check exercise habits
+HEARTBEAT_REMOVE: exercise
+```
+
+**Why This Exists:**
+Without conversational management, users must manually edit `~/.omega/HEARTBEAT.md` to add or remove monitored items. This breaks the conversational flow and makes the heartbeat feature less discoverable. The marker pattern (proven by SCHEDULE and LANG_SWITCH) keeps file management invisible to the user.
+
+**Error Handling:**
+File write errors are silently ignored. The response is always sent to the user. If `$HOME` is not set, the function returns without action.
+
 ### Stage 7: Memory Storage
 
 **What happens:** The exchange (user input + AI response) is saved to the SQLite database.
@@ -390,6 +415,11 @@ User sends message on Telegram
 │ Stage 6c: extract_lang_switch()         │
 │  • Scan response for LANG_SWITCH: line  │
 │  ✓ Found? → Store pref, strip marker    │
+│  ✗ Not found? → Continue                │
+│                                          │
+│ Stage 6d: extract_heartbeat_markers()   │
+│  • Scan for HEARTBEAT_ADD/REMOVE lines  │
+│  ✓ Found? → Update file, strip markers  │
 │  ✗ Not found? → Continue                │
 │                                          │
 │ Stage 7: memory.store_exchange()        │

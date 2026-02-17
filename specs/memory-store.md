@@ -1109,6 +1109,13 @@ include this marker on its own line at the END of your response:
 SCHEDULE: <description> | <ISO 8601 datetime> | <once|daily|weekly|monthly|weekdays>
 Example: SCHEDULE: Call John | 2026-02-17T15:00:00 | once
 Only include the marker if the user explicitly asks for a reminder or scheduled task.
+
+When the user asks you to monitor, watch, keep an eye on, or add something to
+your periodic checklist, include this marker on its own line at the END of your response:
+HEARTBEAT_ADD: <description>
+When the user asks to stop monitoring, unwatch, or remove something from the checklist:
+HEARTBEAT_REMOVE: <description>
+Only include the marker if the user explicitly asks to add or remove a monitored item.
 ```
 
 **Conditional sections:**
@@ -1118,6 +1125,7 @@ Only include the marker if the user explicitly asks for a reminder or scheduled 
 - Language directive: always appended (unconditional). Uses the `language` parameter.
 - LANG_SWITCH instruction: always appended (unconditional). Tells the provider to include a `LANG_SWITCH:` marker when the user explicitly asks to change language.
 - SCHEDULE marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE:` marker line when the user explicitly requests a reminder or scheduled task.
+- HEARTBEAT_ADD/REMOVE marker instructions: always appended (unconditional). Tells the provider to include `HEARTBEAT_ADD:` or `HEARTBEAT_REMOVE:` markers when the user explicitly asks to add or remove monitored items.
 
 ---
 
@@ -1346,3 +1354,4 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 17. The SCHEDULE marker instruction is always included in the system prompt.
 18. The language directive is always included in the system prompt (uses resolved `preferred_language` fact or auto-detected language).
 19. The LANG_SWITCH marker instruction is always included in the system prompt.
+20. The HEARTBEAT_ADD/REMOVE marker instructions are always included in the system prompt.

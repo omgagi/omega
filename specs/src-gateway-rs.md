@@ -336,6 +336,11 @@ pub struct Gateway {
 - If instructions are found, prepends them to the base system prompt with a `---` separator.
 - The enriched system prompt is passed to `memory.build_context()`.
 
+**Stage 4c: Heartbeat Awareness**
+- After project instruction injection, calls `read_heartbeat_file()`.
+- If a heartbeat checklist exists, appends its contents to the system prompt under a "Current heartbeat checklist" header.
+- This gives the provider awareness of what items are already being monitored, enabling it to avoid duplicates and to confirm removals.
+
 **Stage 5: Build Context from Memory (Lines 344-356)**
 - Call `self.memory.build_context(&clean_incoming, &self.prompts.system)` to build enriched context (using the potentially project-enriched system prompt).
 - This includes recent conversation history, relevant facts, and system prompt.
@@ -382,6 +387,14 @@ pub struct Gateway {
   - Call `self.memory.store_fact(&incoming.sender_id, "preferred_language", &lang)` to persist the language change.
   - Log the language switch on success, or log error on failure.
   - Call `strip_lang_switch(&response.text)` to remove the `LANG_SWITCH:` line from the response before sending to the user.
+
+**Stage 5d: HEARTBEAT_ADD / HEARTBEAT_REMOVE Marker Extraction**
+- After LANG_SWITCH extraction:
+- Call `extract_heartbeat_markers(&response.text)` to find all `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` lines.
+- If any markers found:
+  - Call `apply_heartbeat_changes(&actions)` to update `~/.omega/HEARTBEAT.md`.
+  - Log each add/remove action at INFO level.
+  - Call `strip_heartbeat_markers(&response.text)` to remove all marker lines from the response before sending to the user.
 
 **Stage 6: Store Exchange in Memory (Lines 579-582)**
 - Call `self.memory.store_exchange(&incoming, &response)` to save the exchange.
@@ -503,6 +516,34 @@ pub struct Gateway {
 2. Read `{home}/.omega/HEARTBEAT.md`.
 3. Return `None` if file does not exist, is unreadable, or has only whitespace.
 4. Return `Some(content)` otherwise.
+
+### `enum HeartbeatAction`
+**Purpose:** Represents an action extracted from a `HEARTBEAT_ADD:` or `HEARTBEAT_REMOVE:` marker.
+
+**Variants:**
+- `Add(String)` — Item to add to the heartbeat checklist.
+- `Remove(String)` — Keyword to match and remove from the heartbeat checklist.
+
+### `fn extract_heartbeat_markers(text: &str) -> Vec<HeartbeatAction>`
+**Purpose:** Extract all `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` markers from response text.
+
+**Logic:** Iterates through lines, finds lines whose trimmed form starts with `"HEARTBEAT_ADD:"` or `"HEARTBEAT_REMOVE:"`, strips the prefix, trims, and collects into a `Vec<HeartbeatAction>`. Empty items (marker with no description) are skipped.
+
+### `fn strip_heartbeat_markers(text: &str) -> String`
+**Purpose:** Remove all `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` lines from response text so the markers are not shown to the user.
+
+**Logic:** Filters out any line whose trimmed form starts with `"HEARTBEAT_ADD:"` or `"HEARTBEAT_REMOVE:"`, then joins remaining lines and trims the result.
+
+### `fn apply_heartbeat_changes(actions: &[HeartbeatAction])`
+**Purpose:** Apply heartbeat add/remove actions to `~/.omega/HEARTBEAT.md`.
+
+**Logic:**
+1. Get `$HOME` env var. Return silently if not set.
+2. Read existing file lines (or start with empty vec if file does not exist).
+3. For each `Add(item)`: check if item already exists (case-insensitive, ignoring `- ` prefix). If not, append `- {item}`.
+4. For each `Remove(item)`: remove all non-comment lines whose content contains the item (case-insensitive partial match). Comment lines (starting with `#`) are never removed.
+5. Ensure `~/.omega/` directory exists.
+6. Write the updated lines back to the file.
 
 ### `fn status_messages(lang: &str) -> (&'static str, &'static str)`
 **Purpose:** Return localized status messages for the delayed provider nudge.
@@ -794,6 +835,8 @@ All interactions are logged to SQLite with:
 18. Group chat rules are injected into the system prompt when `incoming.is_group` is `true`.
 19. Heartbeat loop skips API calls entirely when no checklist file (`~/.omega/HEARTBEAT.md`) is configured.
 20. Heartbeat prompt is enriched with user facts and recent conversation summaries from memory.
+21. HEARTBEAT_ADD: and HEARTBEAT_REMOVE: markers are stripped from the response before sending to the user. Adds are appended to `~/.omega/HEARTBEAT.md`; removes use case-insensitive partial matching and never remove comment lines.
+22. The current heartbeat checklist is injected into the system prompt so the provider knows what is already monitored.
 
 ## Tests
 
@@ -844,3 +887,51 @@ Verifies that the bundled `SYSTEM_PROMPT.md` (via `include_str!`) contains the S
 **Type:** Synchronous unit test (`#[test]`)
 
 Verifies that the bundled `SYSTEM_PROMPT.md` (via `include_str!`) contains the guided fact-extraction schema with canonical fields like "preferred_name", "pronouns", and "timezone".
+
+### `test_extract_heartbeat_add`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `extract_heartbeat_markers()` correctly extracts a single `HEARTBEAT_ADD:` marker from response text.
+
+### `test_extract_heartbeat_remove`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `extract_heartbeat_markers()` correctly extracts a single `HEARTBEAT_REMOVE:` marker from response text.
+
+### `test_extract_heartbeat_multiple`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `extract_heartbeat_markers()` extracts both `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` markers from the same response text.
+
+### `test_extract_heartbeat_empty_ignored`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `extract_heartbeat_markers()` ignores markers with empty descriptions (e.g., `HEARTBEAT_ADD: ` with trailing whitespace only).
+
+### `test_strip_heartbeat_markers`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `strip_heartbeat_markers()` removes `HEARTBEAT_ADD:` lines from response text while preserving other lines.
+
+### `test_strip_heartbeat_both_types`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `strip_heartbeat_markers()` removes both `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` lines from the same response text.
+
+### `test_apply_heartbeat_add`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `apply_heartbeat_changes()` adds new items to `~/.omega/HEARTBEAT.md`, preserves existing items, and prevents duplicate adds (case-insensitive). Uses a temporary directory with overridden `$HOME`.
+
+### `test_apply_heartbeat_remove`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `apply_heartbeat_changes()` removes matching items from `~/.omega/HEARTBEAT.md` using case-insensitive partial matching, preserves comment lines, and keeps non-matching items. Uses a temporary directory with overridden `$HOME`.

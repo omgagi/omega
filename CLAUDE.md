@@ -62,7 +62,7 @@ Cargo workspace with 6 crates:
 
 Gateway event loop (`src/gateway.rs`):
 ```
-Message → Auth → Sanitize → Platform Hint → Group Rules → Memory (context) → Heads-up → Provider (async + status updates) → SILENT suppress → Schedule extract → Memory (store) → Audit → Send
+Message → Auth → Sanitize → Platform Hint → Group Rules → Heartbeat awareness → Memory (context) → Heads-up → Provider (async + status updates) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
 ```
 
 Background loops (spawned in `gateway::run()`):

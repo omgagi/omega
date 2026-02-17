@@ -86,6 +86,41 @@ The AI evaluates each item. If all checks pass, it responds with `HEARTBEAT_OK`.
 
 If the file does not exist or is empty, the heartbeat **skips the cycle entirely** — no API call is made. This is an intentional optimization: without a specific checklist, a generic health check provides limited value but still costs provider credits. Create a `HEARTBEAT.md` file with your monitoring items to activate the heartbeat.
 
+## Conversational Management
+
+You can add and remove heartbeat checklist items through natural conversation — no need to manually edit `HEARTBEAT.md`.
+
+### Adding Items
+
+Ask Omega to monitor something:
+
+- "Keep an eye on my exercise habits"
+- "Monitor whether I'm drinking enough water"
+- "Add disk usage checks to your watchlist"
+
+Omega will emit a `HEARTBEAT_ADD:` marker in its response, which the gateway intercepts to add the item to `~/.omega/HEARTBEAT.md`. The marker is stripped before the response reaches you.
+
+### Removing Items
+
+Ask Omega to stop monitoring:
+
+- "Stop monitoring exercise"
+- "Remove the disk usage check"
+- "Don't watch that anymore"
+
+Omega will emit a `HEARTBEAT_REMOVE:` marker. The gateway uses case-insensitive partial matching to find and remove the item. Comment lines (starting with `#`) are never removed.
+
+### How It Works Under the Hood
+
+1. The current heartbeat checklist is injected into the system prompt so the provider knows what is already being monitored.
+2. `build_system_prompt()` includes instructions telling the provider when to emit `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` markers.
+3. After the provider responds, the gateway extracts markers, updates `~/.omega/HEARTBEAT.md`, and strips the markers from the response.
+4. Duplicate adds are prevented (case-insensitive check).
+
+### Manual Editing
+
+You can still edit `~/.omega/HEARTBEAT.md` manually. Conversational management and manual editing coexist — the file is the single source of truth.
+
 ## Configuration
 
 The heartbeat is controlled by the `[heartbeat]` section in `config.toml`:

@@ -174,11 +174,11 @@ Behind the scenes, this does:
 3. **Fetch user facts** -- all stored facts for this sender (name, preferences, etc.).
 4. **Fetch recent summaries** -- the 3 most recent closed conversation summaries.
 5. **Search past messages** -- FTS5 full-text search finds up to 5 relevant messages from other conversations.
-6. **Build the system prompt** -- weave facts, summaries, and recalled messages into the base prompt.
+6. **Build the system prompt** -- weave facts, summaries, recalled messages, and marker instructions (SCHEDULE, LANG_SWITCH, HEARTBEAT_ADD/REMOVE) into the base prompt.
 
 ### The System Prompt
 
-The system prompt is not static. It is dynamically composed based on what Omega knows about the user. Here is an example of what it might look like:
+The system prompt is not static. It is dynamically composed based on what Omega knows about the user. It includes marker instructions that tell the provider to emit special markers (like `SCHEDULE:`, `LANG_SWITCH:`, `HEARTBEAT_ADD:`, `HEARTBEAT_REMOVE:`) when the user requests specific actions. Here is an example of what it might look like:
 
 ```
 You are Omega, a personal AI agent running on the owner's infrastructure.
