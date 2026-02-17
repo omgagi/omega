@@ -91,7 +91,19 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Start => {
-            let cfg = config::load(&cli.config)?;
+            let mut cfg = config::load(&cli.config)?;
+
+            // Env var override: OPENAI_API_KEY → whisper_api_key (if not set in config).
+            if let Some(ref mut tg) = cfg.channel.telegram {
+                let has_key = tg.whisper_api_key.as_ref().is_some_and(|k| !k.is_empty());
+                if !has_key {
+                    if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+                        if !key.is_empty() {
+                            tg.whisper_api_key = Some(key);
+                        }
+                    }
+                }
+            }
 
             // Deploy bundled prompts (SYSTEM_PROMPT.md, WELCOME.toml) on first run.
             config::install_bundled_prompts(&cfg.omega.data_dir);

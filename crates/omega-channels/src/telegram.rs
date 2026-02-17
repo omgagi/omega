@@ -47,6 +47,21 @@ struct TgMessage {
     from: Option<TgUser>,
     chat: TgChat,
     text: Option<String>,
+    voice: Option<TgVoice>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct TgVoice {
+    file_id: String,
+    duration: i64,
+    mime_type: Option<String>,
+    file_size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TgFile {
+    file_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,7 +203,9 @@ impl Channel for TelegramChannel {
         let (tx, rx) = mpsc::channel(64);
         let client = self.client.clone();
         let base_url = self.base_url.clone();
+        let bot_token = self.config.bot_token.clone();
         let allowed_users = self.config.allowed_users.clone();
+        let whisper_api_key = self.config.whisper_api_key.clone();
         let last_update_id = self.last_update_id.clone();
 
         info!("Telegram channel starting long polling...");
@@ -256,9 +273,47 @@ impl Channel for TelegramChannel {
                         None => continue,
                     };
 
-                    let text = match msg.text {
-                        Some(t) => t,
-                        None => continue,
+                    let text = if let Some(t) = msg.text {
+                        t
+                    } else if let Some(ref voice) = msg.voice {
+                        match whisper_api_key.as_deref() {
+                            Some(key) if !key.is_empty() => {
+                                match download_telegram_file(
+                                    &client,
+                                    &base_url,
+                                    &bot_token,
+                                    &voice.file_id,
+                                )
+                                .await
+                                {
+                                    Ok(bytes) => {
+                                        match transcribe_whisper(&client, key, &bytes).await {
+                                            Ok(transcript) => {
+                                                info!(
+                                                    "transcribed voice message ({}s)",
+                                                    voice.duration
+                                                );
+                                                format!("[Voice message] {transcript}")
+                                            }
+                                            Err(e) => {
+                                                warn!("voice transcription failed: {e}");
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!("voice download failed: {e}");
+                                        continue;
+                                    }
+                                }
+                            }
+                            _ => {
+                                debug!("skipping voice (no whisper key)");
+                                continue;
+                            }
+                        }
+                    } else {
+                        continue;
                     };
 
                     let user = match msg.from {
@@ -344,6 +399,87 @@ impl Channel for TelegramChannel {
     }
 }
 
+/// Download a file from Telegram servers by file_id.
+async fn download_telegram_file(
+    client: &reqwest::Client,
+    base_url: &str,
+    bot_token: &str,
+    file_id: &str,
+) -> Result<Vec<u8>, OmegaError> {
+    // Step 1: getFile to obtain file_path.
+    let url = format!("{base_url}/getFile?file_id={file_id}");
+    let resp: TgResponse<TgFile> = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| OmegaError::Channel(format!("telegram getFile failed: {e}")))?
+        .json()
+        .await
+        .map_err(|e| OmegaError::Channel(format!("telegram getFile parse failed: {e}")))?;
+
+    let file_path = resp
+        .result
+        .and_then(|f| f.file_path)
+        .ok_or_else(|| OmegaError::Channel("telegram getFile returned no file_path".into()))?;
+
+    // Step 2: Download the actual file bytes.
+    let download_url = format!("https://api.telegram.org/file/bot{bot_token}/{file_path}");
+    let bytes = client
+        .get(&download_url)
+        .send()
+        .await
+        .map_err(|e| OmegaError::Channel(format!("telegram file download failed: {e}")))?
+        .bytes()
+        .await
+        .map_err(|e| OmegaError::Channel(format!("telegram file read failed: {e}")))?;
+
+    Ok(bytes.to_vec())
+}
+
+/// Transcribe audio bytes via OpenAI Whisper API.
+async fn transcribe_whisper(
+    client: &reqwest::Client,
+    api_key: &str,
+    audio_bytes: &[u8],
+) -> Result<String, OmegaError> {
+    let part = reqwest::multipart::Part::bytes(audio_bytes.to_vec())
+        .file_name("voice.ogg")
+        .mime_str("audio/ogg")
+        .map_err(|e| OmegaError::Channel(format!("whisper mime error: {e}")))?;
+
+    let form = reqwest::multipart::Form::new()
+        .text("model", "whisper-1")
+        .part("file", part);
+
+    let resp = client
+        .post("https://api.openai.com/v1/audio/transcriptions")
+        .bearer_auth(api_key)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| OmegaError::Channel(format!("whisper request failed: {e}")))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(OmegaError::Channel(format!(
+            "whisper API error {status}: {body}"
+        )));
+    }
+
+    #[derive(Deserialize)]
+    struct WhisperResponse {
+        text: String,
+    }
+
+    let result: WhisperResponse = resp
+        .json()
+        .await
+        .map_err(|e| OmegaError::Channel(format!("whisper response parse failed: {e}")))?;
+
+    Ok(result.text)
+}
+
 /// Split a long message into chunks that respect Telegram's limit.
 fn split_message(text: &str, max_len: usize) -> Vec<&str> {
     if text.len() <= max_len {
@@ -420,5 +556,38 @@ mod tests {
         assert_eq!(chat.chat_type, "");
         // Missing type should not be detected as group.
         assert!(!matches!(chat.chat_type.as_str(), "group" | "supergroup"));
+    }
+
+    #[test]
+    fn test_tg_message_with_voice() {
+        let json = r#"{
+            "message_id": 1,
+            "chat": {"id": 100, "type": "private"},
+            "voice": {
+                "file_id": "abc123",
+                "duration": 5,
+                "mime_type": "audio/ogg",
+                "file_size": 12345
+            }
+        }"#;
+        let msg: TgMessage = serde_json::from_str(json).unwrap();
+        assert!(msg.text.is_none());
+        assert!(msg.voice.is_some());
+        let voice = msg.voice.unwrap();
+        assert_eq!(voice.file_id, "abc123");
+        assert_eq!(voice.duration, 5);
+        assert_eq!(voice.mime_type.as_deref(), Some("audio/ogg"));
+    }
+
+    #[test]
+    fn test_tg_message_text_only() {
+        let json = r#"{
+            "message_id": 2,
+            "chat": {"id": 100, "type": "private"},
+            "text": "hello"
+        }"#;
+        let msg: TgMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.text.as_deref(), Some("hello"));
+        assert!(msg.voice.is_none());
     }
 }

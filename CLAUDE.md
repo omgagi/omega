@@ -55,14 +55,14 @@ Cargo workspace with 6 crates:
 |-------|---------|
 | `omega-core` | Types, traits, config (Prompts with identity/soul/system split), error handling, prompt sanitization |
 | `omega-providers` | AI backends (Claude Code CLI, Anthropic, OpenAI, Ollama, OpenRouter) |
-| `omega-channels` | Messaging platforms (Telegram, WhatsApp) |
+| `omega-channels` | Messaging platforms (Telegram with voice transcription via Whisper, WhatsApp) |
 | `omega-memory` | SQLite storage, conversation history, audit log, scheduled tasks, structured user profile formatting |
 | `omega-skills` | Skill loader + project loader — skills from `~/.omega/skills/*/SKILL.md` (TOML or YAML frontmatter), projects from `~/.omega/projects/*/INSTRUCTIONS.md`, trigger-based MCP server activation |
 | `omega-sandbox` | OS-level filesystem enforcement — Seatbelt (macOS), Landlock (Linux) — restricts writes to workspace + /tmp + ~/.claude in sandbox/rx modes |
 
 Gateway event loop (`src/gateway.rs`):
 ```
-Message → Auth → Sanitize → Welcome (non-blocking) → Platform Hint → Group Rules → Heartbeat awareness → Sandbox constraint → Identity+Soul+System compose → Memory (context) → MCP trigger match → Heads-up → Provider (MCP settings write → async CLI + status updates → MCP cleanup) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
+Message (text or voice→Whisper transcription at channel layer) → Auth → Sanitize → Welcome (non-blocking) → Platform Hint → Group Rules → Heartbeat awareness → Sandbox constraint → Identity+Soul+System compose → Memory (context) → MCP trigger match → Heads-up → Provider (MCP settings write → async CLI + status updates → MCP cleanup) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send
 ```
 
 System prompt composition: The `Prompts` struct splits prompts into three fields — `identity` (autonomous executor with concrete behavioral examples), `soul` (personality, context-aware tone, explicit boundaries, emoji policy), `system` (operational rules + group chat participation) — parsed from `## Identity`, `## Soul`, `## System` sections in `SYSTEM_PROMPT.md`. Gateway composes them: `format!("{}\n\n{}\n\n{}", identity, soul, system)`. Backward compatible: missing sections keep compiled defaults.
@@ -148,4 +148,4 @@ Always consult these before modifying or extending the codebase:
 - **Phase 1** (complete): Workspace, core types, Claude Code provider, CLI (`omega ask`)
 - **Phase 2** (complete): Memory, Telegram channel, gateway, audit log, auth, sanitization, LaunchAgent
 - **Phase 3** (complete): Conversation boundaries, summaries, facts extraction, enriched context, typing indicator, bot commands, system prompt upgrade, self-check, graceful shutdown, exponential backoff, init wizard
-- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, skill-declared MCP servers (trigger-based activation, dynamic `.claude/settings.local.json` + `--allowedTools` injection), 3-level sandbox (sandbox/rx/rwx workspace isolation + OS-level write enforcement via Seatbelt/Landlock), WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, identity/soul/system prompt split, structured user profile, conversational onboarding, privacy-focused welcome messages, guided fact-extraction schema
+- **Phase 4** (in progress): Scheduler (task queue + heartbeat), alternative providers, skills system, skill-declared MCP servers (trigger-based activation, dynamic `.claude/settings.local.json` + `--allowedTools` injection), 3-level sandbox (sandbox/rx/rwx workspace isolation + OS-level write enforcement via Seatbelt/Landlock), WhatsApp, cliclack CLI UX, Google Workspace init (via `gog` CLI), OS-aware service management (`omega service install|uninstall|status`), group chat awareness (is_group + SILENT suppression), platform formatting hints, context-aware heartbeat, identity/soul/system prompt split, structured user profile, conversational onboarding, privacy-focused welcome messages, guided fact-extraction schema, Telegram voice message transcription (OpenAI Whisper)

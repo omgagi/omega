@@ -50,6 +50,7 @@ model = "anthropic/claude-sonnet-4-20250514"
 enabled = false
 bot_token = ""              # Or env: TELEGRAM_BOT_TOKEN
 allowed_users = []          # Empty = allow all. Add Telegram user IDs to restrict.
+whisper_api_key = ""        # Optional: OpenAI key for voice transcription (or env: OPENAI_API_KEY)
 
 [channel.whatsapp]
 enabled = false

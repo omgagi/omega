@@ -158,6 +158,9 @@ pub struct TelegramConfig {
     pub bot_token: String,
     #[serde(default)]
     pub allowed_users: Vec<i64>,
+    /// OpenAI API key for Whisper voice transcription. Presence = voice enabled.
+    #[serde(default)]
+    pub whisper_api_key: Option<String>,
 }
 
 /// WhatsApp channel config.
@@ -789,5 +792,28 @@ mod tests {
             prompts.system.contains("DO IT"),
             "default system should contain rules"
         );
+    }
+
+    #[test]
+    fn test_telegram_config_with_whisper() {
+        let toml_str = r#"
+            enabled = true
+            bot_token = "tok:EN"
+            allowed_users = [42]
+            whisper_api_key = "sk-test123"
+        "#;
+        let cfg: TelegramConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.whisper_api_key.as_deref(), Some("sk-test123"));
+    }
+
+    #[test]
+    fn test_telegram_config_without_whisper() {
+        let toml_str = r#"
+            enabled = true
+            bot_token = "tok:EN"
+            allowed_users = [42]
+        "#;
+        let cfg: TelegramConfig = toml::from_str(toml_str).unwrap();
+        assert!(cfg.whisper_api_key.is_none());
     }
 }

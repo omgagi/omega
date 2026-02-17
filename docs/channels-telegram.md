@@ -67,7 +67,7 @@ This prevents hammering the API during outages while recovering quickly once the
 When a message arrives from Telegram, the channel applies several filters before forwarding it to the gateway:
 
 1. **Must be a message** -- non-message updates (edited messages, channel posts, callbacks) are skipped.
-2. **Must have text** -- photos, stickers, voice messages, and other non-text content are currently ignored.
+2. **Must have text or transcribable voice** -- if the message has text, it's used directly. If it has a voice attachment and `whisper_api_key` is configured, the audio is downloaded and transcribed via OpenAI Whisper. Photos, stickers, and other media types are ignored.
 3. **Must have a sender** -- anonymous messages are skipped.
 4. **Must be authorized** -- if `allowed_users` is configured (non-empty), the sender's Telegram user ID must be in the list. Unauthorized messages are logged and silently dropped.
 
@@ -115,6 +115,7 @@ Add this section to your `config.toml`:
 enabled = true
 bot_token = "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
 allowed_users = [123456789]  # Your Telegram user ID
+whisper_api_key = "sk-..."   # Optional: enables voice message transcription
 ```
 
 | Field | Type | Required | Description |
@@ -122,6 +123,7 @@ allowed_users = [123456789]  # Your Telegram user ID
 | `enabled` | bool | No | Defaults to `false`. Set to `true` to activate. |
 | `bot_token` | string | Yes | The token you get from @BotFather. |
 | `allowed_users` | list of integers | No | Telegram user IDs that may interact with the bot. Leave empty to allow everyone (not recommended). |
+| `whisper_api_key` | string | No | OpenAI API key for Whisper voice transcription. When set, voice messages are transcribed and processed as text. Can also be set via the `OPENAI_API_KEY` environment variable. |
 
 ### Finding Your Telegram User ID
 
@@ -189,6 +191,20 @@ If Omega restarts, `last_update_id` resets to `None`, which could theoretically 
 
 ---
 
+## Voice Message Transcription
+
+When `whisper_api_key` is configured (either in `config.toml` or via the `OPENAI_API_KEY` environment variable), the Telegram channel can process voice messages:
+
+1. The voice audio file is downloaded from Telegram servers using the Bot API's `getFile` endpoint.
+2. The audio bytes are sent to OpenAI's Whisper API (`POST /v1/audio/transcriptions`) for transcription.
+3. The transcribed text is wrapped as `[Voice message] {transcript}` and processed by the gateway like any text message.
+
+If the download or transcription fails, the voice message is silently skipped (logged as a warning). If no API key is configured, voice messages are skipped with a debug log.
+
+Telegram voice messages use OGG Opus format, which Whisper supports natively. Cost is approximately $0.006 per minute of audio.
+
+---
+
 ## Group Chat Awareness
 
 The Telegram channel detects group chats using the `type` field from the Telegram Bot API's `Chat` object. When the chat type is `"group"` or `"supergroup"`, the `is_group` flag on `IncomingMessage` is set to `true`.
@@ -201,7 +217,7 @@ When `is_group` is true, the gateway:
 
 ## Limitations
 
-- **Text only.** Photos, documents, voice messages, stickers, and other media types are silently skipped.
+- **Text and voice only.** Photos, documents, stickers, and other media types are silently skipped. Voice messages require an OpenAI API key (`whisper_api_key`) for transcription; without it, voice messages are also skipped.
 - **No inline keyboards or buttons.** Responses are plain text (with optional Markdown formatting).
 - **No webhook mode.** Only long polling is supported. This is simpler but slightly higher latency than webhooks.
 - **Message chunking is byte-based.** The 4096-byte split operates on byte offsets, not Unicode grapheme clusters. In practice this is fine because Telegram's own limit is also byte-based.

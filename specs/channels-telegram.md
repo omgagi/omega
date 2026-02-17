@@ -2,7 +2,7 @@
 
 **File:** `crates/omega-channels/src/telegram.rs`
 **Crate:** `omega-channels`
-**Last updated:** 2026-02-16
+**Last updated:** 2026-02-17
 
 ## Purpose
 
@@ -46,6 +46,7 @@ The main public struct. Holds configuration, HTTP client, and polling state.
 | `enabled` | `bool` | `false` | Whether the Telegram channel is active |
 | `bot_token` | `String` | `""` | Bot API token from BotFather |
 | `allowed_users` | `Vec<i64>` | `[]` | Telegram user IDs authorized to interact; empty means allow all |
+| `whisper_api_key` | `Option<String>` | `None` | OpenAI API key for Whisper voice transcription; presence = voice enabled. Falls back to `OPENAI_API_KEY` env var. |
 
 ### Telegram API Deserialization Types (private)
 
@@ -72,8 +73,24 @@ The main public struct. Holds configuration, HTTP client, and polling state.
 | `from` | `Option<TgUser>` | Sender of the message |
 | `chat` | `TgChat` | Chat the message belongs to |
 | `text` | `Option<String>` | Text content of the message |
+| `voice` | `Option<TgVoice>` | Voice message attachment, if present |
 
 Note: `message_id` and `from` are marked `#[allow(dead_code)]` -- `message_id` is deserialized but not currently used; `from` is used for auth and sender name resolution.
+
+#### `TgVoice`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `file_id` | `String` | Unique file identifier for downloading via `getFile` |
+| `duration` | `i64` | Duration of the voice message in seconds |
+| `mime_type` | `Option<String>` | MIME type (typically `audio/ogg`) |
+| `file_size` | `Option<i64>` | File size in bytes |
+
+#### `TgFile`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `file_path` | `Option<String>` | File path on Telegram servers, used to construct download URL |
 
 #### `TgUser`
 
@@ -116,6 +133,27 @@ async fn send_chat_action(&self, chat_id: i64, action: &str) -> Result<(), Omega
 Sends a chat action (e.g., `"typing"`) to the specified chat via the `sendChatAction` API endpoint.
 
 ### Free Functions
+
+```rust
+async fn download_telegram_file(
+    client: &reqwest::Client,
+    base_url: &str,
+    bot_token: &str,
+    file_id: &str,
+) -> Result<Vec<u8>, OmegaError>
+```
+
+Downloads a file from Telegram servers. First calls `getFile` to obtain the `file_path`, then downloads the file bytes from `https://api.telegram.org/file/bot{token}/{file_path}`.
+
+```rust
+async fn transcribe_whisper(
+    client: &reqwest::Client,
+    api_key: &str,
+    audio_bytes: &[u8],
+) -> Result<String, OmegaError>
+```
+
+Transcribes audio bytes using OpenAI's Whisper API (`POST /v1/audio/transcriptions`). Sends a multipart form with `model=whisper-1` and the audio as `voice.ogg`. Returns the transcribed text.
 
 ```rust
 fn split_message(text: &str, max_len: usize) -> Vec<&str>
@@ -187,7 +225,7 @@ The polling loop runs inside a `tokio::spawn` task created in `start()`. It shar
 For each `TgUpdate` in the response:
 
 1. **Skip non-message updates:** If `update.message` is `None`, skip.
-2. **Skip non-text messages:** If `message.text` is `None`, skip (photos, stickers, etc. are ignored).
+2. **Extract text:** If `message.text` is `Some`, use it directly. If `message.voice` is `Some` and `whisper_api_key` is configured, download the voice file via `getFile` and transcribe it via OpenAI Whisper; the result is wrapped as `"[Voice message] {transcript}"`. If neither text nor transcribable voice is present, skip.
 3. **Skip anonymous messages:** If `message.from` is `None`, skip.
 4. **Authorization check:** If `allowed_users` is non-empty and the sender's `user.id` is not in the list, log a warning and skip.
 5. **Resolve sender name:** Priority order:
@@ -280,6 +318,9 @@ All errors are wrapped in `OmegaError::Channel(String)`.
 | Invalid `chat_id` parse | Return `OmegaError::Channel` |
 | Receiver dropped (poll) | Log info, terminate polling task |
 | Unauthorized user | Log warning, skip message |
+| Voice download failure | Log warning, skip message |
+| Voice transcription failure | Log warning, skip message |
+| Voice without whisper key | Log debug, skip message |
 
 ---
 
@@ -308,6 +349,16 @@ mod tests {
     // Deserializes a TgChat JSON object without a `type` field.
     // Verifies `chat_type` defaults to an empty string, resulting
     // in `is_group = false`.
+
+    #[test]
+    fn test_tg_message_with_voice()
+    // Deserializes a TgMessage with a voice field.
+    // Verifies text is None and voice fields are correctly parsed.
+
+    #[test]
+    fn test_tg_message_text_only()
+    // Deserializes a TgMessage with text only (no voice).
+    // Verifies voice is None.
 }
 ```
 
@@ -325,6 +376,15 @@ mod tests {
                |    TelegramChannel::start   |
                |    (tokio::spawn loop)      |
                +-----------------------------+
+                    |                   |
+              text message         voice message
+                    |                   |
+                    |         getFile + download
+                    |                   |
+                    |          OpenAI Whisper API
+                    |           (transcribe)
+                    |                   |
+                    +----> "[Voice message] ..."
                               |
                    mpsc::channel(64)
                               |

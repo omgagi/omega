@@ -75,13 +75,41 @@ pub async fn run() -> anyhow::Result<()> {
         None
     };
 
-    // 6. WhatsApp setup.
+    // 6. Voice transcription (Whisper).
+    let whisper_api_key: Option<String> = if !bot_token.is_empty() {
+        let setup: bool = cliclack::confirm("Enable voice message transcription?")
+            .initial_value(false)
+            .interact()?;
+        if setup {
+            cliclack::note(
+                "Voice Transcription",
+                "Voice messages will be transcribed using OpenAI Whisper.\n\
+                 Get a key: https://platform.openai.com/api-keys",
+            )?;
+            let key: String = cliclack::input("OpenAI API key (for Whisper)")
+                .placeholder("sk-... (Enter to skip, or set OPENAI_API_KEY later)")
+                .required(false)
+                .default_input("")
+                .interact()?;
+            if key.is_empty() {
+                None
+            } else {
+                Some(key)
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // 7. WhatsApp setup.
     let whatsapp_enabled = run_whatsapp_setup().await?;
 
-    // 7. Google Workspace setup.
+    // 8. Google Workspace setup.
     let google_email = run_google_setup()?;
 
-    // 8. Sandbox mode.
+    // 9. Sandbox mode.
     let sandbox_mode: &str = cliclack::select("Sandbox mode")
         .item(
             "sandbox",
@@ -100,7 +128,7 @@ pub async fn run() -> anyhow::Result<()> {
         )
         .interact()?;
 
-    // 9. Generate config.toml.
+    // 10. Generate config.toml.
     let config_path = "config.toml";
     if Path::new(config_path).exists() {
         cliclack::log::warning(
@@ -110,6 +138,7 @@ pub async fn run() -> anyhow::Result<()> {
         let config = generate_config(
             &bot_token,
             user_id,
+            whisper_api_key.as_deref(),
             whatsapp_enabled,
             google_email.as_deref(),
             sandbox_mode,
@@ -118,7 +147,7 @@ pub async fn run() -> anyhow::Result<()> {
         cliclack::log::success("Generated config.toml")?;
     }
 
-    // 10. Offer service installation.
+    // 11. Offer service installation.
     let install_service: bool = cliclack::confirm("Install Omega as a system service?")
         .initial_value(true)
         .interact()?;
@@ -136,7 +165,7 @@ pub async fn run() -> anyhow::Result<()> {
         false
     };
 
-    // 11. Next steps.
+    // 12. Next steps.
     let mut steps =
         String::from("1. Review config.toml\n2. Run: omega start\n3. Send a message to your bot");
     if whatsapp_enabled {
@@ -160,6 +189,7 @@ pub async fn run() -> anyhow::Result<()> {
 pub fn generate_config(
     bot_token: &str,
     user_id: Option<i64>,
+    whisper_api_key: Option<&str>,
     whatsapp_enabled: bool,
     google_email: Option<&str>,
     sandbox_mode: &str,
@@ -174,6 +204,15 @@ pub fn generate_config(
         "true"
     };
     let wa_enabled = if whatsapp_enabled { "true" } else { "false" };
+
+    let whisper_line = match whisper_api_key {
+        Some(key) if !key.is_empty() => format!("whisper_api_key = \"{key}\""),
+        _ if !bot_token.is_empty() => {
+            "# whisper_api_key = \"\"  # OpenAI key for voice transcription (or env: OPENAI_API_KEY)"
+                .to_string()
+        }
+        _ => String::new(),
+    };
 
     let mut config = format!(
         r#"[omega]
@@ -196,6 +235,7 @@ allowed_tools = ["Bash", "Read", "Write", "Edit"]
 enabled = {telegram_enabled}
 bot_token = "{bot_token}"
 allowed_users = {allowed_users}
+{whisper_line}
 
 [channel.whatsapp]
 enabled = {wa_enabled}
@@ -512,13 +552,21 @@ mod tests {
 
     #[test]
     fn test_generate_config_full() {
-        let config = generate_config("123:ABC", Some(42), true, Some("me@gmail.com"), "sandbox");
+        let config = generate_config(
+            "123:ABC",
+            Some(42),
+            Some("sk-key"),
+            true,
+            Some("me@gmail.com"),
+            "sandbox",
+        );
         assert!(config.contains("bot_token = \"123:ABC\""));
         assert!(config.contains("allowed_users = [42]"));
         assert!(
             config.contains("enabled = true"),
             "telegram should be enabled"
         );
+        assert!(config.contains("whisper_api_key = \"sk-key\""));
         assert!(config.contains("[channel.whatsapp]\nenabled = true"));
         assert!(config.contains("[google]\naccount = \"me@gmail.com\""));
         assert!(config.contains("[sandbox]\nmode = \"sandbox\""));
@@ -526,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_generate_config_minimal() {
-        let config = generate_config("", None, false, None, "sandbox");
+        let config = generate_config("", None, None, false, None, "sandbox");
         assert!(config.contains("bot_token = \"\""));
         assert!(config.contains("allowed_users = []"));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
@@ -537,7 +585,7 @@ mod tests {
 
     #[test]
     fn test_generate_config_telegram_only() {
-        let config = generate_config("tok:EN", Some(999), false, None, "sandbox");
+        let config = generate_config("tok:EN", Some(999), None, false, None, "sandbox");
         assert!(config.contains("bot_token = \"tok:EN\""));
         assert!(config.contains("allowed_users = [999]"));
         assert!(config.contains("[channel.telegram]\nenabled = true"));
@@ -547,14 +595,14 @@ mod tests {
 
     #[test]
     fn test_generate_config_google_only() {
-        let config = generate_config("", None, false, Some("test@example.com"), "sandbox");
+        let config = generate_config("", None, None, false, Some("test@example.com"), "sandbox");
         assert!(config.contains("[google]\naccount = \"test@example.com\""));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
     }
 
     #[test]
     fn test_generate_config_whatsapp_only() {
-        let config = generate_config("", None, true, None, "sandbox");
+        let config = generate_config("", None, None, true, None, "sandbox");
         assert!(config.contains("[channel.whatsapp]\nenabled = true"));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
         assert!(!config.contains("[google]"));
@@ -562,10 +610,23 @@ mod tests {
 
     #[test]
     fn test_generate_config_sandbox_modes() {
-        let rx = generate_config("", None, false, None, "rx");
+        let rx = generate_config("", None, None, false, None, "rx");
         assert!(rx.contains("mode = \"rx\""));
 
-        let rwx = generate_config("", None, false, None, "rwx");
+        let rwx = generate_config("", None, None, false, None, "rwx");
         assert!(rwx.contains("mode = \"rwx\""));
+    }
+
+    #[test]
+    fn test_generate_config_with_whisper() {
+        let config = generate_config("tok:EN", Some(42), Some("sk-abc"), false, None, "sandbox");
+        assert!(config.contains("whisper_api_key = \"sk-abc\""));
+    }
+
+    #[test]
+    fn test_generate_config_without_whisper() {
+        let config = generate_config("tok:EN", Some(42), None, false, None, "sandbox");
+        assert!(config.contains("# whisper_api_key"));
+        assert!(config.contains("OPENAI_API_KEY"));
     }
 }
