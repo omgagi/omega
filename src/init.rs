@@ -49,7 +49,10 @@ pub async fn run() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // 3. Telegram bot token.
+    // 3. Anthropic authentication.
+    run_anthropic_auth()?;
+
+    // 4. Telegram bot token.
     let bot_token: String = cliclack::input("Telegram bot token")
         .placeholder("Paste token from @BotFather (or Enter to skip)")
         .required(false)
@@ -60,7 +63,7 @@ pub async fn run() -> anyhow::Result<()> {
         cliclack::log::info("Skipping Telegram — you can add it later in config.toml")?;
     }
 
-    // 4. User ID (optional).
+    // 5. User ID (optional).
     let user_id: Option<i64> = if !bot_token.is_empty() {
         let id_str: String = cliclack::input("Your Telegram user ID")
             .placeholder("Send /start to @userinfobot (blank = allow all)")
@@ -72,13 +75,13 @@ pub async fn run() -> anyhow::Result<()> {
         None
     };
 
-    // 5. WhatsApp setup.
+    // 6. WhatsApp setup.
     let whatsapp_enabled = run_whatsapp_setup().await?;
 
-    // 6. Google Workspace setup.
+    // 7. Google Workspace setup.
     let google_email = run_google_setup()?;
 
-    // 7. Generate config.toml.
+    // 8. Generate config.toml.
     let config_path = "config.toml";
     if Path::new(config_path).exists() {
         cliclack::log::warning(
@@ -95,7 +98,7 @@ pub async fn run() -> anyhow::Result<()> {
         cliclack::log::success("Generated config.toml")?;
     }
 
-    // 8. Offer service installation.
+    // 9. Offer service installation.
     let install_service: bool = cliclack::confirm("Install Omega as a system service?")
         .initial_value(true)
         .interact()?;
@@ -113,7 +116,7 @@ pub async fn run() -> anyhow::Result<()> {
         false
     };
 
-    // 9. Next steps.
+    // 10. Next steps.
     let mut steps =
         String::from("1. Review config.toml\n2. Run: omega start\n3. Send a message to your bot");
     if whatsapp_enabled {
@@ -194,6 +197,67 @@ account = "{email}"
     }
 
     config
+}
+
+/// Run Anthropic authentication setup.
+///
+/// Offers the user a choice between "already authenticated" and pasting a setup-token.
+fn run_anthropic_auth() -> anyhow::Result<()> {
+    let auth_method: &str = cliclack::select("Anthropic auth method")
+        .item(
+            "authenticated",
+            "Already authenticated (Recommended)",
+            "Claude CLI is already logged in",
+        )
+        .item(
+            "setup-token",
+            "Paste setup-token",
+            "Run `claude setup-token` elsewhere, then paste the token here",
+        )
+        .interact()?;
+
+    if auth_method == "setup-token" {
+        cliclack::note(
+            "Anthropic setup-token",
+            "Run `claude setup-token` in your terminal.\nThen paste the generated token below.",
+        )?;
+
+        let token: String = cliclack::input("Paste Anthropic setup-token")
+            .placeholder("Paste the token here")
+            .validate(|input: &String| {
+                if input.trim().is_empty() {
+                    return Err("Token is required");
+                }
+                Ok(())
+            })
+            .interact()?;
+
+        let spinner = cliclack::spinner();
+        spinner.start("Applying setup-token...");
+
+        let result = std::process::Command::new("claude")
+            .args(["setup-token", token.trim()])
+            .output();
+
+        match result {
+            Ok(output) if output.status.success() => {
+                spinner.stop("Anthropic authentication — configured");
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                spinner.error(format!("setup-token failed: {stderr}"));
+                cliclack::log::warning("You can authenticate later with: claude setup-token")?;
+            }
+            Err(e) => {
+                spinner.error(format!("Failed to run claude: {e}"));
+                cliclack::log::warning("You can authenticate later with: claude setup-token")?;
+            }
+        }
+    } else {
+        cliclack::log::success("Anthropic authentication — already configured")?;
+    }
+
+    Ok(())
 }
 
 /// Check if a WhatsApp session already exists.

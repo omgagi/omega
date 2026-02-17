@@ -10,6 +10,7 @@ Interactive setup wizard for new Omega users. Provides a guided onboarding exper
 The `init.rs` module contains:
 - `run()` — Main wizard orchestration function
 - `generate_config(bot_token, user_id, whatsapp_enabled, google_email) -> String` — Public pure function that builds `config.toml` content (extracted for testability)
+- `run_anthropic_auth()` — Private function that handles Anthropic authentication (setup-token flow)
 - `run_whatsapp_setup()` — Private function that handles WhatsApp QR-code pairing
 - `run_google_setup()` — Private function that handles Google Workspace OAuth setup via `gog` CLI
 - Uses `omega_core::shellexpand()` for home directory expansion (imported, not local)
@@ -37,7 +38,7 @@ All user interaction uses the `cliclack` crate instead of raw `println!`/stdin. 
 
 ## Init Wizard Flow
 
-### Phase 1: ASCII Logo and Welcome Banner
+### Phase 1: ASCII Logo and Welcome Banner (unchanged)
 **Action:** Display the OMEGA ASCII art logo followed by cliclack intro
 
 **Logo Constant:**
@@ -119,6 +120,29 @@ const LOGO: &str = r#"
 **Critical Detail:** Uses `.unwrap_or(false)` to gracefully handle execution failures (e.g., `claude` not in PATH), converting them to `false` instead of panicking.
 
 **Purpose:** Guards against misconfiguration. Users cannot proceed without Claude CLI since it is the default provider.
+
+---
+
+### Phase 3.5: Anthropic Authentication
+**Action:** Offer user a choice between "Already authenticated" and pasting a setup-token.
+
+**Logic Flow:**
+1. Call `run_anthropic_auth()` function
+2. Display `cliclack::select("Anthropic auth method")` with two options:
+   - `"Already authenticated (Recommended)"` — Claude CLI is already logged in
+   - `"Paste setup-token"` — Run `claude setup-token` elsewhere, then paste here
+3. If "Already authenticated": log success via `cliclack::log::success("Anthropic authentication — already configured")`
+4. If "Paste setup-token":
+   - Display `cliclack::note("Anthropic setup-token", ...)` with instructions
+   - Prompt for token via `cliclack::input("Paste Anthropic setup-token")` with validation (non-empty)
+   - Start spinner: `"Applying setup-token..."`
+   - Execute `claude setup-token <token>` as subprocess
+   - On success: stop spinner with `"Anthropic authentication — configured"`
+   - On failure: stop spinner with error, warn user to authenticate later
+
+**Error Handling:** Setup-token failures are non-fatal. The wizard continues regardless. User is told they can authenticate later.
+
+**Purpose:** Allows headless/remote setup of the Claude Code CLI by transferring authentication via a setup-token generated on an already-authenticated machine.
 
 ---
 

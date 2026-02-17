@@ -136,6 +136,56 @@ The wizard uses `.unwrap_or(false)` to gracefully handle execution failures. If 
 
 ---
 
+### Step 3.5: Anthropic Authentication (< 30 seconds)
+
+**What the User Sees:**
+```
+◆  Anthropic auth method
+│  ● Already authenticated (Recommended) — Claude CLI is already logged in
+│  ○ Paste setup-token — Run `claude setup-token` elsewhere, then paste here
+```
+
+**What's Happening:**
+After verifying the Claude CLI is installed, the wizard asks how the user wants to authenticate with Anthropic. Most users who already have `claude` working will select "Already authenticated".
+
+**If User Selects "Already authenticated":**
+```
+◇  Anthropic authentication — already configured
+```
+
+**If User Selects "Paste setup-token":**
+```
+│
+│  Anthropic setup-token
+│
+│  Run `claude setup-token` in your terminal.
+│  Then paste the generated token below.
+│
+◆  Paste Anthropic setup-token
+│  Paste the token here
+│  _
+```
+
+After pasting, the wizard runs `claude setup-token <token>`:
+
+**On Success:**
+```
+◇  Anthropic authentication — configured
+```
+
+**On Failure:**
+```
+▲  setup-token failed: <error>
+◇  You can authenticate later with: claude setup-token
+```
+
+**Why This Exists:**
+When setting up Omega on a new/headless machine, the Claude CLI needs authentication. The `claude setup-token` command on an already-authenticated machine generates a transferable token. This wizard step lets users paste that token to authenticate the CLI without a browser.
+
+**Time:** < 30 seconds (instant if already authenticated)
+
+---
+
 ### Step 4: Telegram Bot Setup -- Token Collection (< 1 minute)
 
 **What the User Sees:**
@@ -605,6 +655,11 @@ Here is a complete example of what a full wizard session looks like with all int
 ◇  ~/.omega — created
 ◇  claude CLI — found
 │
+◆  Anthropic auth method
+│  Already authenticated (Recommended)
+│
+◇  Anthropic authentication — already configured
+│
 ◆  Telegram bot token
 │  Paste token from @BotFather (or Enter to skip)
 │  123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
@@ -694,13 +749,14 @@ User runs: omega init
 1. ASCII OMEGA banner displayed
 2. ~/.omega directory created (or confirmed)
 3. Claude CLI validated via spinner
-4. Telegram token collected (or skipped)
-5. User ID collected (if token provided)
-6. WhatsApp pairing via Yes/No toggle (or skipped)
-7. Google Workspace setup (if gog installed, or skipped)
-8. config.toml generated
-9. System service install offer (or skipped)
-10. Next steps + success outro
+4. Anthropic authentication (already auth or setup-token)
+5. Telegram token collected (or skipped)
+6. User ID collected (if token provided)
+7. WhatsApp pairing via Yes/No toggle (or skipped)
+8. Google Workspace setup (if gog installed, or skipped)
+9. config.toml generated
+10. System service install offer (or skipped)
+11. Next steps + success outro
        |
 [WIZARD ENDS]
        |
