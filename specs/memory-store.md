@@ -43,7 +43,7 @@ pub struct Store {
 
 ## Database Schema
 
-The store manages five tables and one virtual table created across six migrations. A seventh table (`_migrations`) tracks migration state.
+The store manages five tables and one virtual table created across seven migrations. A seventh table (`_migrations`) tracks migration state.
 
 ### Table: `_migrations`
 
@@ -200,7 +200,9 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     repeat       TEXT,
     status       TEXT NOT NULL DEFAULT 'pending',
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    delivered_at TEXT
+    delivered_at TEXT,
+    -- Added by 007_task_type:
+    task_type    TEXT NOT NULL DEFAULT 'reminder'
 );
 ```
 
@@ -216,6 +218,7 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 | `status` | `TEXT` | `NOT NULL`, default `'pending'` | Task state: `'pending'`, `'delivered'`, or `'cancelled'`. |
 | `created_at` | `TEXT` | `NOT NULL`, default `datetime('now')` | When the task was created. |
 | `delivered_at` | `TEXT` | nullable | When the task was delivered (set on completion for one-shot tasks). |
+| `task_type` | `TEXT` | `NOT NULL`, default `'reminder'` | Task type: `'reminder'` (simple message delivery) or `'action'` (provider-backed autonomous execution). |
 
 **Indexes:**
 - `idx_scheduled_tasks_due` on `(status, due_at)` -- for efficient due-task queries.
@@ -270,6 +273,7 @@ Migrations are tracked via the `_migrations` table. The system handles three sce
 | `004_fts5_recall` | `migrations/004_fts5_recall.sql` | Creates `messages_fts` FTS5 virtual table, backfills existing user messages, adds auto-sync triggers. |
 | `005_scheduled_tasks` | `migrations/005_scheduled_tasks.sql` | Creates `scheduled_tasks` table with indexes for user-scheduled reminders and recurring tasks. |
 | `006_limitations` | `migrations/006_limitations.sql` | Creates `limitations` table with case-insensitive unique index for autonomous self-introspection. |
+| `007_task_type` | `migrations/007_task_type.sql` | Adds `task_type` column to `scheduled_tasks` for distinguishing reminder vs action tasks. |
 
 ### Bootstrap Detection Logic
 
@@ -850,7 +854,7 @@ INSERT INTO messages (id, conversation_id, role, content, metadata_json) VALUES 
 
 ---
 
-#### `async fn create_task(&self, channel: &str, sender_id: &str, reply_target: &str, description: &str, due_at: &str, repeat: Option<&str>) -> Result<String, OmegaError>`
+#### `async fn create_task(&self, channel: &str, sender_id: &str, reply_target: &str, description: &str, due_at: &str, repeat: Option<&str>, task_type: &str) -> Result<String, OmegaError>`
 
 **Purpose:** Create a new scheduled task.
 
@@ -864,30 +868,31 @@ INSERT INTO messages (id, conversation_id, role, content, metadata_json) VALUES 
 | `description` | `&str` | Human-readable task description. |
 | `due_at` | `&str` | ISO 8601 datetime when the task is due. |
 | `repeat` | `Option<&str>` | Recurrence pattern (`None` for one-shot, `Some("daily")`, etc.). |
+| `task_type` | `&str` | Task type: `"reminder"` (simple delivery) or `"action"` (provider-backed execution). |
 
 **Returns:** `Result<String, OmegaError>` -- the UUID of the created task.
 
 **SQL:**
 ```sql
-INSERT INTO scheduled_tasks (id, channel, sender_id, reply_target, description, due_at, repeat)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO scheduled_tasks (id, channel, sender_id, reply_target, description, due_at, repeat, task_type)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ```
 
-**Called by:** `gateway.rs::handle_message()` Stage 5b (SCHEDULE marker extraction).
+**Called by:** `gateway.rs::handle_message()` Stage 5b (SCHEDULE and SCHEDULE_ACTION marker extraction).
 
 ---
 
-#### `async fn get_due_tasks(&self) -> Result<Vec<(String, String, String, String, Option<String>)>, OmegaError>`
+#### `async fn get_due_tasks(&self) -> Result<Vec<(String, String, String, String, Option<String>, String)>, OmegaError>`
 
 **Purpose:** Get tasks that are due for delivery (status is pending and due_at is in the past or now).
 
 **Parameters:** None.
 
-**Returns:** `Result<Vec<(String, String, String, String, Option<String>)>, OmegaError>` where each tuple is `(id, channel, reply_target, description, repeat)`.
+**Returns:** `Result<Vec<(String, String, String, String, Option<String>, String)>, OmegaError>` where each tuple is `(id, channel, reply_target, description, repeat, task_type)`.
 
 **SQL:**
 ```sql
-SELECT id, channel, reply_target, description, repeat
+SELECT id, channel, reply_target, description, repeat, task_type
 FROM scheduled_tasks
 WHERE status = 'pending' AND datetime(due_at) <= datetime('now')
 ```
@@ -946,7 +951,7 @@ WHERE id = ? AND CAST(strftime('%w', due_at) AS INTEGER) = 0
 
 ---
 
-#### `async fn get_tasks_for_sender(&self, sender_id: &str) -> Result<Vec<(String, String, String, Option<String>)>, OmegaError>`
+#### `async fn get_tasks_for_sender(&self, sender_id: &str) -> Result<Vec<(String, String, String, Option<String>, String)>, OmegaError>`
 
 **Purpose:** Get all pending tasks for a specific user (for the `/tasks` command).
 
@@ -956,11 +961,11 @@ WHERE id = ? AND CAST(strftime('%w', due_at) AS INTEGER) = 0
 |-----------|------|-------------|
 | `sender_id` | `&str` | The user whose tasks to retrieve. |
 
-**Returns:** `Result<Vec<(String, String, String, Option<String>)>, OmegaError>` where each tuple is `(id, description, due_at, repeat)`, ordered by `due_at` ascending.
+**Returns:** `Result<Vec<(String, String, String, Option<String>, String)>, OmegaError>` where each tuple is `(id, description, due_at, repeat, task_type)`, ordered by `due_at` ascending.
 
 **SQL:**
 ```sql
-SELECT id, description, due_at, repeat
+SELECT id, description, due_at, repeat, task_type
 FROM scheduled_tasks
 WHERE sender_id = ? AND status = 'pending'
 ORDER BY due_at ASC
@@ -1069,6 +1074,7 @@ let migrations: &[(&str, &str)] = &[
     ("004_fts5_recall", include_str!("../migrations/004_fts5_recall.sql")),
     ("005_scheduled_tasks", include_str!("../migrations/005_scheduled_tasks.sql")),
     ("006_limitations", include_str!("../migrations/006_limitations.sql")),
+    ("007_task_type", include_str!("../migrations/007_task_type.sql")),
 ];
 ```
 
@@ -1140,7 +1146,7 @@ The `shellexpand()` utility is now a public function in `omega_core::config`, re
 
 ---
 
-### `fn build_system_prompt(base_rules: &str, facts: &[(String, String)], summaries: &[(String, String)], recall: &[(String, String, String)], pending_tasks: &[(String, String, String, Option<String>)], language: &str) -> String`
+### `fn build_system_prompt(base_rules: &str, facts: &[(String, String)], summaries: &[(String, String)], recall: &[(String, String, String)], pending_tasks: &[(String, String, String, Option<String>, String)], language: &str) -> String`
 
 **Purpose:** Build a dynamic system prompt enriched with user facts, conversation summaries, recalled past messages, and explicit language instruction.
 
@@ -1152,7 +1158,7 @@ The `shellexpand()` utility is now a public function in `omega_core::config`, re
 | `facts` | `&[(String, String)]` | User facts as `(key, value)` pairs. |
 | `summaries` | `&[(String, String)]` | Recent conversation summaries as `(summary, timestamp)` pairs. |
 | `recall` | `&[(String, String, String)]` | Recalled past messages as `(role, content, timestamp)` tuples. |
-| `pending_tasks` | `&[(String, String, String, Option<String>)]` | Pending scheduled tasks as `(id, description, due_at, repeat)`. |
+| `pending_tasks` | `&[(String, String, String, Option<String>, String)]` | Pending scheduled tasks as `(id, description, due_at, repeat, task_type)`. |
 | `language` | `&str` | The user's preferred language (e.g., `"English"`, `"Spanish"`). |
 
 **Returns:** `String` -- the complete system prompt.
@@ -1190,6 +1196,13 @@ Use this when the user asks for a reminder AND proactively after any action you 
 that warrants follow-up. After every action, ask yourself: does this need a check later?
 If yes, schedule it. An autonomous agent closes its own loops.
 
+To schedule an autonomous action (you will be invoked with full tool access when due):
+SCHEDULE_ACTION: <description> | <ISO 8601 datetime> | <once|daily|weekly|monthly|weekdays>
+Example: SCHEDULE_ACTION: Check deployment status | 2026-02-17T16:00:00 | once
+Use this when the follow-up requires you to actually DO something (run commands, check
+services, analyze data) rather than just remind the user. When the action fires, you
+will be invoked as if the user sent the description as a message, with full tool access.
+
 To add something to your periodic monitoring checklist, include this marker on its
 own line at the END of your response:
 HEARTBEAT_ADD: <description>
@@ -1215,6 +1228,7 @@ Be specific and actionable in your proposed plan.
 - Language directive: always appended (unconditional). Uses the `language` parameter.
 - LANG_SWITCH instruction: always appended (unconditional). Tells the provider to include a `LANG_SWITCH:` marker when the user explicitly asks to change language.
 - SCHEDULE marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE:` marker line when the user requests a reminder or scheduled task, AND proactively when the agent takes an action that needs follow-up.
+- SCHEDULE_ACTION marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE_ACTION:` marker line when the follow-up requires autonomous execution with full tool access rather than a simple reminder.
 - HEARTBEAT_ADD/REMOVE marker instructions: always appended (unconditional). Tells the provider to include `HEARTBEAT_ADD:` or `HEARTBEAT_REMOVE:` markers when the user requests monitoring changes, AND proactively when the agent takes an action that needs ongoing monitoring.
 - LIMITATION marker instructions: always appended (unconditional). Tells the provider to include a `LIMITATION:` marker when it encounters an infrastructure/capability gap it cannot resolve.
 
@@ -1459,6 +1473,9 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 | `test_user_profile_empty_for_system_only` | Verifies that `format_user_profile()` returns `None` when all facts are system keys. |
 | `test_onboarding_hint_with_few_facts` | Verifies that `build_system_prompt()` includes an onboarding hint when the user has fewer than 3 real (non-system) facts. |
 | `test_onboarding_hint_absent_with_enough_facts` | Verifies that `build_system_prompt()` does not include an onboarding hint when the user has 3 or more real facts. |
+| `test_create_task_with_action_type` | Creates a task with `task_type = "action"`, verifies it appears in `get_tasks_for_sender()` with the correct task_type. |
+| `test_get_due_tasks_returns_task_type` | Creates reminder and action tasks, verifies `get_due_tasks()` returns `task_type` as the 6th tuple element. |
+| `test_build_system_prompt_shows_action_badge` | Verifies that `build_system_prompt()` includes an `[action]` badge for tasks with `task_type = "action"` in the pending tasks section. |
 
 ## Invariants
 
@@ -1485,3 +1502,5 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 21. The LIMITATION marker instruction is always included in the system prompt.
 22. Limitations are deduplicated by title (case-insensitive) — duplicate inserts are silently ignored.
 23. Limitation status is one of `'open'` or `'resolved'`.
+24. The SCHEDULE_ACTION marker instruction is always included in the system prompt.
+25. Task type is one of `'reminder'` or `'action'` — default is `'reminder'`.

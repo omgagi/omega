@@ -140,8 +140,25 @@ impl Gateway {
             let sched_store = self.memory.clone();
             let sched_channels = self.channels.clone();
             let poll_secs = self.scheduler_config.poll_interval_secs;
+            let sched_provider = self.provider.clone();
+            let sched_skills = self.skills.clone();
+            let sched_prompts = self.prompts.clone();
+            let sched_model = self.model_complex.clone();
+            let sched_sandbox = self.sandbox_prompt.clone();
+            let sched_hb_config = self.heartbeat_config.clone();
             Some(tokio::spawn(async move {
-                Self::scheduler_loop(sched_store, sched_channels, poll_secs).await;
+                Self::scheduler_loop(
+                    sched_store,
+                    sched_channels,
+                    poll_secs,
+                    sched_provider,
+                    sched_skills,
+                    sched_prompts,
+                    sched_model,
+                    sched_sandbox,
+                    sched_hb_config,
+                )
+                .await;
             }))
         } else {
             None
@@ -272,31 +289,217 @@ impl Gateway {
     }
 
     /// Background task: deliver due scheduled tasks.
+    ///
+    /// Reminder tasks send a text message. Action tasks invoke the provider
+    /// with full tool access and process response markers.
+    #[allow(clippy::too_many_arguments)]
     async fn scheduler_loop(
         store: Store,
         channels: HashMap<String, Arc<dyn Channel>>,
         poll_secs: u64,
+        provider: Arc<dyn Provider>,
+        skills: Vec<omega_skills::Skill>,
+        prompts: Prompts,
+        model_complex: String,
+        sandbox_prompt: Option<String>,
+        heartbeat_config: HeartbeatConfig,
     ) {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(poll_secs)).await;
 
             match store.get_due_tasks().await {
                 Ok(tasks) => {
-                    for (id, channel_name, reply_target, description, repeat) in &tasks {
-                        let msg = OutgoingMessage {
-                            text: format!("Reminder: {description}"),
-                            metadata: MessageMetadata::default(),
-                            reply_target: Some(reply_target.clone()),
-                        };
+                    for (id, channel_name, reply_target, description, repeat, task_type) in &tasks {
+                        if task_type == "action" {
+                            // --- Action task: invoke provider ---
+                            info!("scheduler: executing action task {id}: {description}");
 
-                        if let Some(ch) = channels.get(channel_name) {
-                            if let Err(e) = ch.send(msg).await {
-                                error!("failed to deliver task {id}: {e}");
-                                continue;
+                            let mut system = format!(
+                                "{}\n\n{}\n\n{}",
+                                prompts.identity, prompts.soul, prompts.system
+                            );
+                            if let Some(ref sp) = sandbox_prompt {
+                                system.push_str("\n\n");
+                                system.push_str(sp);
+                            }
+
+                            let mut ctx = Context::new(description);
+                            ctx.system_prompt = system;
+                            ctx.model = Some(model_complex.clone());
+
+                            // Match skill triggers on description to inject MCP servers.
+                            let matched_servers =
+                                omega_skills::match_skill_triggers(&skills, description);
+                            ctx.mcp_servers = matched_servers;
+
+                            match provider.complete(&ctx).await {
+                                Ok(resp) => {
+                                    let mut text = resp.text.clone();
+
+                                    // Process SCHEDULE markers from action response.
+                                    if let Some(sched_line) = extract_schedule_marker(&text) {
+                                        if let Some((desc, due, rep)) =
+                                            parse_schedule_line(&sched_line)
+                                        {
+                                            let rep_opt = if rep == "once" {
+                                                None
+                                            } else {
+                                                Some(rep.as_str())
+                                            };
+                                            match store
+                                                .create_task(
+                                                    channel_name,
+                                                    "",
+                                                    reply_target,
+                                                    &desc,
+                                                    &due,
+                                                    rep_opt,
+                                                    "reminder",
+                                                )
+                                                .await
+                                            {
+                                                Ok(new_id) => info!(
+                                                    "action task spawned reminder {new_id}: {desc}"
+                                                ),
+                                                Err(e) => error!(
+                                                    "action task: failed to create reminder: {e}"
+                                                ),
+                                            }
+                                        }
+                                        text = strip_schedule_marker(&text);
+                                    }
+
+                                    // Process SCHEDULE_ACTION markers from action response.
+                                    if let Some(sched_line) = extract_schedule_action_marker(&text)
+                                    {
+                                        if let Some((desc, due, rep)) =
+                                            parse_schedule_action_line(&sched_line)
+                                        {
+                                            let rep_opt = if rep == "once" {
+                                                None
+                                            } else {
+                                                Some(rep.as_str())
+                                            };
+                                            match store
+                                                .create_task(
+                                                    channel_name,
+                                                    "",
+                                                    reply_target,
+                                                    &desc,
+                                                    &due,
+                                                    rep_opt,
+                                                    "action",
+                                                )
+                                                .await
+                                            {
+                                                Ok(new_id) => info!(
+                                                    "action task spawned action {new_id}: {desc}"
+                                                ),
+                                                Err(e) => error!(
+                                                    "action task: failed to create action: {e}"
+                                                ),
+                                            }
+                                        }
+                                        text = strip_schedule_action_markers(&text);
+                                    }
+
+                                    // Process HEARTBEAT markers.
+                                    let hb_actions = extract_heartbeat_markers(&text);
+                                    if !hb_actions.is_empty() {
+                                        apply_heartbeat_changes(&hb_actions);
+                                        text = strip_heartbeat_markers(&text);
+                                    }
+
+                                    // Process LIMITATION markers.
+                                    if let Some(lim_line) = extract_limitation_marker(&text) {
+                                        if let Some((title, desc, plan)) =
+                                            parse_limitation_line(&lim_line)
+                                        {
+                                            match store.store_limitation(&title, &desc, &plan).await
+                                            {
+                                                Ok(true) => {
+                                                    info!("action task: new limitation: {title}");
+                                                    if let Some(ch) =
+                                                        channels.get(&heartbeat_config.channel)
+                                                    {
+                                                        let alert = format!(
+                                                            "LIMITATION DETECTED: {title}\n{desc}\n\nProposed fix: {plan}"
+                                                        );
+                                                        let msg = OutgoingMessage {
+                                                            text: alert,
+                                                            metadata: MessageMetadata::default(),
+                                                            reply_target: Some(
+                                                                heartbeat_config
+                                                                    .reply_target
+                                                                    .clone(),
+                                                            ),
+                                                        };
+                                                        let _ = ch.send(msg).await;
+                                                    }
+                                                    apply_heartbeat_changes(&[
+                                                        HeartbeatAction::Add(format!(
+                                                            "CRITICAL: {title} — {desc}"
+                                                        )),
+                                                    ]);
+                                                }
+                                                Ok(false) => info!(
+                                                    "action task: duplicate limitation: {title}"
+                                                ),
+                                                Err(e) => error!(
+                                                    "action task: failed to store limitation: {e}"
+                                                ),
+                                            }
+                                        }
+                                        text = strip_limitation_markers(&text);
+                                    }
+
+                                    // Send response to channel (if non-empty after stripping markers).
+                                    let cleaned = text.trim();
+                                    if !cleaned.is_empty() && cleaned != "HEARTBEAT_OK" {
+                                        if let Some(ch) = channels.get(channel_name) {
+                                            let msg = OutgoingMessage {
+                                                text: cleaned.to_string(),
+                                                metadata: MessageMetadata::default(),
+                                                reply_target: Some(reply_target.clone()),
+                                            };
+                                            if let Err(e) = ch.send(msg).await {
+                                                error!("action task {id}: failed to send response: {e}");
+                                            }
+                                        }
+                                    }
+
+                                    info!("completed action task {id}: {description}");
+                                }
+                                Err(e) => {
+                                    error!("action task {id} provider error: {e}");
+                                    // Send error notification.
+                                    if let Some(ch) = channels.get(channel_name) {
+                                        let msg = OutgoingMessage {
+                                            text: format!("Action task failed: {description}\n(will retry next cycle)"),
+                                            metadata: MessageMetadata::default(),
+                                            reply_target: Some(reply_target.clone()),
+                                        };
+                                        let _ = ch.send(msg).await;
+                                    }
+                                }
                             }
                         } else {
-                            warn!("scheduler: no channel '{channel_name}' for task {id}");
-                            continue;
+                            // --- Reminder task: send text ---
+                            let msg = OutgoingMessage {
+                                text: format!("Reminder: {description}"),
+                                metadata: MessageMetadata::default(),
+                                reply_target: Some(reply_target.clone()),
+                            };
+
+                            if let Some(ch) = channels.get(channel_name) {
+                                if let Err(e) = ch.send(msg).await {
+                                    error!("failed to deliver task {id}: {e}");
+                                    continue;
+                                }
+                            } else {
+                                warn!("scheduler: no channel '{channel_name}' for task {id}");
+                                continue;
+                            }
                         }
 
                         if let Err(e) = store.complete_task(id, repeat.as_deref()).await {
@@ -947,6 +1150,7 @@ impl Gateway {
                         &desc,
                         &due_at,
                         repeat_opt,
+                        "reminder",
                     )
                     .await
                 {
@@ -960,6 +1164,39 @@ impl Gateway {
             }
             // Strip the SCHEDULE: line from the response.
             response.text = strip_schedule_marker(&response.text);
+        }
+
+        // --- 5b2. EXTRACT SCHEDULE_ACTION MARKER ---
+        if let Some(sched_line) = extract_schedule_action_marker(&response.text) {
+            if let Some((desc, due_at, repeat)) = parse_schedule_action_line(&sched_line) {
+                let reply_target = incoming.reply_target.as_deref().unwrap_or("");
+                let repeat_opt = if repeat == "once" {
+                    None
+                } else {
+                    Some(repeat.as_str())
+                };
+                match self
+                    .memory
+                    .create_task(
+                        &incoming.channel,
+                        &incoming.sender_id,
+                        reply_target,
+                        &desc,
+                        &due_at,
+                        repeat_opt,
+                        "action",
+                    )
+                    .await
+                {
+                    Ok(id) => {
+                        info!("scheduled action task {id}: {desc} at {due_at}");
+                    }
+                    Err(e) => {
+                        error!("failed to create action task: {e}");
+                    }
+                }
+            }
+            response.text = strip_schedule_action_markers(&response.text);
         }
 
         // --- 5c. EXTRACT PROJECT MARKER ---
@@ -1587,6 +1824,39 @@ fn strip_project_markers(text: &str) -> String {
 fn strip_schedule_marker(text: &str) -> String {
     text.lines()
         .filter(|line| !line.trim().starts_with("SCHEDULE:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Extract the first `SCHEDULE_ACTION:` line from response text.
+fn extract_schedule_action_marker(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| line.trim().starts_with("SCHEDULE_ACTION:"))
+        .map(|line| line.trim().to_string())
+}
+
+/// Parse a schedule action line: `SCHEDULE_ACTION: desc | ISO datetime | repeat`
+fn parse_schedule_action_line(line: &str) -> Option<(String, String, String)> {
+    let content = line.strip_prefix("SCHEDULE_ACTION:")?.trim();
+    let parts: Vec<&str> = content.splitn(3, '|').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let desc = parts[0].trim().to_string();
+    let due_at = parts[1].trim().to_string();
+    let repeat = parts[2].trim().to_lowercase();
+    if desc.is_empty() || due_at.is_empty() {
+        return None;
+    }
+    Some((desc, due_at, repeat))
+}
+
+/// Strip all `SCHEDULE_ACTION:` lines from response text.
+fn strip_schedule_action_markers(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim().starts_with("SCHEDULE_ACTION:"))
         .collect::<Vec<_>>()
         .join("\n")
         .trim()
@@ -2438,5 +2708,69 @@ mod tests {
         let text = "Response.\nLIMITATION: A | B | C\nMore text.\nLIMITATION: D | E | F\nEnd.";
         let result = strip_limitation_markers(text);
         assert_eq!(result, "Response.\nMore text.\nEnd.");
+    }
+
+    // --- SCHEDULE_ACTION marker tests ---
+
+    #[test]
+    fn test_extract_schedule_action_marker() {
+        let text =
+            "I'll handle that.\nSCHEDULE_ACTION: Check BTC price | 2026-02-18T14:00:00 | daily";
+        let result = extract_schedule_action_marker(text);
+        assert_eq!(
+            result,
+            Some("SCHEDULE_ACTION: Check BTC price | 2026-02-18T14:00:00 | daily".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_schedule_action_marker_none() {
+        let text = "No action scheduled here.";
+        assert!(extract_schedule_action_marker(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_schedule_action_line() {
+        let line = "SCHEDULE_ACTION: Check BTC price | 2026-02-18T14:00:00 | daily";
+        let result = parse_schedule_action_line(line).unwrap();
+        assert_eq!(result.0, "Check BTC price");
+        assert_eq!(result.1, "2026-02-18T14:00:00");
+        assert_eq!(result.2, "daily");
+    }
+
+    #[test]
+    fn test_parse_schedule_action_line_once() {
+        let line = "SCHEDULE_ACTION: Run scraper | 2026-02-18T22:00:00 | once";
+        let result = parse_schedule_action_line(line).unwrap();
+        assert_eq!(result.0, "Run scraper");
+        assert_eq!(result.2, "once");
+    }
+
+    #[test]
+    fn test_parse_schedule_action_line_invalid() {
+        assert!(parse_schedule_action_line("SCHEDULE_ACTION: missing parts").is_none());
+        assert!(parse_schedule_action_line("not an action line").is_none());
+        assert!(parse_schedule_action_line("SCHEDULE_ACTION:  | time | once").is_none());
+    }
+
+    #[test]
+    fn test_strip_schedule_action_markers() {
+        let text = "I'll do that.\nSCHEDULE_ACTION: Check BTC | 2026-02-18T14:00:00 | daily\nDone.";
+        let result = strip_schedule_action_markers(text);
+        assert_eq!(result, "I'll do that.\nDone.");
+    }
+
+    #[test]
+    fn test_strip_schedule_action_preserves_schedule() {
+        let text = "Response.\nSCHEDULE: Remind me | 2026-02-18T09:00:00 | once\nSCHEDULE_ACTION: Check prices | 2026-02-18T14:00:00 | daily\nEnd.";
+        let result = strip_schedule_action_markers(text);
+        assert!(
+            result.contains("SCHEDULE: Remind me"),
+            "should keep SCHEDULE lines"
+        );
+        assert!(
+            !result.contains("SCHEDULE_ACTION:"),
+            "should strip SCHEDULE_ACTION lines"
+        );
     }
 }

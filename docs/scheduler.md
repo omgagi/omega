@@ -104,6 +104,73 @@ You: Remind me on weekdays at 8:30am to check email
 
 **How weekday skipping works:** When a weekday task is delivered on Friday, `complete_task()` advances the due date to Monday (skipping Saturday and Sunday). When delivered on any other weekday, it advances by 1 day. The skip logic runs at completion time, so it always calculates the correct next weekday.
 
+## Action Tasks
+
+Action tasks are a powerful extension of the scheduler. While regular reminder tasks simply deliver a message to you, action tasks invoke the AI provider with full tool and MCP access when they come due. This means Omega can schedule autonomous follow-up work -- checking deployments, verifying services, analyzing data -- without needing you to be present.
+
+### How Action Tasks Differ from Reminders
+
+| Aspect | Reminder | Action |
+|--------|----------|--------|
+| When due | Sends a text message to you | Invokes the provider with the task description as a prompt |
+| Tool access | None (just a message) | Full tool access + MCP servers |
+| Follow-up | One and done | Can emit further SCHEDULE, SCHEDULE_ACTION, HEARTBEAT, and LIMITATION markers |
+| Badge in `/tasks` | (none) | `[action]` |
+
+### The `SCHEDULE_ACTION:` Marker
+
+The marker format is identical to `SCHEDULE:`, just with a different prefix:
+
+```
+SCHEDULE_ACTION: <description> | <ISO 8601 datetime> | <once|daily|weekly|monthly|weekdays>
+```
+
+**Example:**
+```
+SCHEDULE_ACTION: Check deployment status for api-v2 | 2026-02-17T16:00:00 | once
+```
+
+The gateway extracts `SCHEDULE_ACTION:` markers the same way it extracts `SCHEDULE:` markers. The only difference is that the task is stored with `task_type = 'action'` instead of `'reminder'`.
+
+### How Action Tasks Execute
+
+When the scheduler loop finds a due action task:
+
+1. **Invokes the provider** -- The task description is sent to the AI provider as a prompt, with full tool access and MCP server configuration.
+2. **Processes the response** -- The provider's response is scanned for all standard markers:
+   - `SCHEDULE:` -- Creates new reminder tasks (chaining).
+   - `SCHEDULE_ACTION:` -- Creates new action tasks (recursive autonomous scheduling).
+   - `HEARTBEAT_ADD:` / `HEARTBEAT_REMOVE:` -- Modifies the monitoring checklist.
+   - `LIMITATION:` -- Records self-detected capability gaps.
+3. **Delivers the result** -- The provider's response (with markers stripped) is sent to the user through the original channel.
+4. **Completes the task** -- Same as reminders: one-shot tasks are marked delivered, recurring tasks advance to the next due date.
+
+This enables autonomous chains: an action task can schedule further action tasks, creating self-sustaining monitoring and follow-up loops.
+
+### When to Use Action Tasks
+
+Use `SCHEDULE_ACTION:` instead of `SCHEDULE:` when the follow-up requires Omega to **do** something rather than just **remind** you:
+
+- Checking if a deployment succeeded
+- Verifying that a DNS change propagated
+- Running a health check on a service
+- Analyzing updated data after a waiting period
+- Following up on a long-running process
+
+### Example: Autonomous Deployment Check
+
+```
+You: Deploy the new API version to staging
+Omega: Deploying api-v2 to staging now...
+
+[Omega deploys, then schedules a follow-up check]
+SCHEDULE_ACTION: Check staging deployment health for api-v2 | 2026-02-17T16:00:00 | once
+
+[At 4:00 PM, the action task fires]
+[Omega runs health checks with full tool access]
+Omega: Staging deployment check complete. api-v2 is healthy -- all endpoints returning 200, response times under 50ms.
+```
+
 ## Managing Tasks
 
 ### Listing Tasks: `/tasks`
@@ -118,10 +185,14 @@ Scheduled Tasks
 
 [e5f6g7h8] Stand-up meeting
   Due: 2026-02-18T09:00:00 (daily)
+
+[c9d0e1f2] [action] Check staging deployment health
+  Due: 2026-02-18T16:00:00 (once)
 ```
 
 Each task shows:
 - An 8-character short ID (the prefix of the task's UUID).
+- An `[action]` badge if the task is an action task (provider-backed execution).
 - The task description.
 - The next due date and repeat type.
 

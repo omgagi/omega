@@ -129,6 +129,10 @@ impl Store {
                 "006_limitations",
                 include_str!("../migrations/006_limitations.sql"),
             ),
+            (
+                "007_task_type",
+                include_str!("../migrations/007_task_type.sql"),
+            ),
         ];
 
         for (name, sql) in migrations {
@@ -625,6 +629,7 @@ impl Store {
     // --- Scheduled tasks ---
 
     /// Create a scheduled task.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_task(
         &self,
         channel: &str,
@@ -633,11 +638,12 @@ impl Store {
         description: &str,
         due_at: &str,
         repeat: Option<&str>,
+        task_type: &str,
     ) -> Result<String, OmegaError> {
         let id = Uuid::new_v4().to_string();
         sqlx::query(
-            "INSERT INTO scheduled_tasks (id, channel, sender_id, reply_target, description, due_at, repeat) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scheduled_tasks (id, channel, sender_id, reply_target, description, due_at, repeat, task_type) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(channel)
@@ -646,6 +652,7 @@ impl Store {
         .bind(description)
         .bind(due_at)
         .bind(repeat)
+        .bind(task_type)
         .execute(&self.pool)
         .await
         .map_err(|e| OmegaError::Memory(format!("create task failed: {e}")))?;
@@ -656,10 +663,10 @@ impl Store {
     /// Get tasks that are due for delivery.
     pub async fn get_due_tasks(
         &self,
-    ) -> Result<Vec<(String, String, String, String, Option<String>)>, OmegaError> {
-        // Returns: (id, channel, reply_target, description, repeat)
-        let rows: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT id, channel, reply_target, description, repeat \
+    ) -> Result<Vec<(String, String, String, String, Option<String>, String)>, OmegaError> {
+        // Returns: (id, channel, reply_target, description, repeat, task_type)
+        let rows: Vec<(String, String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT id, channel, reply_target, description, repeat, task_type \
              FROM scheduled_tasks \
              WHERE status = 'pending' AND datetime(due_at) <= datetime('now')",
         )
@@ -730,10 +737,10 @@ impl Store {
     pub async fn get_tasks_for_sender(
         &self,
         sender_id: &str,
-    ) -> Result<Vec<(String, String, String, Option<String>)>, OmegaError> {
-        // Returns: (id, description, due_at, repeat)
-        let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT id, description, due_at, repeat \
+    ) -> Result<Vec<(String, String, String, Option<String>, String)>, OmegaError> {
+        // Returns: (id, description, due_at, repeat, task_type)
+        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT id, description, due_at, repeat, task_type \
              FROM scheduled_tasks \
              WHERE sender_id = ? AND status = 'pending' \
              ORDER BY due_at ASC",
@@ -902,7 +909,7 @@ fn build_system_prompt(
     facts: &[(String, String)],
     summaries: &[(String, String)],
     recall: &[(String, String, String)],
-    pending_tasks: &[(String, String, String, Option<String>)],
+    pending_tasks: &[(String, String, String, Option<String>, String)],
     language: &str,
 ) -> String {
     let mut prompt = String::from(base_rules);
@@ -934,10 +941,15 @@ fn build_system_prompt(
 
     if !pending_tasks.is_empty() {
         prompt.push_str("\n\nUser's scheduled tasks:");
-        for (id, desc, due_at, repeat) in pending_tasks {
+        for (id, desc, due_at, repeat, task_type) in pending_tasks {
             let r = repeat.as_deref().unwrap_or("once");
+            let type_badge = if task_type == "action" {
+                " [action]"
+            } else {
+                ""
+            };
             prompt.push_str(&format!(
-                "\n- [{id_short}] {desc} (due: {due_at}, {r})",
+                "\n- [{id_short}] {desc}{type_badge} (due: {due_at}, {r})",
                 id_short = &id[..8.min(id.len())]
             ));
         }
@@ -984,6 +996,15 @@ fn build_system_prompt(
          Use this when the user asks for a reminder AND proactively after any action you take \
          that warrants follow-up. After every action, ask yourself: does this need a check later? \
          If yes, schedule it. An autonomous agent closes its own loops.",
+    );
+
+    prompt.push_str(
+        "\n\nAction Tasks: For tasks that require you to EXECUTE an action (not just remind), \
+         use this marker on its own line at the END of your response:\n\
+         SCHEDULE_ACTION: <what to do> | <ISO 8601 datetime> | <once|daily|weekly|monthly|weekdays>\n\
+         When the time comes, you will be invoked with full tool access to carry out the action \
+         autonomously. Use SCHEDULE for reminders (user needs to act), SCHEDULE_ACTION for \
+         actions (you need to act).",
     );
 
     prompt.push_str(
@@ -1138,6 +1159,7 @@ mod tests {
                 "Call John",
                 "2026-12-31T15:00:00",
                 None,
+                "reminder",
             )
             .await
             .unwrap();
@@ -1148,6 +1170,7 @@ mod tests {
         assert_eq!(tasks[0].1, "Call John");
         assert_eq!(tasks[0].2, "2026-12-31T15:00:00");
         assert!(tasks[0].3.is_none());
+        assert_eq!(tasks[0].4, "reminder");
     }
 
     #[tokio::test]
@@ -1162,6 +1185,7 @@ mod tests {
                 "Past task",
                 "2020-01-01T00:00:00",
                 None,
+                "reminder",
             )
             .await
             .unwrap();
@@ -1174,6 +1198,7 @@ mod tests {
                 "Future task",
                 "2099-12-31T23:59:59",
                 None,
+                "reminder",
             )
             .await
             .unwrap();
@@ -1181,6 +1206,7 @@ mod tests {
         let due = store.get_due_tasks().await.unwrap();
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].3, "Past task");
+        assert_eq!(due[0].5, "reminder");
     }
 
     #[tokio::test]
@@ -1194,6 +1220,7 @@ mod tests {
                 "One shot",
                 "2020-01-01T00:00:00",
                 None,
+                "reminder",
             )
             .await
             .unwrap();
@@ -1220,6 +1247,7 @@ mod tests {
                 "Daily standup",
                 "2020-01-01T09:00:00",
                 Some("daily"),
+                "reminder",
             )
             .await
             .unwrap();
@@ -1243,6 +1271,7 @@ mod tests {
                 "Cancel me",
                 "2099-12-31T00:00:00",
                 None,
+                "reminder",
             )
             .await
             .unwrap();
@@ -1266,6 +1295,7 @@ mod tests {
                 "My task",
                 "2099-12-31T00:00:00",
                 None,
+                "reminder",
             )
             .await
             .unwrap();
@@ -1277,6 +1307,65 @@ mod tests {
         // Task still exists.
         let tasks = store.get_tasks_for_sender("user1").await.unwrap();
         assert_eq!(tasks.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_create_task_with_action_type() {
+        let store = test_store().await;
+        let id = store
+            .create_task(
+                "telegram",
+                "user1",
+                "chat1",
+                "Check BTC price",
+                "2026-12-31T14:00:00",
+                Some("daily"),
+                "action",
+            )
+            .await
+            .unwrap();
+        assert!(!id.is_empty());
+
+        let tasks = store.get_tasks_for_sender("user1").await.unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].1, "Check BTC price");
+        assert_eq!(tasks[0].4, "action");
+    }
+
+    #[tokio::test]
+    async fn test_get_due_tasks_returns_task_type() {
+        let store = test_store().await;
+        store
+            .create_task(
+                "telegram",
+                "user1",
+                "chat1",
+                "Reminder task",
+                "2020-01-01T00:00:00",
+                None,
+                "reminder",
+            )
+            .await
+            .unwrap();
+        store
+            .create_task(
+                "telegram",
+                "user1",
+                "chat1",
+                "Action task",
+                "2020-01-01T00:00:00",
+                None,
+                "action",
+            )
+            .await
+            .unwrap();
+
+        let due = store.get_due_tasks().await.unwrap();
+        assert_eq!(due.len(), 2);
+        let reminder = due.iter().find(|t| t.3 == "Reminder task").unwrap();
+        let action = due.iter().find(|t| t.3 == "Action task").unwrap();
+        assert_eq!(reminder.5, "reminder");
+        assert_eq!(action.5, "action");
     }
 
     #[tokio::test]
@@ -1480,6 +1569,29 @@ mod tests {
     }
 
     // --- Onboarding hint tests ---
+
+    #[test]
+    fn test_build_system_prompt_shows_action_badge() {
+        let facts = vec![
+            ("welcomed".to_string(), "true".to_string()),
+            ("preferred_language".to_string(), "English".to_string()),
+            ("name".to_string(), "Alice".to_string()),
+            ("occupation".to_string(), "engineer".to_string()),
+            ("timezone".to_string(), "EST".to_string()),
+        ];
+        let tasks = vec![(
+            "abcd1234-0000".to_string(),
+            "Check BTC price".to_string(),
+            "2026-02-18T14:00:00".to_string(),
+            Some("daily".to_string()),
+            "action".to_string(),
+        )];
+        let prompt = build_system_prompt("Rules", &facts, &[], &[], &tasks, "English");
+        assert!(
+            prompt.contains("[action]"),
+            "should show [action] badge for action tasks"
+        );
+    }
 
     #[test]
     fn test_onboarding_hint_with_few_facts() {

@@ -171,11 +171,16 @@ async fn handle_tasks(store: &Store, sender_id: &str) -> String {
         Ok(tasks) if tasks.is_empty() => "No pending tasks.".to_string(),
         Ok(tasks) => {
             let mut out = String::from("Scheduled Tasks\n");
-            for (id, description, due_at, repeat) in &tasks {
+            for (id, description, due_at, repeat, task_type) in &tasks {
                 let short_id = &id[..8.min(id.len())];
                 let repeat_label = repeat.as_deref().unwrap_or("once");
+                let type_badge = if task_type == "action" {
+                    " [action]"
+                } else {
+                    ""
+                };
                 out.push_str(&format!(
-                    "\n[{short_id}] {description}\n  Due: {due_at} ({repeat_label})"
+                    "\n[{short_id}] {description}{type_badge}\n  Due: {due_at} ({repeat_label})"
                 ));
             }
             out

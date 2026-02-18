@@ -49,6 +49,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [memory-migration-004.md](memory-migration-004.md) — FTS5 cross-conversation recall migration
 - [memory-migration-005.md](memory-migration-005.md) — Scheduled tasks table migration
 - [memory-migration-006.md](memory-migration-006.md) — Limitations table for autonomous self-introspection
+- [memory-migration-007.md](memory-migration-007.md) — Task type column for action scheduler (reminder vs provider-backed execution)
 
 ### Milestone 7: omega-skills
 - [skills-lib.md](skills-lib.md) — Skill loader + project loader + MCP trigger matching (skills from `~/.omega/skills/*/SKILL.md`, projects from `~/.omega/projects/*/ROLE.md`)
