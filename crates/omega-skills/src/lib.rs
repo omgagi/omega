@@ -24,7 +24,7 @@ const BUNDLED_SKILLS: &[(&str, &str)] = &[
     ),
     (
         "playwright-mcp",
-        include_str!("../../../skills/playwright-mcp/SKILL.md"),
+        include_str!("../../../skills/playwright-mcp-1.0.0/SKILL.md"),
     ),
     (
         "skill-creator",
