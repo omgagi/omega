@@ -45,6 +45,8 @@ pub struct Gateway {
     model_complex: String,
     /// Tracks senders with active provider calls. New messages are buffered here.
     active_senders: Mutex<HashMap<String, Vec<IncomingMessage>>>,
+    /// Quantitative trading engine (advisory signals injected into system prompt).
+    quant_engine: Option<Arc<Mutex<omega_quant::QuantEngine>>>,
 }
 
 impl Gateway {
@@ -65,6 +67,7 @@ impl Gateway {
         sandbox_prompt: Option<String>,
         model_fast: String,
         model_complex: String,
+        quant_engine: Option<Arc<Mutex<omega_quant::QuantEngine>>>,
     ) -> Self {
         let audit = AuditLogger::new(memory.pool().clone());
         Self {
@@ -85,6 +88,7 @@ impl Gateway {
             model_fast,
             model_complex,
             active_senders: Mutex::new(HashMap::new()),
+            quant_engine,
         }
     }
 
@@ -185,6 +189,33 @@ impl Gateway {
             None
         };
 
+        // Spawn quant WebSocket kline feed.
+        let quant_handle = if let Some(ref engine) = self.quant_engine {
+            let qe = engine.clone();
+            let mut rx = omega_quant::market_data::start_kline_feed(
+                "BTCUSDT", // Default; actual symbol read from engine
+                "1m",
+                omega_quant::market_data::BinanceNetwork::Testnet,
+            );
+            Some(tokio::spawn(async move {
+                while let Ok(kline) = rx.recv().await {
+                    if kline.is_closed {
+                        let mut eng = qe.lock().await;
+                        let signal = eng.process_price(kline.close);
+                        info!(
+                            "quant: {} ${:.2} | {:?} | conf: {:.0}%",
+                            signal.symbol,
+                            signal.filtered_price,
+                            signal.regime,
+                            signal.confidence * 100.0
+                        );
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
         // Main event loop with graceful shutdown.
         loop {
             tokio::select! {
@@ -202,6 +233,9 @@ impl Gateway {
         }
 
         // Graceful shutdown.
+        if let Some(ref h) = quant_handle {
+            h.abort();
+        }
         self.shutdown(&bg_handle, &sched_handle, &hb_handle).await;
         Ok(())
     }
@@ -1111,6 +1145,16 @@ impl Gateway {
             if let Some(ref constraint) = self.sandbox_prompt {
                 prompt.push_str("\n\n");
                 prompt.push_str(constraint);
+            }
+
+            // Quant advisory signal (non-blocking — skip if engine is busy).
+            if let Some(ref engine) = self.quant_engine {
+                if let Ok(eng) = engine.try_lock() {
+                    if let Some(price) = eng.last_signal() {
+                        prompt.push_str("\n\n");
+                        prompt.push_str(&omega_quant::QuantEngine::format_signal(&price));
+                    }
+                }
             }
 
             prompt

@@ -32,6 +32,7 @@ omega-channels = { path = "crates/omega-channels" }
 omega-memory = { path = "crates/omega-memory" }
 omega-skills = { path = "crates/omega-skills" }
 omega-sandbox = { path = "crates/omega-sandbox" }
+omega-quant = { path = "crates/omega-quant" }
 
 [package]
 name = "omega"
@@ -52,6 +53,7 @@ omega-channels = { workspace = true }
 omega-memory = { workspace = true }
 omega-skills = { workspace = true }
 omega-sandbox = { workspace = true }
+omega-quant = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }

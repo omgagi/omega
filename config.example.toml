@@ -82,6 +82,26 @@ active_end = "22:00"
 channel = "telegram"
 reply_target = ""               # Chat ID for delivery
 
+# --- Quantitative Trading ---
+
+[quant]
+enabled = false                 # Enable the quant engine (advisory only by default)
+default_symbol = "BTCUSDT"      # Trading pair to track
+network = "testnet"             # "testnet" (safe) or "mainnet" (real money)
+kline_interval = "1m"           # Candlestick interval (1m, 5m, 15m, 1h, etc.)
+risk_aversion = 2.0             # Merton risk aversion parameter (higher = more conservative)
+kelly_fraction = 0.25           # Fraction of full Kelly to use (0.1 to 1.0)
+max_position_pct = 0.10         # Max position size as % of portfolio (0.01 to 0.50)
+portfolio_value = 10000.0       # Portfolio value in USD for sizing calculations
+# API keys: set BINANCE_TESTNET_API_KEY / BINANCE_TESTNET_SECRET_KEY env vars
+#           or BINANCE_API_KEY / BINANCE_SECRET_KEY for mainnet
+
+[quant.safety]
+max_daily_trades = 10           # Max trades per day
+max_daily_usd = 5000.0          # Max USD traded per day
+require_confirmation = true     # Human must confirm every trade (always true)
+cooldown_minutes = 5            # Minimum wait between trades
+
 # --- Security ---
 
 [sandbox]

@@ -202,6 +202,28 @@ async fn main() -> anyhow::Result<()> {
             let sandbox_mode = cfg.sandbox.mode;
             let sandbox_prompt = sandbox_mode.prompt_constraint(&workspace_path.to_string_lossy());
 
+            // Build quant engine if enabled.
+            let quant_engine = if let Some(ref qcfg) = cfg.quant {
+                if qcfg.enabled {
+                    let engine = omega_quant::QuantEngine::new_with_risk_aversion(
+                        &qcfg.default_symbol,
+                        qcfg.portfolio_value,
+                        qcfg.risk_aversion,
+                    );
+                    tracing::info!(
+                        "quant engine enabled: {} on {} (portfolio: ${:.0})",
+                        qcfg.default_symbol,
+                        qcfg.network,
+                        qcfg.portfolio_value,
+                    );
+                    Some(Arc::new(tokio::sync::Mutex::new(engine)))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             // Build and run gateway.
             println!("OMEGA Ω — Starting agent...");
             let gw = Arc::new(gateway::Gateway::new(
@@ -219,6 +241,7 @@ async fn main() -> anyhow::Result<()> {
                 sandbox_prompt,
                 model_fast,
                 model_complex,
+                quant_engine,
             ));
             gw.run().await?;
         }

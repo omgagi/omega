@@ -30,6 +30,10 @@ const BUNDLED_SKILLS: &[(&str, &str)] = &[
         "skill-creator",
         include_str!("../../../skills/skill-creator/SKILL.md"),
     ),
+    (
+        "binance-quant",
+        include_str!("../../../skills/binance-quant/SKILL.md"),
+    ),
 ];
 
 /// Deploy bundled skills to `{data_dir}/skills/{name}/SKILL.md`, creating
