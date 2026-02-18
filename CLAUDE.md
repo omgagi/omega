@@ -67,7 +67,7 @@ Message → Dispatch (buffer if sender busy, ack) → Auth → Sanitize → Inbo
 
 Non-blocking message handling: Gateway wraps in `Arc<Self>`, spawns each message as a concurrent task via `tokio::spawn`. Messages from the same sender are serialized — if a sender has an active provider call, new messages are buffered with a "Got it, I'll get to this next." ack, then processed in order after the active call completes.
 
-Self-audit & self-healing: OMEGA's system prompt includes a self-audit instruction — when behavior doesn't match expectations (wrong output, silent failures, unverifiable claims), OMEGA flags it immediately. The audit trail at `~/.omega/memory.db` is exposed to OMEGA so it can query its own `audit_log`, `conversations`, and `facts` tables to verify its behavior. When OMEGA detects a genuine infrastructure/code bug, it triggers the self-healing protocol: diagnose → fix → build + clippy (repeat until clean) → deploy → schedule verification via SCHEDULE_ACTION → iterate. Max 10 iterations before escalating to the owner with a detailed report. Each iteration carries full context (anomaly, attempts, iteration count) so the next instance can continue.
+Self-audit & self-healing: OMEGA's system prompt includes a self-audit instruction — when behavior doesn't match expectations (wrong output, silent failures, unverifiable claims), OMEGA flags it immediately. The audit trail at `~/.omega/memory.db` is exposed to OMEGA so it can query its own `audit_log`, `conversations`, and `facts` tables to verify its behavior. When OMEGA detects a genuine infrastructure/code bug, it triggers the self-healing protocol: diagnose → fix → build + clippy (repeat until clean) → deploy → schedule verification via SCHEDULE_ACTION → iterate. Max 10 iterations before escalating to the owner with a detailed report. State tracked in `~/.omega/self-healing.json` (anomaly, iteration count, attempt history) so context persists across restarts. File is deleted on resolution, preserved on escalation for owner review.
 
 Autonomous model routing: Every message gets a fast Sonnet classification call (tiny prompt enriched with ~90 tokens of context — active project, last 3 messages, skill names — no system prompt, no MCP, max_turns=5) that returns either DIRECT or a numbered step list. DIRECT responses are handled by Sonnet (fast, cheap). Step lists are executed by Opus (powerful) — each step runs in a fresh provider call with accumulated context, progress reported after each step, failures retried up to 3 times, final summary sent. The AI decides which model handles each message — no hardcoded rules.
 
@@ -137,6 +137,7 @@ cargo build --release        # Optimized binary
 - Workspace: `~/.omega/workspace/` (sandbox working directory, created on startup)
 - Inbox: `~/.omega/workspace/inbox/` (temporary storage for incoming image attachments, auto-cleaned after provider response)
 - Heartbeat checklist: `~/.omega/HEARTBEAT.md` (optional, read by heartbeat loop)
+- Self-healing state: `~/.omega/self-healing.json` (created on anomaly detection, deleted on resolution, preserved on escalation)
 - Logs: `~/.omega/omega.log`
 - Service (macOS): `~/Library/LaunchAgents/com.omega-cortex.omega.plist`
 - Service (Linux): `~/.config/systemd/user/omega.service`

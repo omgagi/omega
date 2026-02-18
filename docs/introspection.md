@@ -128,15 +128,36 @@ When something doesn't add up, OMEGA can query these tables to verify its own be
 
 When OMEGA detects a genuine infrastructure or code bug (not a user request or cosmetic issue), it triggers the self-healing protocol:
 
-1. **Diagnose**: Query `~/.omega/memory.db`, read logs at `~/.omega/omega.log`, inspect source code. Understand the root cause.
-2. **Fix**: Write the code fix. Build with `cargo build --release` via Nix. If compilation fails, read the errors and fix them — repeat until the build is clean. Run `cargo clippy -- -D warnings` — fix lint errors until clippy passes. Never deploy code that doesn't compile or has warnings.
-3. **Deploy & Verify**: Restart the service. Schedule a verification action via `SCHEDULE_ACTION` with the anomaly description, what was tried, and the current iteration count (e.g., "iteration 3/10").
-4. **Iterate**: The scheduled verification fires, checks if the anomaly is resolved. If not, repeat steps 1-3.
-5. **Escalate**: At iteration 10, STOP. Send the owner a detailed message: what the anomaly is, what was tried across all iterations, why it's not fixed, and what needs human intervention.
+1. **Check state**: Read `~/.omega/self-healing.json`. If it exists, continue from the current iteration. If not, create it with iteration 1.
+2. **Diagnose**: Query `~/.omega/memory.db`, read logs at `~/.omega/omega.log`, inspect source code. Understand the root cause.
+3. **Fix**: Write the code fix. Build with `cargo build --release` via Nix. If compilation fails, read the errors and fix them — repeat until the build is clean. Run `cargo clippy -- -D warnings` — fix lint errors until clippy passes. Never deploy code that doesn't compile or has warnings.
+4. **Deploy & Verify**: Update `~/.omega/self-healing.json` with what was tried. Restart the service. Schedule a verification via `SCHEDULE_ACTION` (2 minutes later).
+5. **Iterate**: The scheduled verification reads `~/.omega/self-healing.json` for context, checks if the anomaly is resolved. If resolved, delete the file and inform the owner. If not, increment iteration and repeat steps 2-4.
+6. **Escalate**: At iteration 10, STOP. Send the owner a detailed message with the full attempt history. Keep the file for review. Do not schedule further actions.
+
+### State Tracking
+
+All self-healing state is persisted in `~/.omega/self-healing.json`:
+
+```json
+{
+  "anomaly": "audit_log not recording model field",
+  "iteration": 3,
+  "max_iterations": 10,
+  "started_at": "2026-02-18T19:00:00",
+  "attempts": [
+    "1: Added model fallback in provider — build passed, still not recording",
+    "2: Fixed audit entry to pass model from response — clippy failed, fixed, deployed",
+    "3: Verifying..."
+  ]
+}
+```
+
+The file is created on first detection, updated after each attempt, and deleted on resolution. If OMEGA reaches the max iteration limit, the file is preserved so the owner can review the full history.
 
 ### Safety Guardrails
 
 - **Max 10 iterations** — hard limit, then human escalation
 - **Build + clippy gate** — broken code is never deployed; compilation errors are fixed within the same iteration
-- **Context continuity** — each SCHEDULE_ACTION carries the full context (anomaly, attempts, iteration count) so the next instance can continue without losing information
+- **State file** — `~/.omega/self-healing.json` tracks iteration count, anomaly, and attempt history across restarts; prevents count loss between invocations
 - **Scope limit** — only for genuine infrastructure/code bugs, not feature requests or user tasks
