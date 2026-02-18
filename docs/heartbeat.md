@@ -15,6 +15,8 @@ The heartbeat runs as a background loop inside the gateway, firing every N minut
 3. **Enrich with context** -- The heartbeat enriches the prompt with data from memory:
    - **User facts** (name, timezone, interests, etc.) from all users — gives the AI awareness of who it's monitoring for.
    - **Recent conversation summaries** (last 3 closed conversations) — gives the AI context about recent activity.
+   - **Open limitations** (self-detected capability gaps) — reminds the AI of known infrastructure issues. See [introspection.md](introspection.md).
+   - **Self-audit instruction** — asks the AI to reflect on its own capabilities and report new limitations via the `LIMITATION:` marker.
 4. **Call the provider** -- Sends the enriched prompt to the AI provider for evaluation.
 5. **Evaluate the response**:
    - Markdown formatting characters (`*` and backticks) are stripped before checking for the keyword.

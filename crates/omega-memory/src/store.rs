@@ -125,6 +125,10 @@ impl Store {
                 "005_scheduled_tasks",
                 include_str!("../migrations/005_scheduled_tasks.sql"),
             ),
+            (
+                "006_limitations",
+                include_str!("../migrations/006_limitations.sql"),
+            ),
         ];
 
         for (name, sql) in migrations {
@@ -786,6 +790,45 @@ impl Store {
         Ok(rows)
     }
 
+    // --- Limitations ---
+
+    /// Store a limitation (deduplicates by title, case-insensitive).
+    /// Returns `true` if the limitation is new, `false` if it already existed.
+    pub async fn store_limitation(
+        &self,
+        title: &str,
+        description: &str,
+        proposed_plan: &str,
+    ) -> Result<bool, OmegaError> {
+        let id = Uuid::new_v4().to_string();
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO limitations (id, title, description, proposed_plan) \
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(title)
+        .bind(description)
+        .bind(proposed_plan)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("store limitation failed: {e}")))?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Get all open limitations: (title, description, proposed_plan).
+    pub async fn get_open_limitations(&self) -> Result<Vec<(String, String, String)>, OmegaError> {
+        let rows: Vec<(String, String, String)> = sqlx::query_as(
+            "SELECT title, description, proposed_plan FROM limitations \
+             WHERE status = 'open' ORDER BY created_at ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("get open limitations failed: {e}")))?;
+
+        Ok(rows)
+    }
+
     /// Check if a sender has never been welcomed (no `welcomed` fact).
     pub async fn is_new_user(&self, sender_id: &str) -> Result<bool, OmegaError> {
         let row: Option<(String,)> =
@@ -952,6 +995,15 @@ fn build_system_prompt(
          Use this when the user asks AND proactively when any action you take needs ongoing \
          monitoring. If something you did will evolve over time and could need attention, \
          add it to your watchlist. Don't wait to be told to keep an eye on your own actions.",
+    );
+
+    prompt.push_str(
+        "\n\nSelf-Introspection: You are self-aware of your capabilities and limitations. \
+         When you encounter something you CANNOT do but SHOULD be able to (missing tools, \
+         unavailable services, missing integrations), report it using this marker on its own line:\n\
+         LIMITATION: <short title> | <what you can't do and why> | <your proposed plan to fix it>\n\
+         Only report genuine infrastructure/capability gaps, not user-specific requests. \
+         Be specific and actionable in your proposed plan.",
     );
 
     prompt
@@ -1310,6 +1362,67 @@ mod tests {
         let summaries = store.get_all_recent_summaries(3).await.unwrap();
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].0, "Discussed project planning");
+    }
+
+    // --- Limitation tests ---
+
+    #[tokio::test]
+    async fn test_store_limitation_new() {
+        let store = test_store().await;
+        let is_new = store
+            .store_limitation("No email", "Cannot send emails", "Add SMTP")
+            .await
+            .unwrap();
+        assert!(is_new, "first insert should return true");
+    }
+
+    #[tokio::test]
+    async fn test_store_limitation_duplicate() {
+        let store = test_store().await;
+        store
+            .store_limitation("No email", "Cannot send emails", "Add SMTP")
+            .await
+            .unwrap();
+        let is_new = store
+            .store_limitation("No email", "Different desc", "Different plan")
+            .await
+            .unwrap();
+        assert!(!is_new, "duplicate title should return false");
+    }
+
+    #[tokio::test]
+    async fn test_store_limitation_case_insensitive() {
+        let store = test_store().await;
+        store
+            .store_limitation("No Email", "Cannot send emails", "Add SMTP")
+            .await
+            .unwrap();
+        let is_new = store
+            .store_limitation("no email", "Different desc", "Different plan")
+            .await
+            .unwrap();
+        assert!(
+            !is_new,
+            "case-insensitive duplicate title should return false"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_open_limitations() {
+        let store = test_store().await;
+        store
+            .store_limitation("No email", "Cannot send emails", "Add SMTP")
+            .await
+            .unwrap();
+        store
+            .store_limitation("No calendar", "Cannot access calendar", "Add Google Cal")
+            .await
+            .unwrap();
+
+        let limitations = store.get_open_limitations().await.unwrap();
+        assert_eq!(limitations.len(), 2);
+        assert_eq!(limitations[0].0, "No email");
+        assert_eq!(limitations[1].0, "No calendar");
     }
 
     // --- User profile tests ---

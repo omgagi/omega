@@ -365,19 +365,73 @@ impl Gateway {
                 }
             }
 
+            // Inject known open limitations.
+            if let Ok(limitations) = memory.get_open_limitations().await {
+                if !limitations.is_empty() {
+                    prompt.push_str("\n\nKnown open limitations (previously detected):");
+                    for (title, desc, plan) in &limitations {
+                        prompt.push_str(&format!("\n- {title}: {desc} (plan: {plan})"));
+                    }
+                }
+            }
+
+            // Self-audit instruction.
+            prompt.push_str(
+                "\n\nBeyond the checklist, reflect on your own capabilities. \
+                 If you detect a NEW limitation (something you CANNOT do but SHOULD be able to), \
+                 include LIMITATION: <title> | <description> | <plan> on its own line.",
+            );
+
             let ctx = Context::new(&prompt);
             match provider.complete(&ctx).await {
                 Ok(resp) => {
+                    // Process limitation markers from heartbeat response.
+                    if let Some(lim_line) = extract_limitation_marker(&resp.text) {
+                        if let Some((title, desc, plan)) = parse_limitation_line(&lim_line) {
+                            match memory.store_limitation(&title, &desc, &plan).await {
+                                Ok(true) => {
+                                    info!("heartbeat: new limitation detected: {title}");
+                                    if let Some(ch) = channels.get(&config.channel) {
+                                        let alert = format!(
+                                            "LIMITATION DETECTED: {title}\n{desc}\n\nProposed fix: {plan}"
+                                        );
+                                        let msg = OutgoingMessage {
+                                            text: alert,
+                                            metadata: MessageMetadata::default(),
+                                            reply_target: Some(config.reply_target.clone()),
+                                        };
+                                        if let Err(e) = ch.send(msg).await {
+                                            error!(
+                                                "heartbeat: failed to send limitation alert: {e}"
+                                            );
+                                        }
+                                    }
+                                    apply_heartbeat_changes(&[HeartbeatAction::Add(format!(
+                                        "CRITICAL: {title} — {desc}"
+                                    ))]);
+                                }
+                                Ok(false) => {
+                                    info!("heartbeat: duplicate limitation: {title}");
+                                }
+                                Err(e) => {
+                                    error!("heartbeat: failed to store limitation: {e}");
+                                }
+                            }
+                        }
+                    }
+
                     let cleaned: String = resp
                         .text
                         .chars()
                         .filter(|c| *c != '*' && *c != '`')
                         .collect();
+                    let cleaned = strip_limitation_markers(&cleaned);
                     if cleaned.trim().contains("HEARTBEAT_OK") {
                         info!("heartbeat: OK");
                     } else if let Some(ch) = channels.get(&config.channel) {
+                        let text = strip_limitation_markers(&resp.text);
                         let msg = OutgoingMessage {
-                            text: resp.text,
+                            text,
                             metadata: MessageMetadata::default(),
                             reply_target: Some(config.reply_target.clone()),
                         };
@@ -975,6 +1029,46 @@ impl Gateway {
                 }
             }
             response.text = strip_heartbeat_markers(&response.text);
+        }
+
+        // --- 5h. EXTRACT LIMITATION MARKER ---
+        if let Some(limitation_line) = extract_limitation_marker(&response.text) {
+            if let Some((title, description, plan)) = parse_limitation_line(&limitation_line) {
+                match self
+                    .memory
+                    .store_limitation(&title, &description, &plan)
+                    .await
+                {
+                    Ok(true) => {
+                        info!("limitation detected (new): {title}");
+                        // Send Telegram alert via heartbeat channel.
+                        let alert = format!(
+                            "LIMITATION DETECTED: {title}\n{description}\n\nProposed fix: {plan}"
+                        );
+                        if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                            let msg = OutgoingMessage {
+                                text: alert,
+                                metadata: MessageMetadata::default(),
+                                reply_target: Some(self.heartbeat_config.reply_target.clone()),
+                            };
+                            if let Err(e) = ch.send(msg).await {
+                                error!("limitation: failed to send alert: {e}");
+                            }
+                        }
+                        // Auto-add to heartbeat checklist.
+                        apply_heartbeat_changes(&[HeartbeatAction::Add(format!(
+                            "CRITICAL: {title} — {description}"
+                        ))]);
+                    }
+                    Ok(false) => {
+                        info!("limitation detected (duplicate): {title}");
+                    }
+                    Err(e) => {
+                        error!("failed to store limitation: {e}");
+                    }
+                }
+            }
+            response.text = strip_limitation_markers(&response.text);
         }
 
         // --- 6. STORE IN MEMORY ---
@@ -1634,6 +1728,39 @@ fn apply_heartbeat_changes(actions: &[HeartbeatAction]) {
     );
 }
 
+/// Extract the first `LIMITATION:` line from response text.
+fn extract_limitation_marker(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| line.trim().starts_with("LIMITATION:"))
+        .map(|line| line.trim().to_string())
+}
+
+/// Parse a limitation line: `LIMITATION: title | description | proposed plan`
+fn parse_limitation_line(line: &str) -> Option<(String, String, String)> {
+    let content = line.strip_prefix("LIMITATION:")?.trim();
+    let parts: Vec<&str> = content.splitn(3, '|').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let title = parts[0].trim().to_string();
+    let description = parts[1].trim().to_string();
+    let plan = parts[2].trim().to_string();
+    if title.is_empty() || description.is_empty() {
+        return None;
+    }
+    Some((title, description, plan))
+}
+
+/// Strip all `LIMITATION:` lines from response text.
+fn strip_limitation_markers(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim().starts_with("LIMITATION:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
 /// Return localized status messages for the delayed provider nudge.
 /// Returns `(first_nudge, still_working)`.
 fn status_messages(lang: &str) -> (&'static str, &'static str) {
@@ -2261,5 +2388,55 @@ mod tests {
         let steps = parse_plan_response(text).unwrap();
         assert_eq!(steps.len(), 3);
         assert_eq!(steps[0], "First step");
+    }
+
+    // --- Limitation marker tests ---
+
+    #[test]
+    fn test_extract_limitation_marker() {
+        let text =
+            "I noticed an issue.\nLIMITATION: No email | Cannot send emails | Add SMTP provider";
+        let result = extract_limitation_marker(text);
+        assert_eq!(
+            result,
+            Some("LIMITATION: No email | Cannot send emails | Add SMTP provider".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_limitation_marker_none() {
+        let text = "Everything is working fine.";
+        assert!(extract_limitation_marker(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_limitation_line() {
+        let line = "LIMITATION: No email | Cannot send emails | Add SMTP provider";
+        let result = parse_limitation_line(line).unwrap();
+        assert_eq!(result.0, "No email");
+        assert_eq!(result.1, "Cannot send emails");
+        assert_eq!(result.2, "Add SMTP provider");
+    }
+
+    #[test]
+    fn test_parse_limitation_line_invalid() {
+        assert!(parse_limitation_line("LIMITATION: only one part").is_none());
+        assert!(parse_limitation_line("not a limitation line").is_none());
+        assert!(parse_limitation_line("LIMITATION:  | desc | plan").is_none());
+    }
+
+    #[test]
+    fn test_strip_limitation_markers() {
+        let text =
+            "I found a gap.\nLIMITATION: No email | Cannot send | Add SMTP\nHope this helps.";
+        let result = strip_limitation_markers(text);
+        assert_eq!(result, "I found a gap.\nHope this helps.");
+    }
+
+    #[test]
+    fn test_strip_limitation_markers_multiple() {
+        let text = "Response.\nLIMITATION: A | B | C\nMore text.\nLIMITATION: D | E | F\nEnd.";
+        let result = strip_limitation_markers(text);
+        assert_eq!(result, "Response.\nMore text.\nEnd.");
     }
 }

@@ -43,7 +43,7 @@ pub struct Store {
 
 ## Database Schema
 
-The store manages four tables and one virtual table created across five migrations. A sixth table (`_migrations`) tracks migration state.
+The store manages five tables and one virtual table created across six migrations. A seventh table (`_migrations`) tracks migration state.
 
 ### Table: `_migrations`
 
@@ -221,6 +221,35 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 - `idx_scheduled_tasks_due` on `(status, due_at)` -- for efficient due-task queries.
 - `idx_scheduled_tasks_sender` on `(sender_id, status)` -- for per-user task listing.
 
+### Table: `limitations`
+
+Created by `006_limitations.sql`.
+
+```sql
+CREATE TABLE IF NOT EXISTS limitations (
+    id            TEXT PRIMARY KEY,
+    title         TEXT NOT NULL,
+    description   TEXT NOT NULL,
+    proposed_plan TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'open',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at   TEXT
+);
+```
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `TEXT` | `PRIMARY KEY` | UUID v4 string. |
+| `title` | `TEXT` | `NOT NULL` | Short title of the limitation (e.g., `"No email"`). |
+| `description` | `TEXT` | `NOT NULL` | What the agent cannot do and why. |
+| `proposed_plan` | `TEXT` | `NOT NULL`, default `''` | The agent's proposed plan to fix the limitation. |
+| `status` | `TEXT` | `NOT NULL`, default `'open'` | Either `'open'` or `'resolved'`. |
+| `created_at` | `TEXT` | `NOT NULL`, default `datetime('now')` | When the limitation was first detected. |
+| `resolved_at` | `TEXT` | nullable | When the limitation was resolved. |
+
+**Indexes:**
+- `idx_limitations_title` on `(title COLLATE NOCASE)` — case-insensitive unique index for deduplication.
+
 ## Migrations
 
 ### Migration Tracking
@@ -240,6 +269,7 @@ Migrations are tracked via the `_migrations` table. The system handles three sce
 | `003_memory_enhancement` | `migrations/003_memory_enhancement.sql` | Adds `summary`, `last_activity`, `status` to `conversations`. Recreates `facts` with `sender_id` scoping. |
 | `004_fts5_recall` | `migrations/004_fts5_recall.sql` | Creates `messages_fts` FTS5 virtual table, backfills existing user messages, adds auto-sync triggers. |
 | `005_scheduled_tasks` | `migrations/005_scheduled_tasks.sql` | Creates `scheduled_tasks` table with indexes for user-scheduled reminders and recurring tasks. |
+| `006_limitations` | `migrations/006_limitations.sql` | Creates `limitations` table with case-insensitive unique index for autonomous self-introspection. |
 
 ### Bootstrap Detection Logic
 
@@ -965,6 +995,50 @@ WHERE id LIKE ? AND sender_id = ? AND status = 'pending'
 
 **Called by:** `commands.rs` for the `/cancel` command.
 
+---
+
+#### `async fn store_limitation(&self, title: &str, description: &str, proposed_plan: &str) -> Result<bool, OmegaError>`
+
+**Purpose:** Store a self-detected limitation with case-insensitive title deduplication.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `title` | `&str` | Short limitation title (e.g., `"No email"`). |
+| `description` | `&str` | What the agent cannot do and why. |
+| `proposed_plan` | `&str` | The agent's proposed plan to fix it. |
+
+**Returns:** `Result<bool, OmegaError>` -- `true` if the limitation is new, `false` if it already existed (duplicate title).
+
+**SQL:**
+```sql
+INSERT OR IGNORE INTO limitations (id, title, description, proposed_plan) VALUES (?, ?, ?, ?)
+```
+
+**Note:** Uses `INSERT OR IGNORE` — if the title already exists (case-insensitive match via the unique index), the insert is silently ignored and `rows_affected()` returns 0.
+
+**Called by:** `gateway.rs::handle_message()` Stage 5h (LIMITATION marker extraction) and `gateway.rs::heartbeat_loop()` (self-audit).
+
+---
+
+#### `async fn get_open_limitations(&self) -> Result<Vec<(String, String, String)>, OmegaError>`
+
+**Purpose:** Get all open (unresolved) limitations for heartbeat context enrichment.
+
+**Parameters:** None.
+
+**Returns:** `Result<Vec<(String, String, String)>, OmegaError>` where each tuple is `(title, description, proposed_plan)`, ordered by creation time ascending.
+
+**SQL:**
+```sql
+SELECT title, description, proposed_plan FROM limitations WHERE status = 'open' ORDER BY created_at ASC
+```
+
+**Called by:** `gateway.rs::heartbeat_loop()` to inject known limitations into the heartbeat prompt.
+
+---
+
 ### Private Methods
 
 #### `async fn run_migrations(pool: &SqlitePool) -> Result<(), OmegaError>`
@@ -994,6 +1068,7 @@ let migrations: &[(&str, &str)] = &[
     ("003_memory_enhancement", include_str!("../migrations/003_memory_enhancement.sql")),
     ("004_fts5_recall", include_str!("../migrations/004_fts5_recall.sql")),
     ("005_scheduled_tasks", include_str!("../migrations/005_scheduled_tasks.sql")),
+    ("006_limitations", include_str!("../migrations/006_limitations.sql")),
 ];
 ```
 
@@ -1123,6 +1198,13 @@ HEARTBEAT_REMOVE: <description>
 Use this when the user asks AND proactively when any action you take needs ongoing
 monitoring. If something you did will evolve over time and could need attention,
 add it to your watchlist. Don't wait to be told to keep an eye on your own actions.
+
+Self-Introspection: You are self-aware of your capabilities and limitations.
+When you encounter something you CANNOT do but SHOULD be able to (missing tools,
+unavailable services, missing integrations), report it using this marker on its own line:
+LIMITATION: <short title> | <what you can't do and why> | <your proposed plan to fix it>
+Only report genuine infrastructure/capability gaps, not user-specific requests.
+Be specific and actionable in your proposed plan.
 ```
 
 **Conditional sections:**
@@ -1134,6 +1216,7 @@ add it to your watchlist. Don't wait to be told to keep an eye on your own actio
 - LANG_SWITCH instruction: always appended (unconditional). Tells the provider to include a `LANG_SWITCH:` marker when the user explicitly asks to change language.
 - SCHEDULE marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE:` marker line when the user requests a reminder or scheduled task, AND proactively when the agent takes an action that needs follow-up.
 - HEARTBEAT_ADD/REMOVE marker instructions: always appended (unconditional). Tells the provider to include `HEARTBEAT_ADD:` or `HEARTBEAT_REMOVE:` markers when the user requests monitoring changes, AND proactively when the agent takes an action that needs ongoing monitoring.
+- LIMITATION marker instructions: always appended (unconditional). Tells the provider to include a `LIMITATION:` marker when it encounters an infrastructure/capability gap it cannot resolve.
 
 ---
 
@@ -1328,6 +1411,8 @@ All errors are wrapped in `OmegaError::Memory(String)` with descriptive messages
 | `get_all_facts()` | Propagates errors. |
 | `get_all_recent_summaries()` | Propagates errors. |
 | `delete_fact()` | Propagates errors. |
+| `store_limitation()` | Propagates errors (caller in gateway/heartbeat logs and continues). |
+| `get_open_limitations()` | Propagates errors (caller in heartbeat suppresses with default empty). |
 
 ### Resilience in build_context()
 Facts, summaries, and recalled messages are fetched with `unwrap_or_default()`. This ensures that a failure in retrieving personalization data does not prevent the provider from receiving a valid context. The conversation will still work; it will just lack facts, summaries, or recalled context.
@@ -1365,6 +1450,10 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 | `test_delete_fact` | Verifies `delete_fact()` returns `false` for non-existent fact, `true` after storing, and fact is gone after deletion. |
 | `test_get_all_facts` | Stores facts including a `welcomed` fact, verifies `get_all_facts()` returns all facts except `welcomed`. |
 | `test_get_all_recent_summaries` | Creates and closes conversations with summaries, verifies `get_all_recent_summaries()` returns them ordered newest-first and respects the limit parameter. |
+| `test_store_limitation_new` | Stores a limitation, verifies `store_limitation()` returns `true` (new). |
+| `test_store_limitation_duplicate` | Stores same title twice, verifies second call returns `false` (duplicate). |
+| `test_store_limitation_case_insensitive` | Stores same title with different case, verifies dedup works case-insensitively. |
+| `test_get_open_limitations` | Stores multiple limitations, verifies `get_open_limitations()` returns all with correct order. |
 | `test_user_profile_filters_system_facts` | Verifies that `format_user_profile()` filters out system keys (`welcomed`, `preferred_language`, `active_project`) from the output. |
 | `test_user_profile_groups_identity_first` | Verifies that `format_user_profile()` places identity keys (e.g., `preferred_name`, `pronouns`) before context keys and other facts. |
 | `test_user_profile_empty_for_system_only` | Verifies that `format_user_profile()` returns `None` when all facts are system keys. |
@@ -1393,3 +1482,6 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 18. The language directive is always included in the system prompt (uses resolved `preferred_language` fact or auto-detected language).
 19. The LANG_SWITCH marker instruction is always included in the system prompt.
 20. The HEARTBEAT_ADD/REMOVE marker instructions are always included in the system prompt.
+21. The LIMITATION marker instruction is always included in the system prompt.
+22. Limitations are deduplicated by title (case-insensitive) — duplicate inserts are silently ignored.
+23. Limitation status is one of `'open'` or `'resolved'`.
