@@ -699,6 +699,7 @@ pub struct Gateway {
 
 **Fields:**
 - `anomaly: String` — Description of the anomaly being healed.
+- `verification: String` — Concrete verification test to confirm the fix works.
 - `iteration: u32` — Current iteration (1-based).
 - `max_iterations: u32` — Maximum iterations before escalation (default: 10).
 - `started_at: String` — ISO 8601 timestamp when self-healing started.
@@ -709,10 +710,10 @@ pub struct Gateway {
 
 **Logic:** Iterates through lines, finds the first line whose trimmed form starts with `"SELF_HEAL:"`, returns it trimmed. Returns `None` if not found.
 
-### `fn parse_self_heal_line(line: &str) -> Option<String>`
-**Purpose:** Parse the description from a `SELF_HEAL: description` line.
+### `fn parse_self_heal_line(line: &str) -> Option<(String, String)>`
+**Purpose:** Parse the description and verification test from a `SELF_HEAL: description | verification test` line.
 
-**Logic:** Strips `"SELF_HEAL:"` prefix, trims, returns the description. Returns `None` if empty or prefix not found.
+**Logic:** Strips `"SELF_HEAL:"` prefix, splits on `|` using `splitn(2, '|')`, trims both parts, returns `(description, verification)` tuple. Returns `None` if prefix not found, either part is empty, or no `|` separator.
 
 ### `fn has_self_heal_resolved_marker(text: &str) -> bool`
 **Purpose:** Check if response text contains a `SELF_HEAL_RESOLVED` marker line.
@@ -1140,7 +1141,7 @@ All interactions are logged to SQLite with:
 29. Classify-and-route: every message triggers a context-enriched classification call (using the fast model with active project, last 3 messages, and skill names); DIRECT messages use `model_fast`, multi-step plans use `model_complex`. Multi-step plans are executed autonomously with per-step progress, retry (up to 3 attempts), and a final summary.
 30. Planning steps are tracked in-memory (ephemeral) and are not persisted to the database.
 31. Model routing: `context.model` is set by classify-and-route before the provider call. The provider resolves the effective model via `context.model.as_deref().unwrap_or(&self.model)`.
-32. SELF_HEAL: markers are processed after LIMITATION markers. The gateway creates or updates `~/.omega/self-healing.json`, enforces max 10 iterations in code, schedules follow-up action tasks (2 min delay), and sends owner notifications via heartbeat channel. At max iterations, sends escalation alert and preserves state file. Both `handle_message` and `scheduler_loop` process these markers.
+32. SELF_HEAL: markers (format: `SELF_HEAL: description | verification test`) are processed after LIMITATION markers. The gateway parses both description and verification test, creates or updates `~/.omega/self-healing.json` (including the `verification` field), enforces max 10 iterations in code, schedules follow-up action tasks (2 min delay) with the verification test embedded in the prompt, and sends owner notifications via heartbeat channel. At max iterations, sends escalation alert and preserves state file. Both `handle_message` and `scheduler_loop` process these markers.
 33. SELF_HEAL_RESOLVED markers trigger deletion of `~/.omega/self-healing.json` and send a resolution notification to the owner via heartbeat channel. Processed in both `handle_message` and `scheduler_loop`.
 
 ## Tests
@@ -1311,7 +1312,7 @@ Verifies that `parse_plan_response()` correctly parses a numbered list that has 
 
 **Type:** Synchronous unit test (`#[test]`)
 
-Verifies that `extract_self_heal_marker()` extracts the first `SELF_HEAL:` line from response text.
+Verifies that `extract_self_heal_marker()` extracts the first `SELF_HEAL:` line (including pipe-separated verification test) from response text.
 
 ### `test_extract_self_heal_marker_none`
 
@@ -1323,13 +1324,13 @@ Verifies that `extract_self_heal_marker()` returns `None` when no `SELF_HEAL:` m
 
 **Type:** Synchronous unit test (`#[test]`)
 
-Verifies that `parse_self_heal_line()` extracts the description from a `SELF_HEAL:` line.
+Verifies that `parse_self_heal_line()` extracts the `(description, verification)` tuple from a `SELF_HEAL: description | verification test` line.
 
 ### `test_parse_self_heal_line_empty`
 
 **Type:** Synchronous unit test (`#[test]`)
 
-Verifies that `parse_self_heal_line()` returns `None` for empty descriptions, whitespace-only, and non-matching lines.
+Verifies that `parse_self_heal_line()` returns `None` for empty descriptions, whitespace-only, non-matching lines, missing verification (`desc only`, `desc |`, `| verification`).
 
 ### `test_has_self_heal_resolved_marker`
 
@@ -1347,7 +1348,7 @@ Verifies that `has_self_heal_resolved_marker()` returns `false` when no `SELF_HE
 
 **Type:** Synchronous unit test (`#[test]`)
 
-Verifies that `strip_self_heal_markers()` removes `SELF_HEAL:` lines while preserving other content.
+Verifies that `strip_self_heal_markers()` removes `SELF_HEAL:` lines (with pipe format) while preserving other content.
 
 ### `test_strip_self_heal_markers_resolved`
 
@@ -1359,10 +1360,10 @@ Verifies that `strip_self_heal_markers()` removes `SELF_HEAL_RESOLVED` lines whi
 
 **Type:** Synchronous unit test (`#[test]`)
 
-Verifies that `strip_self_heal_markers()` removes both `SELF_HEAL:` and `SELF_HEAL_RESOLVED` lines from the same text.
+Verifies that `strip_self_heal_markers()` removes both `SELF_HEAL:` (with pipe format) and `SELF_HEAL_RESOLVED` lines from the same text.
 
 ### `test_self_healing_state_serde_roundtrip`
 
 **Type:** Synchronous unit test (`#[test]`)
 
-Verifies that `SelfHealingState` can be serialized to JSON and deserialized back with all fields preserved.
+Verifies that `SelfHealingState` (including `verification` field) can be serialized to JSON and deserialized back with all fields preserved.

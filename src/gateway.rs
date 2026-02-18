@@ -455,10 +455,13 @@ impl Gateway {
 
                                     // Process SELF_HEAL markers.
                                     if let Some(heal_line) = extract_self_heal_marker(&text) {
-                                        if let Some(heal_desc) = parse_self_heal_line(&heal_line) {
+                                        if let Some((heal_desc, heal_verif)) =
+                                            parse_self_heal_line(&heal_line)
+                                        {
                                             let mut state = read_self_healing_state()
                                                 .unwrap_or_else(|| SelfHealingState {
                                                     anomaly: heal_desc.clone(),
+                                                    verification: heal_verif.clone(),
                                                     iteration: 0,
                                                     max_iterations: 10,
                                                     started_at: chrono::Utc::now().to_rfc3339(),
@@ -532,14 +535,17 @@ impl Gateway {
                                                 .to_rfc3339();
                                                 let next_desc = format!(
                                                     "Self-healing verification — read \
-                                                     ~/.omega/self-healing.json for context, \
-                                                     check if the anomaly is resolved. \
-                                                     If resolved, emit SELF_HEAL_RESOLVED. \
-                                                     If not, diagnose, fix, build+clippy until \
-                                                     clean, restart service, update the attempts \
-                                                     array in self-healing.json, and emit \
-                                                     SELF_HEAL: {} to continue.",
-                                                    state.anomaly
+                                                     ~/.omega/self-healing.json for context. \
+                                                     Run this verification: {}. \
+                                                     If the test passes, emit SELF_HEAL_RESOLVED. \
+                                                     If it fails, diagnose the root cause, fix it, \
+                                                     build+clippy until clean, restart service, \
+                                                     update the attempts array in \
+                                                     self-healing.json, and emit \
+                                                     SELF_HEAL: {} | {} to continue.",
+                                                    state.verification,
+                                                    state.anomaly,
+                                                    state.verification
                                                 );
                                                 match store
                                                     .create_task(
@@ -1482,9 +1488,10 @@ impl Gateway {
 
         // --- 5i. EXTRACT SELF_HEAL MARKER ---
         if let Some(heal_line) = extract_self_heal_marker(&response.text) {
-            if let Some(description) = parse_self_heal_line(&heal_line) {
+            if let Some((description, verification)) = parse_self_heal_line(&heal_line) {
                 let mut state = read_self_healing_state().unwrap_or_else(|| SelfHealingState {
                     anomaly: description.clone(),
+                    verification: verification.clone(),
                     iteration: 0,
                     max_iterations: 10,
                     started_at: chrono::Utc::now().to_rfc3339(),
@@ -1553,12 +1560,13 @@ impl Gateway {
                     // Schedule follow-up verification in 2 minutes.
                     let due_at = (chrono::Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
                     let heal_desc = format!(
-                        "Self-healing verification — read ~/.omega/self-healing.json for context, \
-                         check if the anomaly is resolved. If resolved, emit SELF_HEAL_RESOLVED. \
-                         If not, diagnose, fix, build+clippy until clean, restart service, \
-                         update the attempts array in self-healing.json, \
-                         and emit SELF_HEAL: {} to continue.",
-                        state.anomaly
+                        "Self-healing verification — read ~/.omega/self-healing.json for context. \
+                         Run this verification: {}. \
+                         If the test passes, emit SELF_HEAL_RESOLVED. \
+                         If it fails, diagnose the root cause, fix it, build+clippy until clean, \
+                         restart service, update the attempts array in self-healing.json, \
+                         and emit SELF_HEAL: {} | {} to continue.",
+                        state.verification, state.anomaly, state.verification
                     );
                     let reply_target = incoming.reply_target.as_deref().unwrap_or("");
                     match self
@@ -2407,6 +2415,8 @@ fn strip_limitation_markers(text: &str) -> String {
 pub struct SelfHealingState {
     /// Description of the anomaly being healed.
     pub anomaly: String,
+    /// Concrete verification test to confirm the fix works.
+    pub verification: String,
     /// Current iteration (1-based).
     pub iteration: u32,
     /// Maximum iterations before escalation.
@@ -2424,13 +2434,16 @@ fn extract_self_heal_marker(text: &str) -> Option<String> {
         .map(|line| line.trim().to_string())
 }
 
-/// Parse the description from a `SELF_HEAL: description` line.
-fn parse_self_heal_line(line: &str) -> Option<String> {
+/// Parse the description and verification test from a `SELF_HEAL: description | verification` line.
+fn parse_self_heal_line(line: &str) -> Option<(String, String)> {
     let content = line.strip_prefix("SELF_HEAL:")?.trim();
-    if content.is_empty() {
+    let mut parts = content.splitn(2, '|');
+    let description = parts.next()?.trim();
+    let verification = parts.next()?.trim();
+    if description.is_empty() || verification.is_empty() {
         return None;
     }
-    Some(content.to_string())
+    Some((description.to_string(), verification.to_string()))
 }
 
 /// Check if response text contains a `SELF_HEAL_RESOLVED` marker line.
@@ -3285,9 +3298,15 @@ mod tests {
 
     #[test]
     fn test_extract_self_heal_marker() {
-        let text = "Something is wrong.\nSELF_HEAL: Build pipeline broken\nLet me fix it.";
+        let text = "Something is wrong.\nSELF_HEAL: Build pipeline broken | run cargo build and confirm exit code 0\nLet me fix it.";
         let result = extract_self_heal_marker(text);
-        assert_eq!(result, Some("SELF_HEAL: Build pipeline broken".to_string()));
+        assert_eq!(
+            result,
+            Some(
+                "SELF_HEAL: Build pipeline broken | run cargo build and confirm exit code 0"
+                    .to_string()
+            )
+        );
     }
 
     #[test]
@@ -3298,9 +3317,10 @@ mod tests {
 
     #[test]
     fn test_parse_self_heal_line() {
-        let line = "SELF_HEAL: Build pipeline broken";
-        let result = parse_self_heal_line(line).unwrap();
-        assert_eq!(result, "Build pipeline broken");
+        let line = "SELF_HEAL: Build pipeline broken | run cargo build and confirm exit code 0";
+        let (desc, verif) = parse_self_heal_line(line).unwrap();
+        assert_eq!(desc, "Build pipeline broken");
+        assert_eq!(verif, "run cargo build and confirm exit code 0");
     }
 
     #[test]
@@ -3308,6 +3328,10 @@ mod tests {
         assert!(parse_self_heal_line("SELF_HEAL:").is_none());
         assert!(parse_self_heal_line("SELF_HEAL:   ").is_none());
         assert!(parse_self_heal_line("not a self-heal line").is_none());
+        // Missing verification
+        assert!(parse_self_heal_line("SELF_HEAL: desc only").is_none());
+        assert!(parse_self_heal_line("SELF_HEAL: desc |").is_none());
+        assert!(parse_self_heal_line("SELF_HEAL: | verification").is_none());
     }
 
     #[test]
@@ -3324,7 +3348,7 @@ mod tests {
 
     #[test]
     fn test_strip_self_heal_markers() {
-        let text = "Detected issue.\nSELF_HEAL: Build broken\nFixing now.";
+        let text = "Detected issue.\nSELF_HEAL: Build broken | run cargo build\nFixing now.";
         let result = strip_self_heal_markers(text);
         assert_eq!(result, "Detected issue.\nFixing now.");
     }
@@ -3338,7 +3362,8 @@ mod tests {
 
     #[test]
     fn test_strip_self_heal_markers_both() {
-        let text = "Start.\nSELF_HEAL: Bug found\nMiddle.\nSELF_HEAL_RESOLVED\nEnd.";
+        let text =
+            "Start.\nSELF_HEAL: Bug found | run cargo test\nMiddle.\nSELF_HEAL_RESOLVED\nEnd.";
         let result = strip_self_heal_markers(text);
         assert_eq!(result, "Start.\nMiddle.\nEnd.");
     }
@@ -3347,6 +3372,7 @@ mod tests {
     fn test_self_healing_state_serde_roundtrip() {
         let state = SelfHealingState {
             anomaly: "Build broken".to_string(),
+            verification: "run cargo build and confirm exit code 0".to_string(),
             iteration: 3,
             max_iterations: 10,
             started_at: "2026-02-18T12:00:00Z".to_string(),
@@ -3359,8 +3385,128 @@ mod tests {
         let json = serde_json::to_string(&state).unwrap();
         let deserialized: SelfHealingState = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.anomaly, "Build broken");
+        assert_eq!(
+            deserialized.verification,
+            "run cargo build and confirm exit code 0"
+        );
         assert_eq!(deserialized.iteration, 3);
         assert_eq!(deserialized.max_iterations, 10);
         assert_eq!(deserialized.attempts.len(), 3);
+    }
+
+    /// Simulates the full SELF_HEAL flow: AI response → extract → parse → state
+    /// creation → serialization → follow-up task description. Verifies the
+    /// verification test propagates correctly through every stage.
+    #[test]
+    fn test_self_heal_full_flow_simulation() {
+        // Stage 1: AI emits a response containing the new marker format.
+        let ai_response = "I found a bug in the audit system.\n\
+                           SELF_HEAL: audit_log missing model field | query audit_log for last entry and confirm model is not null\n\
+                           Investigating now.";
+
+        // Stage 2: extract_self_heal_marker finds the line.
+        let heal_line = extract_self_heal_marker(ai_response).unwrap();
+        assert!(heal_line.contains("audit_log missing model field"));
+        assert!(heal_line.contains("|"));
+        assert!(heal_line.contains("query audit_log"));
+
+        // Stage 3: parse_self_heal_line splits into (description, verification).
+        let (description, verification) = parse_self_heal_line(&heal_line).unwrap();
+        assert_eq!(description, "audit_log missing model field");
+        assert_eq!(
+            verification,
+            "query audit_log for last entry and confirm model is not null"
+        );
+
+        // Stage 4: Create new state with verification field.
+        let state = SelfHealingState {
+            anomaly: description.clone(),
+            verification: verification.clone(),
+            iteration: 1,
+            max_iterations: 10,
+            started_at: "2026-02-18T20:00:00Z".to_string(),
+            attempts: Vec::new(),
+        };
+
+        // Stage 5: Serialize → deserialize roundtrip preserves verification.
+        let json = serde_json::to_string_pretty(&state).unwrap();
+        assert!(json.contains("\"verification\""));
+        assert!(json.contains("query audit_log"));
+        let restored: SelfHealingState = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.verification, verification);
+
+        // Stage 6: Follow-up task description includes verification test.
+        let follow_up = format!(
+            "Self-healing verification — read ~/.omega/self-healing.json for context. \
+             Run this verification: {}. \
+             If the test passes, emit SELF_HEAL_RESOLVED. \
+             If it fails, diagnose the root cause, fix it, build+clippy until clean, \
+             restart service, update the attempts array in self-healing.json, \
+             and emit SELF_HEAL: {} | {} to continue.",
+            restored.verification, restored.anomaly, restored.verification
+        );
+        assert!(follow_up.contains("Run this verification: query audit_log"));
+        assert!(follow_up.contains("SELF_HEAL: audit_log missing model field | query audit_log"));
+
+        // Stage 7: Strip markers cleans up the AI response.
+        let cleaned = strip_self_heal_markers(ai_response);
+        assert!(!cleaned.contains("SELF_HEAL:"));
+        assert!(cleaned.contains("I found a bug"));
+        assert!(cleaned.contains("Investigating now."));
+    }
+
+    /// Verifies that old-format state files (without `verification` field)
+    /// fail to deserialize gracefully — `read_self_healing_state` returns None,
+    /// causing the gateway to create a fresh state with the new verification.
+    #[test]
+    fn test_self_healing_state_old_format_graceful_fallback() {
+        let old_json = r#"{
+            "anomaly": "Build broken",
+            "iteration": 3,
+            "max_iterations": 10,
+            "started_at": "2026-02-18T12:00:00Z",
+            "attempts": ["1: tried X", "2: tried Y"]
+        }"#;
+        // Old format missing `verification` field should fail deserialization.
+        let result: Result<SelfHealingState, _> = serde_json::from_str(old_json);
+        assert!(
+            result.is_err(),
+            "Old state without verification must fail to deserialize"
+        );
+    }
+
+    /// Verifies that the old marker format (without pipe) is rejected by
+    /// parse_self_heal_line but still detected/stripped by extract/strip.
+    #[test]
+    fn test_self_heal_old_marker_format_rejected() {
+        let old_response = "Found a bug.\nSELF_HEAL: Build pipeline broken\nFixing.";
+
+        // extract_self_heal_marker still finds the line (starts with SELF_HEAL:).
+        let heal_line = extract_self_heal_marker(old_response);
+        assert!(heal_line.is_some());
+
+        // But parse_self_heal_line rejects it — no pipe separator.
+        let parsed = parse_self_heal_line(&heal_line.unwrap());
+        assert!(
+            parsed.is_none(),
+            "Old format without | must be rejected by parse_self_heal_line"
+        );
+
+        // strip_self_heal_markers still removes it from output.
+        let cleaned = strip_self_heal_markers(old_response);
+        assert!(!cleaned.contains("SELF_HEAL:"));
+        assert_eq!(cleaned, "Found a bug.\nFixing.");
+    }
+
+    /// Verifies verification test with pipes inside it (only first | splits).
+    #[test]
+    fn test_self_heal_verification_with_internal_pipes() {
+        let line = "SELF_HEAL: DB error | run sqlite3 ~/.omega/memory.db 'SELECT count(*) | grep -v 0'";
+        let (desc, verif) = parse_self_heal_line(line).unwrap();
+        assert_eq!(desc, "DB error");
+        assert_eq!(
+            verif,
+            "run sqlite3 ~/.omega/memory.db 'SELECT count(*) | grep -v 0'"
+        );
     }
 }

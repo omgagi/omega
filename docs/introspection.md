@@ -126,25 +126,27 @@ When something doesn't add up, OMEGA can query these tables to verify its own be
 
 ## Self-Healing Protocol
 
-When OMEGA detects a genuine infrastructure or code bug, it emits a `SELF_HEAL: description` marker. The **gateway** (not the AI) manages the entire lifecycle:
+When OMEGA detects a genuine infrastructure or code bug, it emits a `SELF_HEAL: description | verification test` marker. The **gateway** (not the AI) manages the entire lifecycle:
 
 ### Markers
 
 | Marker | Trigger | Gateway Action |
 |--------|---------|---------------|
-| `SELF_HEAL: description` | AI detects anomaly | Create/update state, notify owner, schedule follow-up |
+| `SELF_HEAL: description \| verification test` | AI detects anomaly | Create/update state (incl. verification), notify owner, schedule follow-up with verification |
 | `SELF_HEAL_RESOLVED` | AI confirms fix | Delete state file, notify owner |
+
+The verification test is a concrete, executable check that proves the fix works (e.g., "run cargo test and confirm zero failures", "read ~/.omega/omega.log and confirm no panic lines in last 50 entries"). Each follow-up task includes the verification test so OMEGA can actually confirm the fix rather than just re-reading code.
 
 ### Gateway-Managed Lifecycle
 
-1. **AI emits** `SELF_HEAL: description` on its own line
-2. **Gateway reads** `~/.omega/self-healing.json` (or creates it with iteration 1)
+1. **AI emits** `SELF_HEAL: description | verification test` on its own line
+2. **Gateway reads** `~/.omega/self-healing.json` (or creates it with iteration 1, storing both description and verification)
 3. **Gateway increments** the iteration counter
-4. **If iteration ≤ 10**: writes state, notifies owner ("🔧 SELF-HEALING (N/10): ..."), schedules a `SCHEDULE_ACTION` verification task (2 min delay)
+4. **If iteration ≤ 10**: writes state, notifies owner ("🔧 SELF-HEALING (N/10): ..."), schedules a verification task (2 min delay) that includes: "Run this verification: {test}. If it passes, emit SELF_HEAL_RESOLVED. If it fails, continue fixing."
 5. **If iteration > 10**: sends escalation alert ("🚨 SELF-HEALING ESCALATION"), preserves state file for owner review, does **not** schedule further actions
 6. **On resolution**: AI emits `SELF_HEAL_RESOLVED`, gateway deletes state file and notifies owner ("✅ Self-healing complete")
 
-The AI's responsibility during healing tasks is: read `~/.omega/self-healing.json` for context, diagnose, fix, build+clippy until clean, restart service, update the attempts array. The gateway handles everything else (iteration tracking, scheduling, escalation).
+The AI's responsibility during healing tasks is: read `~/.omega/self-healing.json` for context and the verification test, diagnose, fix, build+clippy until clean, restart service, update the attempts array, then run the verification test to confirm. The gateway handles everything else (iteration tracking, scheduling, escalation).
 
 ### State Tracking
 
@@ -153,6 +155,7 @@ All self-healing state is persisted in `~/.omega/self-healing.json`:
 ```json
 {
   "anomaly": "audit_log not recording model field",
+  "verification": "send a test message and confirm audit_log has non-null model field",
   "iteration": 3,
   "max_iterations": 10,
   "started_at": "2026-02-18T19:00:00Z",
