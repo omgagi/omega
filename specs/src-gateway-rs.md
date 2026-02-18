@@ -449,48 +449,14 @@ pub struct Gateway {
   - If `None` is returned (DIRECT path): set `context.model = Some(self.model_fast.clone())` and fall through to the normal single provider call.
   - If `Some(steps)` is returned (Steps path): set `context.model = Some(self.model_complex.clone())`.
     - Call `self.execute_steps(incoming, original_task, context, steps, inbox_images)` for autonomous multi-step execution.
-    - `execute_steps()` announces the plan to the user, executes each step in a fresh provider call with accumulated context (inheriting `step_ctx.model = context.model.clone()`), retries failed steps up to 3 times, sends progress messages after each step, audits the exchange, sends a final summary, and cleans up inbox images.
+    - `execute_steps()` announces the plan to the user, executes each step in a fresh provider call with accumulated context (inheriting `step_ctx.model = context.model.clone()`), retries failed steps up to 3 times, calls `self.process_markers()` on each step result to extract all markers (SCHEDULE, LIMITATION, SELF_HEAL, etc.), sends progress messages after each step, audits the exchange, sends a final summary, and cleans up inbox images.
     - Return (skip normal provider call).
 
-**Stage 5b: SCHEDULE Marker Extraction**
+**Stage 5: Process Markers**
 - After SILENT suppression check:
-- Call `extract_schedule_marker(&response.text)` to find a `SCHEDULE:` line.
-- If found, call `parse_schedule_line()` to extract `(description, due_at, repeat)`.
-- If parsing succeeds:
-  - Map `repeat = "once"` to `None`, otherwise `Some(repeat)`.
-  - Call `self.memory.create_task()` with channel, sender_id, reply_target, description, due_at, repeat.
-  - Log the created task ID on success, or log error on failure.
-- Call `strip_schedule_marker(&response.text)` to remove the `SCHEDULE:` line from the response before sending to the user.
-
-**Stage 5c: PROJECT_ACTIVATE / PROJECT_DEACTIVATE Marker Extraction**
-- After SCHEDULE extraction:
-- Call `extract_project_activate(&response.text)` to find a `PROJECT_ACTIVATE: <name>` line.
-- If found:
-  - Hot-reload projects from disk via `omega_skills::load_projects()`.
-  - Verify the project exists. If valid, call `self.memory.store_fact(&incoming.sender_id, "active_project", &name)`.
-  - Log activation on success, or warn if project not found.
-  - Call `strip_project_markers(&response.text)` to remove marker lines.
-- Call `has_project_deactivate(&response.text)` to find a `PROJECT_DEACTIVATE` line.
-- If found:
-  - Call `self.memory.delete_fact(&incoming.sender_id, "active_project")`.
-  - Log deactivation.
-  - Call `strip_project_markers(&response.text)` to remove marker lines.
-
-**Stage 5d: LANG_SWITCH Marker Extraction**
-- After SCHEDULE extraction:
-- Call `extract_lang_switch(&response.text)` to find a `LANG_SWITCH:` line.
-- If found:
-  - Call `self.memory.store_fact(&incoming.sender_id, "preferred_language", &lang)` to persist the language change.
-  - Log the language switch on success, or log error on failure.
-  - Call `strip_lang_switch(&response.text)` to remove the `LANG_SWITCH:` line from the response before sending to the user.
-
-**Stage 5e: HEARTBEAT_ADD / HEARTBEAT_REMOVE Marker Extraction**
-- After LANG_SWITCH extraction:
-- Call `extract_heartbeat_markers(&response.text)` to find all `HEARTBEAT_ADD:` and `HEARTBEAT_REMOVE:` lines.
-- If any markers found:
-  - Call `apply_heartbeat_changes(&actions)` to update `~/.omega/HEARTBEAT.md`.
-  - Log each add/remove action at INFO level.
-  - Call `strip_heartbeat_markers(&response.text)` to remove all marker lines from the response before sending to the user.
+- Call `self.process_markers(&incoming, &mut response.text)` — a unified method that extracts and processes all markers from the provider response. This same method is called on each step result in `execute_steps()`, ensuring markers work in both direct and multi-step paths.
+- Markers processed in order: SCHEDULE, SCHEDULE_ACTION, PROJECT_ACTIVATE/DEACTIVATE, WHATSAPP_QR, LANG_SWITCH, HEARTBEAT_ADD/REMOVE, LIMITATION, SELF_HEAL, SELF_HEAL_RESOLVED.
+- Each marker is stripped from the response text after processing.
 
 **Stage 6: Store Exchange in Memory (Lines 579-582)**
 - Call `self.memory.store_exchange(&incoming, &response)` to save the exchange.
@@ -622,18 +588,35 @@ pub struct Gateway {
 **Logic:**
 1. Announce the plan to the user (list of steps).
 2. For each step:
-   - Send a progress message (e.g., "Step 1/N: <description>").
    - Build a step context with `step_ctx.model = context.model.clone()` (inherits model from the parent context, ensuring all steps use the complex model).
    - Execute the step by calling `provider.complete()` with the step description and accumulated context.
    - On failure, retry up to 3 times.
-   - If all retries fail, send an error message and stop executing remaining steps.
-3. After all steps complete (or on failure), send a final summary message to the user.
-4. Audit the exchange.
-5. Clean up inbox images via `cleanup_inbox_images()`.
+   - If all retries fail, send an error message and continue to next step.
+   - On success, call `self.process_markers()` on the step result to extract all markers (SCHEDULE, LIMITATION, SELF_HEAL, etc.).
+   - Send a progress message (e.g., "✓ Step (1/N)").
+   - Audit the step exchange.
+3. After all steps complete, send a final summary message to the user.
+4. Clean up inbox images via `cleanup_inbox_images()`.
 
 **Error Handling:**
-- Per-step failures are retried up to 3 times before aborting the remaining steps.
+- Per-step failures are retried up to 3 times before continuing to the next step.
 - Provider errors are logged and a user-friendly error message is sent.
+
+#### `async fn process_markers(&self, incoming: &IncomingMessage, text: &mut String)`
+**Purpose:** Extract and process all markers from a provider response text. Unified method called by both `handle_message` (direct path) and `execute_steps` (multi-step path) to ensure markers work in all execution modes.
+
+**Markers processed (in order):**
+1. SCHEDULE — create reminder task
+2. SCHEDULE_ACTION — create action task
+3. PROJECT_ACTIVATE / PROJECT_DEACTIVATE — activate/deactivate project
+4. WHATSAPP_QR — trigger WhatsApp QR pairing
+5. LANG_SWITCH — persist language preference
+6. HEARTBEAT_ADD / HEARTBEAT_REMOVE — update heartbeat checklist
+7. LIMITATION — store limitation, alert owner, add to heartbeat
+8. SELF_HEAL — create/update self-healing state, notify owner, schedule verification
+9. SELF_HEAL_RESOLVED — delete self-healing state, notify owner
+
+**Logic:** For each marker type: extract from text, process side effects (DB writes, notifications, file updates), strip the marker from text. Mutates `text` in place.
 
 ## Free Functions (Module-Level Helpers)
 
@@ -1141,8 +1124,9 @@ All interactions are logged to SQLite with:
 29. Classify-and-route: every message triggers a context-enriched classification call (using the fast model with active project, last 3 messages, and skill names); DIRECT messages use `model_fast`, multi-step plans use `model_complex`. Multi-step plans are executed autonomously with per-step progress, retry (up to 3 attempts), and a final summary.
 30. Planning steps are tracked in-memory (ephemeral) and are not persisted to the database.
 31. Model routing: `context.model` is set by classify-and-route before the provider call. The provider resolves the effective model via `context.model.as_deref().unwrap_or(&self.model)`.
-32. SELF_HEAL: markers (format: `SELF_HEAL: description | verification test`) are processed after LIMITATION markers. The gateway parses both description and verification test, creates or updates `~/.omega/self-healing.json` (including the `verification` field), enforces max 10 iterations in code, schedules follow-up action tasks (2 min delay) with the verification test embedded in the prompt, and sends owner notifications via heartbeat channel. At max iterations, sends escalation alert and preserves state file. Both `handle_message` and `scheduler_loop` process these markers.
-33. SELF_HEAL_RESOLVED markers trigger deletion of `~/.omega/self-healing.json` and send a resolution notification to the owner via heartbeat channel. Processed in both `handle_message` and `scheduler_loop`.
+32. SELF_HEAL: markers (format: `SELF_HEAL: description | verification test`) are processed after LIMITATION markers. The gateway parses both description and verification test, creates or updates `~/.omega/self-healing.json` (including the `verification` field), enforces max 10 iterations in code, schedules follow-up action tasks (2 min delay) with the verification test embedded in the prompt, and sends owner notifications via heartbeat channel. At max iterations, sends escalation alert and preserves state file. Processed in `handle_message` (direct), `execute_steps` (multi-step), and `scheduler_loop` — all via `process_markers()`.
+33. SELF_HEAL_RESOLVED markers trigger deletion of `~/.omega/self-healing.json` and send a resolution notification to the owner via heartbeat channel. Processed in `handle_message` (direct), `execute_steps` (multi-step), and `scheduler_loop` — all via `process_markers()`.
+34. All response markers (SCHEDULE, SCHEDULE_ACTION, PROJECT, LANG_SWITCH, HEARTBEAT, LIMITATION, SELF_HEAL, SELF_HEAL_RESOLVED) are processed via the unified `process_markers()` method, ensuring they work in both the direct response path (`handle_message`) and the multi-step execution path (`execute_steps`).
 
 ## Tests
 

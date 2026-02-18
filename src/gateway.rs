@@ -1309,317 +1309,9 @@ impl Gateway {
             return;
         }
 
-        // --- 5b. EXTRACT SCHEDULE MARKER ---
+        // --- 5. PROCESS MARKERS ---
         let mut response = response;
-        if let Some(schedule_line) = extract_schedule_marker(&response.text) {
-            if let Some((desc, due_at, repeat)) = parse_schedule_line(&schedule_line) {
-                let reply_target = incoming.reply_target.as_deref().unwrap_or("");
-                let repeat_opt = if repeat == "once" {
-                    None
-                } else {
-                    Some(repeat.as_str())
-                };
-                match self
-                    .memory
-                    .create_task(
-                        &incoming.channel,
-                        &incoming.sender_id,
-                        reply_target,
-                        &desc,
-                        &due_at,
-                        repeat_opt,
-                        "reminder",
-                    )
-                    .await
-                {
-                    Ok(id) => {
-                        info!("scheduled task {id}: {desc} at {due_at}");
-                    }
-                    Err(e) => {
-                        error!("failed to create scheduled task: {e}");
-                    }
-                }
-            }
-            // Strip the SCHEDULE: line from the response.
-            response.text = strip_schedule_marker(&response.text);
-        }
-
-        // --- 5b2. EXTRACT SCHEDULE_ACTION MARKER ---
-        if let Some(sched_line) = extract_schedule_action_marker(&response.text) {
-            if let Some((desc, due_at, repeat)) = parse_schedule_action_line(&sched_line) {
-                let reply_target = incoming.reply_target.as_deref().unwrap_or("");
-                let repeat_opt = if repeat == "once" {
-                    None
-                } else {
-                    Some(repeat.as_str())
-                };
-                match self
-                    .memory
-                    .create_task(
-                        &incoming.channel,
-                        &incoming.sender_id,
-                        reply_target,
-                        &desc,
-                        &due_at,
-                        repeat_opt,
-                        "action",
-                    )
-                    .await
-                {
-                    Ok(id) => {
-                        info!("scheduled action task {id}: {desc} at {due_at}");
-                    }
-                    Err(e) => {
-                        error!("failed to create action task: {e}");
-                    }
-                }
-            }
-            response.text = strip_schedule_action_markers(&response.text);
-        }
-
-        // --- 5c. EXTRACT PROJECT MARKER ---
-        if let Some(project_name) = extract_project_activate(&response.text) {
-            // Verify project exists on disk before activating.
-            let fresh_projects = omega_skills::load_projects(&self.data_dir);
-            if omega_skills::get_project_instructions(&fresh_projects, &project_name).is_some() {
-                if let Err(e) = self
-                    .memory
-                    .store_fact(&incoming.sender_id, "active_project", &project_name)
-                    .await
-                {
-                    error!("failed to activate project {project_name}: {e}");
-                } else {
-                    info!("project activated: {project_name}");
-                }
-            } else {
-                warn!("project activate marker for unknown project: {project_name}");
-            }
-            response.text = strip_project_markers(&response.text);
-        }
-        if has_project_deactivate(&response.text) {
-            if let Err(e) = self
-                .memory
-                .delete_fact(&incoming.sender_id, "active_project")
-                .await
-            {
-                error!("failed to deactivate project: {e}");
-            } else {
-                info!("project deactivated");
-            }
-            response.text = strip_project_markers(&response.text);
-        }
-
-        // --- 5e. EXTRACT WHATSAPP_QR MARKER ---
-        if has_whatsapp_qr_marker(&response.text) {
-            response.text = strip_whatsapp_qr_marker(&response.text);
-            self.handle_whatsapp_qr(&incoming).await;
-        }
-
-        // --- 5f. EXTRACT LANG_SWITCH MARKER ---
-        if let Some(lang) = extract_lang_switch(&response.text) {
-            if let Err(e) = self
-                .memory
-                .store_fact(&incoming.sender_id, "preferred_language", &lang)
-                .await
-            {
-                error!("failed to store language preference: {e}");
-            } else {
-                info!("language switched to '{lang}' for {}", incoming.sender_id);
-            }
-            response.text = strip_lang_switch(&response.text);
-        }
-
-        // --- 5g. EXTRACT HEARTBEAT_ADD / HEARTBEAT_REMOVE MARKERS ---
-        let heartbeat_actions = extract_heartbeat_markers(&response.text);
-        if !heartbeat_actions.is_empty() {
-            apply_heartbeat_changes(&heartbeat_actions);
-            for action in &heartbeat_actions {
-                match action {
-                    HeartbeatAction::Add(item) => {
-                        info!("heartbeat: added '{item}' to checklist");
-                    }
-                    HeartbeatAction::Remove(item) => {
-                        info!("heartbeat: removed '{item}' from checklist");
-                    }
-                }
-            }
-            response.text = strip_heartbeat_markers(&response.text);
-        }
-
-        // --- 5h. EXTRACT LIMITATION MARKER ---
-        if let Some(limitation_line) = extract_limitation_marker(&response.text) {
-            if let Some((title, description, plan)) = parse_limitation_line(&limitation_line) {
-                match self
-                    .memory
-                    .store_limitation(&title, &description, &plan)
-                    .await
-                {
-                    Ok(true) => {
-                        info!("limitation detected (new): {title}");
-                        // Send Telegram alert via heartbeat channel.
-                        let alert = format!(
-                            "LIMITATION DETECTED: {title}\n{description}\n\nProposed fix: {plan}"
-                        );
-                        if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
-                            let msg = OutgoingMessage {
-                                text: alert,
-                                metadata: MessageMetadata::default(),
-                                reply_target: Some(self.heartbeat_config.reply_target.clone()),
-                            };
-                            if let Err(e) = ch.send(msg).await {
-                                error!("limitation: failed to send alert: {e}");
-                            }
-                        }
-                        // Auto-add to heartbeat checklist.
-                        apply_heartbeat_changes(&[HeartbeatAction::Add(format!(
-                            "CRITICAL: {title} — {description}"
-                        ))]);
-                    }
-                    Ok(false) => {
-                        info!("limitation detected (duplicate): {title}");
-                    }
-                    Err(e) => {
-                        error!("failed to store limitation: {e}");
-                    }
-                }
-            }
-            response.text = strip_limitation_markers(&response.text);
-        }
-
-        // --- 5i. EXTRACT SELF_HEAL MARKER ---
-        if let Some(heal_line) = extract_self_heal_marker(&response.text) {
-            if let Some((description, verification)) = parse_self_heal_line(&heal_line) {
-                let mut state = read_self_healing_state().unwrap_or_else(|| SelfHealingState {
-                    anomaly: description.clone(),
-                    verification: verification.clone(),
-                    iteration: 0,
-                    max_iterations: 10,
-                    started_at: chrono::Utc::now().to_rfc3339(),
-                    attempts: Vec::new(),
-                });
-                state.iteration += 1;
-
-                if state.iteration > state.max_iterations {
-                    // Escalate to owner — max iterations reached.
-                    let alert = format!(
-                        "🚨 SELF-HEALING ESCALATION\n\n\
-                         Anomaly: {}\n\
-                         Iterations: {}/{}\n\
-                         Started: {}\n\n\
-                         Attempts:\n{}\n\n\
-                         Human intervention required.",
-                        state.anomaly,
-                        state.iteration,
-                        state.max_iterations,
-                        state.started_at,
-                        state
-                            .attempts
-                            .iter()
-                            .enumerate()
-                            .map(|(i, a)| format!("{}. {a}", i + 1))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    );
-                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
-                        let msg = OutgoingMessage {
-                            text: alert,
-                            metadata: MessageMetadata::default(),
-                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
-                        };
-                        if let Err(e) = ch.send(msg).await {
-                            error!("self-heal: failed to send escalation: {e}");
-                        }
-                    }
-                    // Keep file for owner review.
-                    if let Err(e) = write_self_healing_state(&state) {
-                        error!("self-heal: failed to write state: {e}");
-                    }
-                    info!(
-                        "self-heal: escalated after {} iterations: {}",
-                        state.iteration, state.anomaly
-                    );
-                } else {
-                    // Normal iteration — notify owner and schedule follow-up.
-                    if let Err(e) = write_self_healing_state(&state) {
-                        error!("self-heal: failed to write state: {e}");
-                    }
-                    let alert = format!(
-                        "🔧 SELF-HEALING ({}/{}): {}",
-                        state.iteration, state.max_iterations, state.anomaly
-                    );
-                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
-                        let msg = OutgoingMessage {
-                            text: alert,
-                            metadata: MessageMetadata::default(),
-                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
-                        };
-                        if let Err(e) = ch.send(msg).await {
-                            error!("self-heal: failed to send notification: {e}");
-                        }
-                    }
-                    // Schedule follow-up verification in 2 minutes.
-                    let due_at = (chrono::Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
-                    let heal_desc = format!(
-                        "Self-healing verification — read ~/.omega/self-healing.json for context. \
-                         Run this verification: {}. \
-                         If the test passes, emit SELF_HEAL_RESOLVED. \
-                         If it fails, diagnose the root cause, fix it, build+clippy until clean, \
-                         restart service, update the attempts array in self-healing.json, \
-                         and emit SELF_HEAL: {} | {} to continue.",
-                        state.verification, state.anomaly, state.verification
-                    );
-                    let reply_target = incoming.reply_target.as_deref().unwrap_or("");
-                    match self
-                        .memory
-                        .create_task(
-                            &incoming.channel,
-                            &incoming.sender_id,
-                            reply_target,
-                            &heal_desc,
-                            &due_at,
-                            None,
-                            "action",
-                        )
-                        .await
-                    {
-                        Ok(id) => {
-                            info!(
-                                "self-heal: scheduled verification task {id} (iteration {})",
-                                state.iteration
-                            );
-                        }
-                        Err(e) => {
-                            error!("self-heal: failed to schedule verification: {e}");
-                        }
-                    }
-                }
-            }
-            response.text = strip_self_heal_markers(&response.text);
-        }
-
-        // --- 5j. EXTRACT SELF_HEAL_RESOLVED MARKER ---
-        if has_self_heal_resolved_marker(&response.text) {
-            match delete_self_healing_state() {
-                Ok(()) => {
-                    info!("self-heal: anomaly resolved, state file deleted");
-                    let alert = "✅ Self-healing complete — anomaly resolved.".to_string();
-                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
-                        let msg = OutgoingMessage {
-                            text: alert,
-                            metadata: MessageMetadata::default(),
-                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
-                        };
-                        if let Err(e) = ch.send(msg).await {
-                            error!("self-heal: failed to send resolution notice: {e}");
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("self-heal: failed to delete state file: {e}");
-                }
-            }
-            response.text = strip_self_heal_markers(&response.text);
-        }
+        self.process_markers(&incoming, &mut response.text).await;
 
         // --- 6. STORE IN MEMORY ---
         if let Err(e) = self.memory.store_exchange(&incoming, &response).await {
@@ -1931,7 +1623,10 @@ impl Gateway {
             }
 
             match step_result {
-                Some(step_resp) => {
+                Some(mut step_resp) => {
+                    // Process markers on each step result.
+                    self.process_markers(incoming, &mut step_resp.text).await;
+
                     completed_summary.push_str(&format!("- Step {step_num}: {step} (done)\n"));
 
                     // Send progress update.
@@ -1970,6 +1665,298 @@ impl Gateway {
         // Cleanup inbox images.
         if !inbox_images.is_empty() {
             cleanup_inbox_images(inbox_images);
+        }
+    }
+
+    /// Extract and process all markers from a provider response text.
+    ///
+    /// Handles: SCHEDULE, SCHEDULE_ACTION, PROJECT_ACTIVATE/DEACTIVATE,
+    /// WHATSAPP_QR, LANG_SWITCH, HEARTBEAT_ADD/REMOVE, LIMITATION,
+    /// SELF_HEAL, SELF_HEAL_RESOLVED. Strips processed markers from the text.
+    async fn process_markers(&self, incoming: &IncomingMessage, text: &mut String) {
+        // SCHEDULE
+        if let Some(schedule_line) = extract_schedule_marker(text) {
+            if let Some((desc, due_at, repeat)) = parse_schedule_line(&schedule_line) {
+                let reply_target = incoming.reply_target.as_deref().unwrap_or("");
+                let repeat_opt = if repeat == "once" {
+                    None
+                } else {
+                    Some(repeat.as_str())
+                };
+                match self
+                    .memory
+                    .create_task(
+                        &incoming.channel,
+                        &incoming.sender_id,
+                        reply_target,
+                        &desc,
+                        &due_at,
+                        repeat_opt,
+                        "reminder",
+                    )
+                    .await
+                {
+                    Ok(id) => info!("scheduled task {id}: {desc} at {due_at}"),
+                    Err(e) => error!("failed to create scheduled task: {e}"),
+                }
+            }
+            *text = strip_schedule_marker(text);
+        }
+
+        // SCHEDULE_ACTION
+        if let Some(sched_line) = extract_schedule_action_marker(text) {
+            if let Some((desc, due_at, repeat)) = parse_schedule_action_line(&sched_line) {
+                let reply_target = incoming.reply_target.as_deref().unwrap_or("");
+                let repeat_opt = if repeat == "once" {
+                    None
+                } else {
+                    Some(repeat.as_str())
+                };
+                match self
+                    .memory
+                    .create_task(
+                        &incoming.channel,
+                        &incoming.sender_id,
+                        reply_target,
+                        &desc,
+                        &due_at,
+                        repeat_opt,
+                        "action",
+                    )
+                    .await
+                {
+                    Ok(id) => info!("scheduled action task {id}: {desc} at {due_at}"),
+                    Err(e) => error!("failed to create action task: {e}"),
+                }
+            }
+            *text = strip_schedule_action_markers(text);
+        }
+
+        // PROJECT_ACTIVATE / PROJECT_DEACTIVATE
+        if let Some(project_name) = extract_project_activate(text) {
+            let fresh_projects = omega_skills::load_projects(&self.data_dir);
+            if omega_skills::get_project_instructions(&fresh_projects, &project_name).is_some() {
+                if let Err(e) = self
+                    .memory
+                    .store_fact(&incoming.sender_id, "active_project", &project_name)
+                    .await
+                {
+                    error!("failed to activate project {project_name}: {e}");
+                } else {
+                    info!("project activated: {project_name}");
+                }
+            } else {
+                warn!("project activate marker for unknown project: {project_name}");
+            }
+            *text = strip_project_markers(text);
+        }
+        if has_project_deactivate(text) {
+            if let Err(e) = self
+                .memory
+                .delete_fact(&incoming.sender_id, "active_project")
+                .await
+            {
+                error!("failed to deactivate project: {e}");
+            } else {
+                info!("project deactivated");
+            }
+            *text = strip_project_markers(text);
+        }
+
+        // WHATSAPP_QR
+        if has_whatsapp_qr_marker(text) {
+            *text = strip_whatsapp_qr_marker(text);
+            self.handle_whatsapp_qr(incoming).await;
+        }
+
+        // LANG_SWITCH
+        if let Some(lang) = extract_lang_switch(text) {
+            if let Err(e) = self
+                .memory
+                .store_fact(&incoming.sender_id, "preferred_language", &lang)
+                .await
+            {
+                error!("failed to store language preference: {e}");
+            } else {
+                info!("language switched to '{lang}' for {}", incoming.sender_id);
+            }
+            *text = strip_lang_switch(text);
+        }
+
+        // HEARTBEAT_ADD / HEARTBEAT_REMOVE
+        let heartbeat_actions = extract_heartbeat_markers(text);
+        if !heartbeat_actions.is_empty() {
+            apply_heartbeat_changes(&heartbeat_actions);
+            for action in &heartbeat_actions {
+                match action {
+                    HeartbeatAction::Add(item) => info!("heartbeat: added '{item}' to checklist"),
+                    HeartbeatAction::Remove(item) => {
+                        info!("heartbeat: removed '{item}' from checklist")
+                    }
+                }
+            }
+            *text = strip_heartbeat_markers(text);
+        }
+
+        // LIMITATION
+        if let Some(limitation_line) = extract_limitation_marker(text) {
+            if let Some((title, description, plan)) = parse_limitation_line(&limitation_line) {
+                match self
+                    .memory
+                    .store_limitation(&title, &description, &plan)
+                    .await
+                {
+                    Ok(true) => {
+                        info!("limitation detected (new): {title}");
+                        let alert = format!(
+                            "LIMITATION DETECTED: {title}\n{description}\n\nProposed fix: {plan}"
+                        );
+                        if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                            let msg = OutgoingMessage {
+                                text: alert,
+                                metadata: MessageMetadata::default(),
+                                reply_target: Some(self.heartbeat_config.reply_target.clone()),
+                            };
+                            if let Err(e) = ch.send(msg).await {
+                                error!("limitation: failed to send alert: {e}");
+                            }
+                        }
+                        apply_heartbeat_changes(&[HeartbeatAction::Add(format!(
+                            "CRITICAL: {title} — {description}"
+                        ))]);
+                    }
+                    Ok(false) => info!("limitation detected (duplicate): {title}"),
+                    Err(e) => error!("failed to store limitation: {e}"),
+                }
+            }
+            *text = strip_limitation_markers(text);
+        }
+
+        // SELF_HEAL
+        if let Some(heal_line) = extract_self_heal_marker(text) {
+            if let Some((description, verification)) = parse_self_heal_line(&heal_line) {
+                let mut state = read_self_healing_state().unwrap_or_else(|| SelfHealingState {
+                    anomaly: description.clone(),
+                    verification: verification.clone(),
+                    iteration: 0,
+                    max_iterations: 10,
+                    started_at: chrono::Utc::now().to_rfc3339(),
+                    attempts: Vec::new(),
+                });
+                state.iteration += 1;
+
+                if state.iteration > state.max_iterations {
+                    let alert = format!(
+                        "🚨 SELF-HEALING ESCALATION\n\n\
+                         Anomaly: {}\n\
+                         Iterations: {}/{}\n\
+                         Started: {}\n\n\
+                         Attempts:\n{}\n\n\
+                         Human intervention required.",
+                        state.anomaly,
+                        state.iteration,
+                        state.max_iterations,
+                        state.started_at,
+                        state
+                            .attempts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, a)| format!("{}. {a}", i + 1))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
+                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                        let msg = OutgoingMessage {
+                            text: alert,
+                            metadata: MessageMetadata::default(),
+                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
+                        };
+                        if let Err(e) = ch.send(msg).await {
+                            error!("self-heal: failed to send escalation: {e}");
+                        }
+                    }
+                    if let Err(e) = write_self_healing_state(&state) {
+                        error!("self-heal: failed to write state: {e}");
+                    }
+                    info!(
+                        "self-heal: escalated after {} iterations: {}",
+                        state.iteration, state.anomaly
+                    );
+                } else {
+                    if let Err(e) = write_self_healing_state(&state) {
+                        error!("self-heal: failed to write state: {e}");
+                    }
+                    let alert = format!(
+                        "🔧 SELF-HEALING ({}/{}): {}",
+                        state.iteration, state.max_iterations, state.anomaly
+                    );
+                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                        let msg = OutgoingMessage {
+                            text: alert,
+                            metadata: MessageMetadata::default(),
+                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
+                        };
+                        if let Err(e) = ch.send(msg).await {
+                            error!("self-heal: failed to send notification: {e}");
+                        }
+                    }
+                    let due_at = (chrono::Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
+                    let heal_desc = format!(
+                        "Self-healing verification — read ~/.omega/self-healing.json for context. \
+                         Run this verification: {}. \
+                         If the test passes, emit SELF_HEAL_RESOLVED. \
+                         If it fails, diagnose the root cause, fix it, build+clippy until clean, \
+                         restart service, update the attempts array in self-healing.json, \
+                         and emit SELF_HEAL: {} | {} to continue.",
+                        state.verification, state.anomaly, state.verification
+                    );
+                    let reply_target = incoming.reply_target.as_deref().unwrap_or("");
+                    match self
+                        .memory
+                        .create_task(
+                            &incoming.channel,
+                            &incoming.sender_id,
+                            reply_target,
+                            &heal_desc,
+                            &due_at,
+                            None,
+                            "action",
+                        )
+                        .await
+                    {
+                        Ok(id) => {
+                            info!(
+                                "self-heal: scheduled verification task {id} (iteration {})",
+                                state.iteration
+                            );
+                        }
+                        Err(e) => error!("self-heal: failed to schedule verification: {e}"),
+                    }
+                }
+            }
+            *text = strip_self_heal_markers(text);
+        }
+
+        // SELF_HEAL_RESOLVED
+        if has_self_heal_resolved_marker(text) {
+            match delete_self_healing_state() {
+                Ok(()) => {
+                    info!("self-heal: anomaly resolved, state file deleted");
+                    let alert = "✅ Self-healing complete — anomaly resolved.".to_string();
+                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                        let msg = OutgoingMessage {
+                            text: alert,
+                            metadata: MessageMetadata::default(),
+                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
+                        };
+                        if let Err(e) = ch.send(msg).await {
+                            error!("self-heal: failed to send resolution notice: {e}");
+                        }
+                    }
+                }
+                Err(e) => error!("self-heal: failed to delete state file: {e}"),
+            }
+            *text = strip_self_heal_markers(text);
         }
     }
 
@@ -3501,7 +3488,8 @@ mod tests {
     /// Verifies verification test with pipes inside it (only first | splits).
     #[test]
     fn test_self_heal_verification_with_internal_pipes() {
-        let line = "SELF_HEAL: DB error | run sqlite3 ~/.omega/memory.db 'SELECT count(*) | grep -v 0'";
+        let line =
+            "SELF_HEAL: DB error | run sqlite3 ~/.omega/memory.db 'SELECT count(*) | grep -v 0'";
         let (desc, verif) = parse_self_heal_line(line).unwrap();
         assert_eq!(desc, "DB error");
         assert_eq!(

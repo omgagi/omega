@@ -171,7 +171,7 @@ The file is created on first `SELF_HEAL:` detection, updated after each iteratio
 
 ### Processing Locations
 
-Both `handle_message` (Stages 5i/5j) and `scheduler_loop` process these markers, ensuring self-healing works whether triggered by a direct message response or an action task response.
+`handle_message` (direct path), `execute_steps` (multi-step path), and `scheduler_loop` all process these markers via the unified `process_markers()` method, ensuring self-healing works whether triggered by a direct response, a multi-step plan step, or an action task response.
 
 ### Safety Guardrails
 
