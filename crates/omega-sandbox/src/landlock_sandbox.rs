@@ -11,16 +11,17 @@ use tokio::process::Command;
 use tracing::warn;
 
 use landlock::{
-    path_beneath_rules, Access, AccessFs, Ruleset, RulesetAttr, RulesetCreatedAttr, ABI,
+    path_beneath_rules, Access, AccessFs, BitFlags, Ruleset, RulesetAttr, RulesetCreatedAttr,
+    RulesetStatus, ABI,
 };
 
 /// All read-related filesystem access flags.
-fn read_access() -> AccessFs {
+fn read_access() -> BitFlags<AccessFs> {
     AccessFs::ReadFile | AccessFs::ReadDir | AccessFs::Execute | AccessFs::Refer
 }
 
 /// All filesystem access flags (read + write).
-fn full_access() -> AccessFs {
+fn full_access() -> BitFlags<AccessFs> {
     AccessFs::from_all(ABI::V5)
 }
 
@@ -59,7 +60,6 @@ fn apply_landlock(
     claude_dir: &Path,
     cargo_dir: &Path,
 ) -> Result<(), anyhow::Error> {
-    let abi = ABI::V5;
     let status = Ruleset::default()
         .handle_access(full_access())?
         .create()?
@@ -75,7 +75,7 @@ fn apply_landlock(
         .add_rules(path_beneath_rules(&[cargo_dir], full_access()))?
         .restrict_self()?;
 
-    if !status.ruleset.is_fully_enforced() {
+    if status.ruleset != RulesetStatus::FullyEnforced {
         warn!(
             "landlock: not all restrictions enforced (kernel may lack full support); \
              best-effort sandbox active"
