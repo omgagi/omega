@@ -1147,14 +1147,16 @@ impl Gateway {
     /// or single-step plans).
     async fn plan_task(&self, message: &str) -> Option<Vec<String>> {
         let planning_prompt = format!(
-            "Analyze this request. If it's a simple question, greeting, or single-action request, \
-             respond with exactly: DIRECT\n\
+            "You are a task classifier. Do NOT use any tools — respond with text only.\n\n\
+             If this request is a simple question, greeting, or single-action task, respond \
+             with exactly: DIRECT\n\
              If it requires multiple independent steps, respond with ONLY a numbered list of \
              small self-contained steps. Nothing else.\n\n\
              Request: {message}"
         );
 
-        let ctx = Context::new(&planning_prompt);
+        let mut ctx = Context::new(&planning_prompt);
+        ctx.max_turns = Some(5);
         match self.provider.complete(&ctx).await {
             Ok(resp) => parse_plan_response(&resp.text),
             Err(e) => {

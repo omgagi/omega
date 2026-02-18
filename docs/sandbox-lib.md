@@ -41,13 +41,14 @@ The claude CLI process needs to read system files (node.js, shared libraries, et
 
 ---
 
-## The Workspace Directory
+## The Data Directory
 
-The sandbox centers around a single concept: the **workspace directory** at `~/.omega/workspace/`. This directory is:
+The sandbox centers around the **Omega data directory** at `~/.omega/`. This directory contains the workspace, skills, projects, and all other Omega data. The entire tree is writable under sandbox enforcement.
+
+The **workspace** subdirectory (`~/.omega/workspace/`) is:
 
 - **Created on startup** by `main.rs` if it does not already exist.
 - **Set as `current_dir`** for the Claude Code CLI subprocess.
-- **Always writable** regardless of sandbox mode.
 
 ---
 
@@ -55,15 +56,15 @@ The sandbox centers around a single concept: the **workspace directory** at `~/.
 
 | Mode | OS Write Restriction | Prompt Read Restriction | Use Case |
 |------|---------------------|------------------------|----------|
-| `Sandbox` | Writes only to workspace + /tmp + ~/.claude | Reads only in workspace | Default. Maximum isolation. |
-| `Rx` | Writes only to workspace + /tmp + ~/.claude | Reads anywhere | System inspection. |
+| `Sandbox` | Writes only to ~/.omega/ + /tmp + ~/.claude | Reads only in workspace | Default. Maximum isolation. |
+| `Rx` | Writes only to ~/.omega/ + /tmp + ~/.claude | Reads anywhere | System inspection. |
 | `Rwx` | None (unrestricted) | None (unrestricted) | Power users. |
 
 ### Permitted Write Directories (Sandbox and Rx modes)
 
 | Directory | Purpose |
 |-----------|---------|
-| `~/.omega/workspace/` | AI's working directory |
+| `~/.omega/` | Omega data directory (workspace, skills, projects, etc.) |
 | `/tmp` | Temporary files |
 | `/private/var/folders` (macOS) | macOS temp directories |
 | `~/.claude` | Claude CLI session data |
@@ -123,7 +124,7 @@ User message arrives via channel
 Gateway pipeline: auth → sanitize → sandbox prompt injection → context → provider
     │
     ▼
-Provider calls omega_sandbox::sandboxed_command("claude", mode, workspace)
+Provider calls omega_sandbox::sandboxed_command("claude", mode, data_dir)
     │
     ▼
 OS-level enforcement applied:

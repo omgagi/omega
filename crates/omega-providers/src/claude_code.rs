@@ -154,8 +154,17 @@ impl Provider for ClaudeCodeProvider {
 
         let extra_tools = mcp_tool_patterns(&context.mcp_servers);
 
+        // Resolve effective max_turns and allowed_tools from context overrides.
+        let effective_max_turns = context.max_turns.unwrap_or(self.max_turns);
+        let effective_tools: Vec<String> = context
+            .allowed_tools
+            .clone()
+            .unwrap_or_else(|| self.allowed_tools.clone());
+
         // First call with original prompt.
-        let result = self.run_cli(&prompt, &extra_tools).await;
+        let result = self
+            .run_cli(&prompt, &extra_tools, effective_max_turns, &effective_tools)
+            .await;
 
         // Always cleanup MCP settings, regardless of success or failure.
         if let Some(ref path) = mcp_settings_path {
@@ -167,8 +176,11 @@ impl Provider for ClaudeCodeProvider {
         let (mut text, mut model) = self.parse_response(&stdout);
 
         // Auto-resume: if Claude hit max_turns and returned a session_id, retry.
+        // Skip auto-resume when max_turns was explicitly set by the caller (e.g., planning calls).
         let parsed: Option<ClaudeCliResponse> = serde_json::from_str(&stdout).ok();
-        if let Some(ref resp) = parsed {
+        if context.max_turns.is_some() {
+            // Explicit max_turns override — caller controls the limit, no auto-resume.
+        } else if let Some(ref resp) = parsed {
             if resp.subtype.as_deref() == Some("error_max_turns") {
                 if let Some(ref session_id) = resp.session_id {
                     let mut accumulated = text.clone();
@@ -185,6 +197,8 @@ impl Provider for ClaudeCodeProvider {
                                 "Continue where you left off. Complete the remaining work.",
                                 &extra_tools,
                                 &resume_session,
+                                effective_max_turns,
+                                &effective_tools,
                             )
                             .await;
 
@@ -252,10 +266,15 @@ impl ClaudeCodeProvider {
         &self,
         prompt: &str,
         extra_allowed_tools: &[String],
+        max_turns: u32,
+        allowed_tools: &[String],
     ) -> Result<std::process::Output, OmegaError> {
         let mut cmd = match self.working_dir {
             Some(ref dir) => {
-                let mut c = omega_sandbox::sandboxed_command("claude", self.sandbox_mode, dir);
+                // Sandbox protects the data dir (parent of workspace) so
+                // skills, projects, etc. are writable — not just workspace.
+                let data_dir = dir.parent().unwrap_or(dir);
+                let mut c = omega_sandbox::sandboxed_command("claude", self.sandbox_mode, data_dir);
                 c.current_dir(dir);
                 c
             }
@@ -269,18 +288,17 @@ impl ClaudeCodeProvider {
             .arg("--output-format")
             .arg("json")
             .arg("--max-turns")
-            .arg(self.max_turns.to_string());
+            .arg(max_turns.to_string());
 
         // Session continuity.
         if let Some(ref session) = self.session_id {
             cmd.arg("--session-id").arg(session);
         }
 
-        // Allowed tools.
-        for tool in &self.allowed_tools {
+        // Allowed tools — only pass the flag when there are explicit entries.
+        for tool in allowed_tools {
             cmd.arg("--allowedTools").arg(tool);
         }
-        // MCP tool patterns from skill triggers.
         for tool in extra_allowed_tools {
             cmd.arg("--allowedTools").arg(tool);
         }
@@ -314,10 +332,15 @@ impl ClaudeCodeProvider {
         prompt: &str,
         extra_allowed_tools: &[String],
         session_id: &str,
+        max_turns: u32,
+        allowed_tools: &[String],
     ) -> Result<std::process::Output, OmegaError> {
         let mut cmd = match self.working_dir {
             Some(ref dir) => {
-                let mut c = omega_sandbox::sandboxed_command("claude", self.sandbox_mode, dir);
+                // Sandbox protects the data dir (parent of workspace) so
+                // skills, projects, etc. are writable — not just workspace.
+                let data_dir = dir.parent().unwrap_or(dir);
+                let mut c = omega_sandbox::sandboxed_command("claude", self.sandbox_mode, data_dir);
                 c.current_dir(dir);
                 c
             }
@@ -330,11 +353,11 @@ impl ClaudeCodeProvider {
             .arg("--output-format")
             .arg("json")
             .arg("--max-turns")
-            .arg(self.max_turns.to_string())
+            .arg(max_turns.to_string())
             .arg("--session-id")
             .arg(session_id);
 
-        for tool in &self.allowed_tools {
+        for tool in allowed_tools {
             cmd.arg("--allowedTools").arg(tool);
         }
         for tool in extra_allowed_tools {

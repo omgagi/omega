@@ -20,7 +20,7 @@ The crate exports a single public function, `sandboxed_command()`, which takes a
 
 | Layer | Mechanism | Scope |
 |-------|-----------|-------|
-| **OS-level** (this crate) | Seatbelt (macOS) / Landlock (Linux) | Restricts file **writes** to workspace + `/tmp` + `~/.claude` |
+| **OS-level** (this crate) | Seatbelt (macOS) / Landlock (Linux) | Restricts file **writes** to data dir (`~/.omega/`) + `/tmp` + `~/.claude` |
 | **Prompt-level** (omega-core) | System prompt injection via `SandboxMode::prompt_constraint()` | Restricts file **reads** in Sandbox mode |
 
 The OS sandbox restricts writes only. The claude CLI process needs to read system files, node.js runtime, etc. Read restriction in Sandbox mode stays prompt-level.
@@ -28,7 +28,7 @@ The OS sandbox restricts writes only. The claude CLI process needs to read syste
 ### Platform Dispatch
 
 ```
-sandboxed_command(program, mode, workspace)
+sandboxed_command(program, mode, data_dir)
   │
   ├── Rwx → plain Command::new(program)
   │
@@ -50,16 +50,18 @@ sandboxed_command(program, mode, workspace)
 **Public function:**
 
 ```rust
-pub fn sandboxed_command(program: &str, mode: SandboxMode, workspace: &Path) -> Command
+pub fn sandboxed_command(program: &str, mode: SandboxMode, data_dir: &Path) -> Command
 ```
 
 - `Rwx` → plain `Command::new(program)` (no restrictions)
 - `Sandbox` / `Rx` → delegates to `platform_command()`
 
+`data_dir` is the Omega data directory (e.g. `~/.omega/`) — writes are allowed to the entire tree (workspace, skills, projects, etc.).
+
 **Internal function:**
 
 ```rust
-fn platform_command(program: &str, workspace: &Path) -> Command
+fn platform_command(program: &str, data_dir: &Path) -> Command
 ```
 
 Platform-dispatched via `#[cfg]` attributes.
@@ -74,7 +76,7 @@ Uses Apple's Seatbelt framework via `sandbox-exec -p <profile>`.
 (allow default)
 (deny file-write*)
 (allow file-write*
-  (subpath "{workspace}")
+  (subpath "{data_dir}")
   (subpath "/private/tmp")
   (subpath "/private/var/folders")
   (subpath "{home}/.claude")
@@ -89,7 +91,7 @@ Uses the Landlock LSM (kernel 5.13+) via the `landlock` crate. Applied in a `pre
 
 **Access rules:**
 - Read + execute on `/` (entire filesystem)
-- Full access to workspace, `/tmp`, `~/.claude`
+- Full access to data dir (`~/.omega/`), `/tmp`, `~/.claude`
 
 **Fallback:** If the kernel does not support Landlock or enforcement is partial, logs a warning and continues with best-effort restrictions.
 
@@ -147,7 +149,7 @@ For both Sandbox and Rx modes, OS enforcement allows writes to:
 
 | Directory | Reason |
 |-----------|--------|
-| `~/.omega/workspace/` | AI's working directory |
+| `~/.omega/` | Omega data directory (workspace, skills, projects, etc.) |
 | `/tmp` (macOS: `/private/tmp`) | Temporary files |
 | `/private/var/folders` (macOS only) | macOS temp directories |
 | `~/.claude` | Claude CLI session data |
@@ -160,7 +162,7 @@ For both Sandbox and Rx modes, OS enforcement allows writes to:
 - `test_rx_mode_returns_command` — Rx mode returns a valid command
 
 ### `seatbelt.rs` tests (4, macOS only)
-- `test_profile_contains_workspace` — profile includes workspace path
+- `test_profile_contains_data_dir` — profile includes data directory path
 - `test_profile_denies_writes_then_allows` — profile has deny + allow structure
 - `test_profile_allows_claude_dir` — profile includes ~/.claude
 - `test_command_structure` — command program is sandbox-exec or claude (fallback)

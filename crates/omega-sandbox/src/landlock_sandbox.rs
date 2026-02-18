@@ -2,6 +2,8 @@
 //!
 //! Uses the `landlock` crate to restrict file writes in the child process
 //! via a `pre_exec` hook. Requires Linux kernel 5.13+ with Landlock enabled.
+//! Writes are allowed to the Omega data directory (`~/.omega/`), `/tmp`,
+//! and `~/.claude`.
 
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -26,12 +28,12 @@ fn full_access() -> AccessFs {
 ///
 /// The child process will be allowed to:
 /// - Read and execute from the entire filesystem (`/`)
-/// - Read, write, and create files in `workspace`, `/tmp`, and `~/.claude`
+/// - Read, write, and create files in `data_dir` (`~/.omega/`), `/tmp`, and `~/.claude`
 ///
 /// If the kernel does not support Landlock, logs a warning and falls back
 /// to a plain command.
-pub(crate) fn sandboxed_command(program: &str, workspace: &Path) -> Command {
-    let workspace = workspace.to_path_buf();
+pub(crate) fn sandboxed_command(program: &str, data_dir: &Path) -> Command {
+    let data_dir = data_dir.to_path_buf();
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let claude_dir = PathBuf::from(&home).join(".claude");
 
@@ -41,7 +43,7 @@ pub(crate) fn sandboxed_command(program: &str, workspace: &Path) -> Command {
     // the landlock crate (which uses syscalls), no async or allocator abuse.
     unsafe {
         cmd.pre_exec(move || {
-            apply_landlock(&workspace, &claude_dir).map_err(|e| {
+            apply_landlock(&data_dir, &claude_dir).map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string())
             })
         });
@@ -51,15 +53,15 @@ pub(crate) fn sandboxed_command(program: &str, workspace: &Path) -> Command {
 }
 
 /// Apply Landlock restrictions to the current process.
-fn apply_landlock(workspace: &Path, claude_dir: &Path) -> Result<(), anyhow::Error> {
+fn apply_landlock(data_dir: &Path, claude_dir: &Path) -> Result<(), anyhow::Error> {
     let abi = ABI::V5;
     let status = Ruleset::default()
         .handle_access(full_access())?
         .create()?
         // Read + execute on entire filesystem.
         .add_rules(path_beneath_rules(&[PathBuf::from("/")], read_access()))?
-        // Full access to workspace.
-        .add_rules(path_beneath_rules(&[workspace], full_access()))?
+        // Full access to Omega data directory (workspace, skills, projects, etc.).
+        .add_rules(path_beneath_rules(&[data_dir], full_access()))?
         // Full access to /tmp.
         .add_rules(path_beneath_rules(&[PathBuf::from("/tmp")], full_access()))?
         // Full access to ~/.claude.

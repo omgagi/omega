@@ -1,7 +1,7 @@
 //! macOS Seatbelt (sandbox-exec) enforcement.
 //!
 //! Wraps a command with `sandbox-exec -p <profile>` to restrict file writes
-//! to the workspace, `/tmp`, and `~/.claude` directories.
+//! to the Omega data directory (`~/.omega/`), `/tmp`, and `~/.claude`.
 
 use std::path::Path;
 use tokio::process::Command;
@@ -12,8 +12,8 @@ const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
 /// Generate a Seatbelt profile that allows all operations except file writes
 /// outside the permitted directories.
-fn build_profile(workspace: &Path) -> String {
-    let workspace_str = workspace.display();
+fn build_profile(data_dir: &Path) -> String {
+    let data_dir_str = data_dir.display();
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
 
     format!(
@@ -21,7 +21,7 @@ fn build_profile(workspace: &Path) -> String {
 (allow default)
 (deny file-write*)
 (allow file-write*
-  (subpath "{workspace_str}")
+  (subpath "{data_dir_str}")
   (subpath "/private/tmp")
   (subpath "/private/var/folders")
   (subpath "{home}/.claude")
@@ -31,15 +31,18 @@ fn build_profile(workspace: &Path) -> String {
 
 /// Build a [`Command`] wrapped with `sandbox-exec` write restrictions.
 ///
+/// `data_dir` is the Omega data directory (e.g. `~/.omega/`) — writes are
+/// allowed to the entire tree (workspace, skills, projects, etc.).
+///
 /// If `/usr/bin/sandbox-exec` does not exist, logs a warning and returns
 /// a plain command without OS-level enforcement.
-pub(crate) fn sandboxed_command(program: &str, workspace: &Path) -> Command {
+pub(crate) fn sandboxed_command(program: &str, data_dir: &Path) -> Command {
     if !Path::new(SANDBOX_EXEC).exists() {
         warn!("sandbox-exec not found at {SANDBOX_EXEC}; falling back to prompt-only sandbox");
         return Command::new(program);
     }
 
-    let profile = build_profile(workspace);
+    let profile = build_profile(data_dir);
     let mut cmd = Command::new(SANDBOX_EXEC);
     cmd.arg("-p").arg(profile).arg("--").arg(program);
     cmd
@@ -51,10 +54,10 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_profile_contains_workspace() {
-        let ws = PathBuf::from("/home/user/.omega/workspace");
-        let profile = build_profile(&ws);
-        assert!(profile.contains("/home/user/.omega/workspace"));
+    fn test_profile_contains_data_dir() {
+        let data_dir = PathBuf::from("/home/user/.omega");
+        let profile = build_profile(&data_dir);
+        assert!(profile.contains("/home/user/.omega"));
     }
 
     #[test]

@@ -3,7 +3,8 @@
 //! OS-level filesystem enforcement for the Omega agent.
 //!
 //! Provides [`sandboxed_command`] which wraps a program in platform-native
-//! write restrictions:
+//! write restrictions. Writes are allowed to the Omega data directory
+//! (`~/.omega/`), `/tmp`, and `~/.claude`.
 //!
 //! - **macOS**: Apple Seatbelt via `sandbox-exec -p <profile>`
 //! - **Linux**: Landlock LSM via `pre_exec` hook (kernel 5.13+)
@@ -26,31 +27,34 @@ mod landlock_sandbox;
 ///
 /// - `Rwx` → plain `Command::new(program)` (no restrictions)
 /// - `Sandbox` / `Rx` → platform-specific write restrictions (writes only to
-///   workspace, `/tmp`, `~/.claude`)
+///   `data_dir` (`~/.omega/`), `/tmp`, `~/.claude`)
+///
+/// `data_dir` is the Omega data directory — writes are allowed to the entire
+/// tree (workspace, skills, projects, etc.).
 ///
 /// On unsupported platforms, logs a warning and returns a plain command.
-pub fn sandboxed_command(program: &str, mode: SandboxMode, workspace: &Path) -> Command {
+pub fn sandboxed_command(program: &str, mode: SandboxMode, data_dir: &Path) -> Command {
     match mode {
         SandboxMode::Rwx => Command::new(program),
-        SandboxMode::Sandbox | SandboxMode::Rx => platform_command(program, workspace),
+        SandboxMode::Sandbox | SandboxMode::Rx => platform_command(program, data_dir),
     }
 }
 
 /// Dispatch to the platform-specific sandbox implementation.
 #[cfg(target_os = "macos")]
-fn platform_command(program: &str, workspace: &Path) -> Command {
-    seatbelt::sandboxed_command(program, workspace)
+fn platform_command(program: &str, data_dir: &Path) -> Command {
+    seatbelt::sandboxed_command(program, data_dir)
 }
 
 /// Dispatch to the platform-specific sandbox implementation.
 #[cfg(target_os = "linux")]
-fn platform_command(program: &str, workspace: &Path) -> Command {
-    landlock_sandbox::sandboxed_command(program, workspace)
+fn platform_command(program: &str, data_dir: &Path) -> Command {
+    landlock_sandbox::sandboxed_command(program, data_dir)
 }
 
 /// Fallback for unsupported platforms.
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn platform_command(program: &str, _workspace: &Path) -> Command {
+fn platform_command(program: &str, _data_dir: &Path) -> Command {
     warn!("OS-level sandbox not available on this platform; using prompt-only enforcement");
     Command::new(program)
 }

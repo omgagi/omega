@@ -32,6 +32,14 @@ pub struct Context {
     /// MCP servers to activate for this request.
     #[serde(default)]
     pub mcp_servers: Vec<McpServer>,
+    /// Override the provider's default max_turns. When `Some`, the provider
+    /// uses this value instead of its configured default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_turns: Option<u32>,
+    /// Override the provider's default allowed tools. When `Some`, the provider
+    /// uses this list instead of its configured default. `Some(vec![])` = no tools.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
 }
 
 impl Context {
@@ -42,6 +50,8 @@ impl Context {
             history: Vec::new(),
             current_message: message.to_string(),
             mcp_servers: Vec::new(),
+            max_turns: None,
+            allowed_tools: None,
         }
     }
 
@@ -111,6 +121,8 @@ mod tests {
                 command: "npx".into(),
                 args: vec!["@playwright/mcp".into()],
             }],
+            max_turns: None,
+            allowed_tools: None,
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let deserialized: Context = serde_json::from_str(&json).unwrap();
