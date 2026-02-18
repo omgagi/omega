@@ -115,8 +115,8 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
 1. Match on `cfg.provider.default` (string key from config)
 2. **"claude-code" case:**
    - Clone Claude Code provider config (or use defaults)
-   - Extract `max_turns`, `allowed_tools`, `timeout_secs`, and `max_resume_attempts` settings
-   - Construct `ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, workspace_path, cc.max_resume_attempts)`
+   - Extract `max_turns`, `allowed_tools`, `timeout_secs`, `max_resume_attempts`, and `model` settings
+   - Construct `ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, workspace_path, cc.max_resume_attempts, cc.model)`
    - Return boxed trait object
 3. **Any other provider name:** bail with "unsupported provider" error
 
@@ -247,7 +247,7 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
    - Projects are hot-reloaded per message in the gateway, not loaded at startup.
 
 8. **Start gateway**
-   - Create Gateway instance with provider, channels, memory, auth, channel config, projects, sandbox mode display name, and sandbox prompt
+   - Create Gateway instance with provider, channels, memory, auth, channel config, projects, sandbox mode display name, sandbox prompt, `model_fast`, and `model_complex`
    - Wrap gateway in `Arc::new()` for shared ownership across spawned tasks
    - Call `gw.run().await?` to enter event loop (method takes `self: Arc<Self>`)
    - Blocks indefinitely processing messages from channels
@@ -319,9 +319,11 @@ Loads TOML from file, merges environment variable overrides.
 ### Provider Config
 ```rust
 let cc = cfg.provider.claude_code.as_ref().cloned().unwrap_or_default();
-ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, workspace_path, cc.max_resume_attempts)
+let model_fast = cc.model.clone();
+let model_complex = cc.model_complex.clone();
+ClaudeCodeProvider::from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, workspace_path, cc.max_resume_attempts, cc.model)
 ```
-Extracts provider-specific settings (including `timeout_secs` and `max_resume_attempts`) and passes the workspace path for sandbox confinement; provides defaults if not specified.
+Extracts provider-specific settings (including `timeout_secs`, `max_resume_attempts`, `model`, and `model_complex`) and passes the workspace path for sandbox confinement; provides defaults if not specified. The `model_fast` and `model_complex` values are extracted from the config before building the provider, then passed to `Gateway::new()` for model routing.
 
 ### Channel Config
 ```rust

@@ -314,11 +314,13 @@ Omega is designed to support multiple AI providers. Currently, **Claude Code CLI
 
 When you run `omega start`:
 1. The code reads `provider.default` from config (currently only "claude-code" supported)
-2. Extracts provider-specific settings (max_turns, allowed_tools, timeout_secs)
+2. Extracts provider-specific settings (max_turns, allowed_tools, timeout_secs, model, model_complex)
 3. Resolves the workspace directory (`~/.omega/workspace/`) and ensures it exists
 4. Logs the active sandbox mode (sandbox, rx, or rwx)
-5. Creates a ClaudeCodeProvider instance by calling `from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, Some(workspace_dir))`
-6. The provider handles the actual Claude API calls
+5. Extracts `model_fast` (from `cc.model`, default `"claude-sonnet-4-6"`) and `model_complex` (from `cc.model_complex`, default `"claude-opus-4-6"`) from the Claude Code config
+6. Creates a ClaudeCodeProvider instance by calling `from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, Some(workspace_dir), cc.max_resume_attempts, model_fast.clone())`
+7. Passes `model_fast` and `model_complex` to the Gateway so it can route between models during classification
+8. The provider handles the actual Claude API calls
 
 **Future providers** (planned): Anthropic API, OpenAI, Ollama, OpenRouter. The factory function `build_provider()` makes adding new providers straightforward.
 

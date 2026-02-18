@@ -36,6 +36,8 @@ pub struct ClaudeCodeProvider {
     sandbox_mode: SandboxMode,
     /// Max auto-resume attempts when Claude hits max_turns.
     max_resume_attempts: u32,
+    /// Default model to pass via `--model` (empty = let CLI decide).
+    model: String,
 }
 
 /// JSON response from `claude -p --output-format json`.
@@ -81,6 +83,7 @@ impl ClaudeCodeProvider {
             working_dir: None,
             sandbox_mode: SandboxMode::default(),
             max_resume_attempts: 5,
+            model: String::new(),
         }
     }
 
@@ -92,6 +95,7 @@ impl ClaudeCodeProvider {
         working_dir: Option<PathBuf>,
         sandbox_mode: SandboxMode,
         max_resume_attempts: u32,
+        model: String,
     ) -> Self {
         Self {
             session_id: None,
@@ -101,6 +105,7 @@ impl ClaudeCodeProvider {
             working_dir,
             sandbox_mode,
             max_resume_attempts,
+            model,
         }
     }
 
@@ -154,16 +159,23 @@ impl Provider for ClaudeCodeProvider {
 
         let extra_tools = mcp_tool_patterns(&context.mcp_servers);
 
-        // Resolve effective max_turns and allowed_tools from context overrides.
+        // Resolve effective max_turns, allowed_tools, and model from context overrides.
         let effective_max_turns = context.max_turns.unwrap_or(self.max_turns);
         let effective_tools: Vec<String> = context
             .allowed_tools
             .clone()
             .unwrap_or_else(|| self.allowed_tools.clone());
+        let effective_model = context.model.as_deref().unwrap_or(&self.model);
 
         // First call with original prompt.
         let result = self
-            .run_cli(&prompt, &extra_tools, effective_max_turns, &effective_tools)
+            .run_cli(
+                &prompt,
+                &extra_tools,
+                effective_max_turns,
+                &effective_tools,
+                effective_model,
+            )
             .await;
 
         // Always cleanup MCP settings, regardless of success or failure.
@@ -199,6 +211,7 @@ impl Provider for ClaudeCodeProvider {
                                 &resume_session,
                                 effective_max_turns,
                                 &effective_tools,
+                                effective_model,
                             )
                             .await;
 
@@ -268,6 +281,7 @@ impl ClaudeCodeProvider {
         extra_allowed_tools: &[String],
         max_turns: u32,
         allowed_tools: &[String],
+        model: &str,
     ) -> Result<std::process::Output, OmegaError> {
         let mut cmd = match self.working_dir {
             Some(ref dir) => {
@@ -289,6 +303,11 @@ impl ClaudeCodeProvider {
             .arg("json")
             .arg("--max-turns")
             .arg(max_turns.to_string());
+
+        // Model override.
+        if !model.is_empty() {
+            cmd.arg("--model").arg(model);
+        }
 
         // Session continuity.
         if let Some(ref session) = self.session_id {
@@ -334,6 +353,7 @@ impl ClaudeCodeProvider {
         session_id: &str,
         max_turns: u32,
         allowed_tools: &[String],
+        model: &str,
     ) -> Result<std::process::Output, OmegaError> {
         let mut cmd = match self.working_dir {
             Some(ref dir) => {
@@ -356,6 +376,11 @@ impl ClaudeCodeProvider {
             .arg(max_turns.to_string())
             .arg("--session-id")
             .arg(session_id);
+
+        // Model override.
+        if !model.is_empty() {
+            cmd.arg("--model").arg(model);
+        }
 
         for tool in allowed_tools {
             cmd.arg("--allowedTools").arg(tool);
@@ -530,6 +555,7 @@ mod tests {
         assert!(provider.working_dir.is_none());
         assert_eq!(provider.sandbox_mode, SandboxMode::Sandbox);
         assert_eq!(provider.max_resume_attempts, 5);
+        assert!(provider.model.is_empty());
     }
 
     #[test]
@@ -541,11 +567,13 @@ mod tests {
             None,
             SandboxMode::default(),
             3,
+            "claude-sonnet-4-6".into(),
         );
         assert_eq!(provider.max_turns, 5);
         assert_eq!(provider.timeout, Duration::from_secs(300));
         assert!(provider.working_dir.is_none());
         assert_eq!(provider.max_resume_attempts, 3);
+        assert_eq!(provider.model, "claude-sonnet-4-6");
     }
 
     #[test]
@@ -558,6 +586,7 @@ mod tests {
             Some(dir.clone()),
             SandboxMode::Sandbox,
             5,
+            String::new(),
         );
         assert_eq!(provider.working_dir, Some(dir));
     }
@@ -572,6 +601,7 @@ mod tests {
             Some(dir),
             SandboxMode::Rx,
             5,
+            String::new(),
         );
         assert_eq!(provider.sandbox_mode, SandboxMode::Rx);
     }

@@ -61,6 +61,9 @@ pub struct Context {
     /// MCP servers to activate for this request.
     #[serde(default)]
     pub mcp_servers: Vec<McpServer>,
+    /// Optional model override for this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 ```
 
@@ -70,6 +73,7 @@ pub struct Context {
 | `history` | `Vec<ContextEntry>` | Previous conversation turns, ordered oldest-first (chronological). Populated by the memory store or left empty for one-shot requests. |
 | `current_message` | `String` | The user's latest message that the provider must respond to. |
 | `mcp_servers` | `Vec<McpServer>` | MCP servers to activate for this request. Populated by skill trigger matching in the gateway. Default: empty. |
+| `model` | `Option<String>` | Optional model override for this request. When `Some`, the provider uses this model instead of its default. Set by the gateway's classify-and-route logic. Default: `None`. |
 
 **Traits derived:** `Debug`, `Clone`, `Serialize`, `Deserialize`.
 
@@ -95,6 +99,7 @@ pub fn new(message: &str) -> Self
 - `history` is an empty `Vec`.
 - `current_message` is a clone of `message`.
 - `mcp_servers` is an empty `Vec`.
+- `model` is `None`.
 
 **Usage sites:**
 - `src/main.rs` -- the `omega ask` CLI command creates a one-shot context for a single prompt with no history.
@@ -187,6 +192,7 @@ Context::new(prompt)
   --> system_prompt = default_system_prompt()
   --> history = []
   --> current_message = prompt
+  --> model = None
 ```
 
 **Call sites:** `src/main.rs:161`, `src/gateway.rs:166`, `src/gateway.rs:182`.

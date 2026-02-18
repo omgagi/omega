@@ -39,6 +39,10 @@ pub struct Gateway {
     uptime: Instant,
     sandbox_mode: String,
     sandbox_prompt: Option<String>,
+    /// Fast model for classification and direct responses (Sonnet).
+    model_fast: String,
+    /// Complex model for multi-step autonomous execution (Opus).
+    model_complex: String,
     /// Tracks senders with active provider calls. New messages are buffered here.
     active_senders: Mutex<HashMap<String, Vec<IncomingMessage>>>,
 }
@@ -59,6 +63,8 @@ impl Gateway {
         skills: Vec<omega_skills::Skill>,
         sandbox_mode: String,
         sandbox_prompt: Option<String>,
+        model_fast: String,
+        model_complex: String,
     ) -> Self {
         let audit = AuditLogger::new(memory.pool().clone());
         Self {
@@ -76,6 +82,8 @@ impl Gateway {
             uptime: Instant::now(),
             sandbox_mode,
             sandbox_prompt,
+            model_fast,
+            model_complex,
             active_senders: Mutex::new(HashMap::new()),
         }
     }
@@ -730,27 +738,30 @@ impl Gateway {
         let mut context = context;
         context.mcp_servers = mcp_servers;
 
-        // --- 5. PRE-FLIGHT PLANNING ---
-        // For complex messages (>15 words), ask a dedicated planning call whether to
-        // decompose into steps. Short messages skip planning entirely.
-        if needs_planning(&clean_incoming.text) {
-            if let Some(steps) = self.plan_task(&clean_incoming.text).await {
-                self.execute_steps(
-                    &incoming,
-                    &clean_incoming.text,
-                    &context,
-                    &steps,
-                    &inbox_images,
-                )
-                .await;
+        // --- 5. AUTONOMOUS CLASSIFICATION & MODEL ROUTING ---
+        // Every message gets a fast Sonnet classification call that determines
+        // whether to handle directly or decompose into steps.
+        if let Some(steps) = self.classify_and_route(&clean_incoming.text).await {
+            // Complex task → Opus executes each step.
+            context.model = Some(self.model_complex.clone());
+            self.execute_steps(
+                &incoming,
+                &clean_incoming.text,
+                &context,
+                &steps,
+                &inbox_images,
+            )
+            .await;
 
-                // Stop typing indicator and return — skip normal send flow.
-                if let Some(h) = typing_handle {
-                    h.abort();
-                }
-                return;
+            // Stop typing indicator and return — skip normal send flow.
+            if let Some(h) = typing_handle {
+                h.abort();
             }
+            return;
         }
+
+        // Direct response → Sonnet handles it.
+        context.model = Some(self.model_fast.clone());
 
         // --- 5b. GET RESPONSE FROM PROVIDER (async with status updates) ---
 
@@ -1171,12 +1182,11 @@ impl Gateway {
         }
     }
 
-    /// Send a dedicated planning call to decompose a complex task into steps.
+    /// Classify a message and route to the appropriate model.
     ///
-    /// Uses a minimal prompt with no system prompt, no history, no MCP — just the
-    /// raw message. Returns parsed steps or `None` (for DIRECT responses, errors,
-    /// or single-step plans).
-    async fn plan_task(&self, message: &str) -> Option<Vec<String>> {
+    /// Always runs a fast Sonnet classification call. Returns parsed steps for
+    /// complex tasks or `None` for simple/direct responses.
+    async fn classify_and_route(&self, message: &str) -> Option<Vec<String>> {
         let planning_prompt = format!(
             "You are a task classifier. Do NOT use any tools — respond with text only.\n\n\
              If this request is a simple question, greeting, or single-action task, respond \
@@ -1188,10 +1198,11 @@ impl Gateway {
 
         let mut ctx = Context::new(&planning_prompt);
         ctx.max_turns = Some(5);
+        ctx.model = Some(self.model_fast.clone());
         match self.provider.complete(&ctx).await {
             Ok(resp) => parse_plan_response(&resp.text),
             Err(e) => {
-                warn!("planning call failed, falling back to direct: {e}");
+                warn!("classification call failed, falling back to direct: {e}");
                 None
             }
         }
@@ -1236,6 +1247,7 @@ impl Gateway {
             let mut step_ctx = Context::new(&step_prompt);
             step_ctx.system_prompt = context.system_prompt.clone();
             step_ctx.mcp_servers = context.mcp_servers.clone();
+            step_ctx.model = context.model.clone();
 
             // Retry loop for each step (up to 3 attempts).
             let mut step_result = None;
@@ -1353,14 +1365,6 @@ fn cleanup_inbox_images(paths: &[PathBuf]) {
             warn!("failed to remove inbox image {}: {e}", path.display());
         }
     }
-}
-
-/// Check if a message is complex enough to warrant a pre-flight planning call.
-///
-/// Messages with more than 15 words are considered potentially complex.
-/// Short messages (greetings, quick questions) skip planning entirely.
-fn needs_planning(text: &str) -> bool {
-    text.split_whitespace().count() > 15
 }
 
 /// Parse a planning response into a list of steps.
@@ -1634,38 +1638,14 @@ fn apply_heartbeat_changes(actions: &[HeartbeatAction]) {
 /// Returns `(first_nudge, still_working)`.
 fn status_messages(lang: &str) -> (&'static str, &'static str) {
     match lang {
-        "Spanish" => (
-            "Esto va a tomar un momento — te mantendré informado.",
-            "Sigo trabajando en tu solicitud...",
-        ),
-        "Portuguese" => (
-            "Isso vai levar um momento — vou te manter informado.",
-            "Ainda estou trabalhando no seu pedido...",
-        ),
-        "French" => (
-            "Cela prend un moment — je vous tiendrai informé.",
-            "Je travaille encore sur votre demande...",
-        ),
-        "German" => (
-            "Das dauert einen Moment — ich halte dich auf dem Laufenden.",
-            "Ich arbeite noch an deiner Anfrage...",
-        ),
-        "Italian" => (
-            "Ci vorrà un momento — ti terrò aggiornato.",
-            "Sto ancora lavorando alla tua richiesta...",
-        ),
-        "Dutch" => (
-            "Dit duurt even — ik hou je op de hoogte.",
-            "Ik werk nog aan je verzoek...",
-        ),
-        "Russian" => (
-            "Это займёт немного времени — я буду держать вас в курсе.",
-            "Всё ещё работаю над вашим запросом...",
-        ),
-        _ => (
-            "This is taking a moment — I'll keep you updated.",
-            "Still working on your request...",
-        ),
+        "Spanish" => ("Déjame pensar en esto... 🧠", "Sigo en ello ⏳"),
+        "Portuguese" => ("Deixa eu pensar nisso... 🧠", "Ainda estou nessa ⏳"),
+        "French" => ("Laisse-moi réfléchir... 🧠", "J'y suis encore ⏳"),
+        "German" => ("Lass mich kurz nachdenken... 🧠", "Bin noch dran ⏳"),
+        "Italian" => ("Fammi pensare... 🧠", "Ci sto ancora lavorando ⏳"),
+        "Dutch" => ("Even nadenken... 🧠", "Nog mee bezig ⏳"),
+        "Russian" => ("Дай подумать... 🧠", "Ещё работаю ⏳"),
+        _ => ("Let me think about this... 🧠", "Still on it ⏳"),
     }
 }
 
@@ -1931,15 +1911,15 @@ mod tests {
     #[test]
     fn test_status_messages_unknown_falls_back_to_english() {
         let (nudge, still) = status_messages("Klingon");
-        assert!(nudge.contains("taking a moment"));
-        assert!(still.contains("Still working"));
+        assert!(nudge.contains("think about this"));
+        assert!(still.contains("Still on it"));
     }
 
     #[test]
     fn test_status_messages_spanish() {
         let (nudge, still) = status_messages("Spanish");
-        assert!(nudge.contains("tomar un momento"));
-        assert!(still.contains("trabajando"));
+        assert!(nudge.contains("pensar"));
+        assert!(still.contains("ello"));
     }
 
     #[test]
@@ -2245,26 +2225,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // --- Pre-flight planning tests ---
-
-    #[test]
-    fn test_needs_planning_short_message() {
-        assert!(!needs_planning("Hello, how are you?"));
-        assert!(!needs_planning("What time is it?"));
-        assert!(!needs_planning("Hi"));
-    }
-
-    #[test]
-    fn test_needs_planning_long_message() {
-        assert!(needs_planning(
-            "I need you to set up a new project with a database, \
-             create the API endpoints, write tests, and deploy it to production"
-        ));
-        assert!(needs_planning(
-            "Please review the codebase and find all the places where we use \
-             unwrap and replace them with proper error handling"
-        ));
-    }
+    // --- Classification & planning tests ---
 
     #[test]
     fn test_parse_plan_response_direct() {

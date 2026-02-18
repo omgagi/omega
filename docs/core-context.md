@@ -53,12 +53,13 @@ pub struct Context {
     pub history: Vec<ContextEntry>,       // previous messages (oldest first)
     pub current_message: String,          // the message to respond to
     pub mcp_servers: Vec<McpServer>,      // MCP servers for this invocation
+    pub model: Option<String>,            // override for provider's default model
 }
 ```
 
-The `mcp_servers` field is annotated with `#[serde(default)]` so it deserializes as an empty `Vec` when absent. `Context::new()` initializes it to `Vec::new()`.
+The `mcp_servers` field is annotated with `#[serde(default)]` so it deserializes as an empty `Vec` when absent. `Context::new()` initializes it to `Vec::new()`. The `model` field is `None` by default; when set, the provider uses it instead of its own default model (e.g., the gateway sets this to route between fast and complex models).
 
-Together, these four fields give the provider everything it needs to generate a relevant, contextual reply -- including which external tool servers to connect to.
+Together, these five fields give the provider everything it needs to generate a relevant, contextual reply -- including which external tool servers to connect to and which model to use.
 
 ## How Context Flows Through the System
 
@@ -77,6 +78,7 @@ This produces a context with:
 - Empty history (no previous messages).
 - Your message as the current message.
 - Empty `mcp_servers` (no MCP tool servers).
+- `model` is `None` (provider uses its default model).
 
 Simple contexts are lightweight and disposable. They are used when there is no conversation to continue -- just a one-off question.
 

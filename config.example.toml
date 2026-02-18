@@ -19,6 +19,8 @@ max_turns = 100
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
 timeout_secs = 3600             # Max wait for CLI response (60 min ceiling)
 max_resume_attempts = 5         # Auto-resume when Claude hits max_turns (0 = disabled)
+model = "claude-sonnet-4-6"     # Fast model: classification + direct responses
+model_complex = "claude-opus-4-6" # Complex model: multi-step autonomous execution
 
 # Anthropic API (requires key)
 [provider.anthropic]

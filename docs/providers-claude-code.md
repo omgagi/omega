@@ -41,8 +41,13 @@ let provider = ClaudeCodeProvider::from_config(
     3600,                                                 // timeout in seconds (60 minutes)
     Some(PathBuf::from("/home/user/.omega/workspace")),   // working directory
     5,                                                    // max auto-resume attempts
+    "claude-sonnet-4-6".to_string(),                      // default model
 );
 ```
+
+### `model`
+
+The default model to pass to the Claude Code CLI via `--model <value>`. When `from_config()` receives a non-empty model string, every CLI invocation includes `--model` on the command line. At runtime, the effective model is resolved per-call: if the `Context` has a `model` override set, that takes precedence; otherwise the provider's default model is used. This is how the gateway routes between fast (Sonnet) and complex (Opus) models -- it sets `context.model` before calling `complete()`.
 
 ### `max_turns`
 

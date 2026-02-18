@@ -106,6 +106,8 @@ Local Claude Code CLI integration (zero-config, recommended default).
 | `allowed_tools` | Array[String] | `["Bash", "Read", "Write", "Edit"]` | Whitelist of tools the Claude Code provider can invoke. Restricts what operations are permitted. |
 | `timeout_secs` | Integer | `3600` | Max wait time in seconds for CLI response (60-minute ceiling). Tunable per deployment. |
 | `max_resume_attempts` | Integer | `5` | Maximum number of auto-resume attempts when the CLI hits max turns with a session ID. The provider automatically retries with `--session-id` to continue interrupted work. |
+| `model` | String | `"claude-sonnet-4-6"` | Default model for fast/simple requests (DIRECT path). Used by the classify-and-route logic for classification calls and direct responses. |
+| `model_complex` | String | `"claude-opus-4-6"` | Model for complex multi-step requests (Steps path). Used by the classify-and-route logic when the classifier identifies a multi-step task. |
 
 **Authentication:**
 - No API key required. Uses local `claude` CLI authentication already configured on the system.
@@ -119,6 +121,8 @@ max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
 timeout_secs = 3600
 max_resume_attempts = 5
+model = "claude-sonnet-4-6"
+model_complex = "claude-opus-4-6"
 ```
 
 #### `[provider.anthropic]`

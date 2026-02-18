@@ -40,6 +40,10 @@ pub struct Context {
     /// uses this list instead of its configured default. `Some(vec![])` = no tools.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_tools: Option<Vec<String>>,
+    /// Override the provider's default model. When `Some`, the provider passes
+    /// `--model` with this value instead of its configured default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl Context {
@@ -52,6 +56,7 @@ impl Context {
             mcp_servers: Vec::new(),
             max_turns: None,
             allowed_tools: None,
+            model: None,
         }
     }
 
@@ -123,6 +128,7 @@ mod tests {
             }],
             max_turns: None,
             allowed_tools: None,
+            model: None,
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let deserialized: Context = serde_json::from_str(&json).unwrap();

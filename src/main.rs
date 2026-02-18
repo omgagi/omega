@@ -138,6 +138,16 @@ async fn main() -> anyhow::Result<()> {
                 ws
             };
 
+            // Extract model config before building the provider (which consumes cc).
+            let cc = cfg
+                .provider
+                .claude_code
+                .as_ref()
+                .cloned()
+                .unwrap_or_default();
+            let model_fast = cc.model.clone();
+            let model_complex = cc.model_complex.clone();
+
             // Build provider with workspace as working directory.
             let provider: Arc<dyn omega_core::traits::Provider> =
                 Arc::from(build_provider(&cfg, &workspace_path)?);
@@ -207,6 +217,8 @@ async fn main() -> anyhow::Result<()> {
                 skills,
                 sandbox_mode.display_name().to_string(),
                 sandbox_prompt,
+                model_fast,
+                model_complex,
             ));
             gw.run().await?;
         }
@@ -327,6 +339,7 @@ fn build_provider(
                 Some(workspace_path.to_path_buf()),
                 cfg.sandbox.mode,
                 cc.max_resume_attempts,
+                cc.model,
             )))
         }
         other => anyhow::bail!("unsupported provider: {other}"),

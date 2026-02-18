@@ -86,6 +86,12 @@ pub struct ClaudeCodeConfig {
     /// Max auto-resume attempts when Claude hits max_turns (default: 5).
     #[serde(default = "default_max_resume_attempts")]
     pub max_resume_attempts: u32,
+    /// Fast model for classification and direct responses.
+    #[serde(default = "default_model")]
+    pub model: String,
+    /// Complex model for multi-step autonomous execution.
+    #[serde(default = "default_model_complex")]
+    pub model_complex: String,
 }
 
 impl Default for ClaudeCodeConfig {
@@ -96,6 +102,8 @@ impl Default for ClaudeCodeConfig {
             allowed_tools: default_allowed_tools(),
             timeout_secs: default_timeout_secs(),
             max_resume_attempts: default_max_resume_attempts(),
+            model: default_model(),
+            model_complex: default_model_complex(),
         }
     }
 }
@@ -366,6 +374,12 @@ fn default_timeout_secs() -> u64 {
 }
 fn default_max_resume_attempts() -> u32 {
     5
+}
+fn default_model() -> String {
+    "claude-sonnet-4-6".to_string()
+}
+fn default_model_complex() -> String {
+    "claude-opus-4-6".to_string()
 }
 
 /// Expand `~` to home directory.

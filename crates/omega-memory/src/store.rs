@@ -538,6 +538,7 @@ impl Store {
             mcp_servers: Vec::new(),
             max_turns: None,
             allowed_tools: None,
+            model: None,
         })
     }
 

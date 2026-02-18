@@ -64,6 +64,8 @@ enabled = true
 max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
 timeout_secs = 600
+model = "claude-sonnet-4-6"
+model_complex = "claude-opus-4-6"
 ```
 
 **What this means:**
@@ -72,6 +74,8 @@ timeout_secs = 600
 - `max_turns = 10`: Conversations auto-summarize after 10 exchanges (prevents runaway context).
 - `allowed_tools`: Let the AI use the `Bash`, `Read`, `Write`, `Edit` tools. Don't change this unless you know what you're doing.
 - `timeout_secs = 600`: Max seconds to wait for the CLI to respond. 10-minute ceiling prevents runaway invocations.
+- `model = "claude-sonnet-4-6"`: The fast model used for classification and direct responses. Sonnet handles simple messages quickly and cheaply.
+- `model_complex = "claude-opus-4-6"`: The complex model used for multi-step task execution. Opus handles tasks that require deep reasoning.
 
 **Setup:** Just ensure you have the `claude` CLI installed and authenticated:
 ```bash
@@ -439,6 +443,8 @@ enabled = true
 max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
 timeout_secs = 600
+model = "claude-sonnet-4-6"
+model_complex = "claude-opus-4-6"
 
 [auth]
 enabled = false  # Just me, no restrictions

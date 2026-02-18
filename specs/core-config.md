@@ -110,9 +110,11 @@ When the config file is absent, the `load()` function explicitly constructs a `P
 | `allowed_tools` | `Vec<String>` | `default_allowed_tools()` | `["Bash", "Read", "Write", "Edit"]` |
 | `timeout_secs` | `u64` | `default_timeout_secs()` | `3600` |
 | `max_resume_attempts` | `u32` | `default_max_resume_attempts()` | `5` |
+| `model` | `String` | `default_model()` | `"claude-sonnet-4-6"` |
+| `model_complex` | `String` | `default_model_complex()` | `"claude-opus-4-6"` |
 
 Derives: `Debug, Clone, Serialize, Deserialize`
-Implements: `Default` (manual, sets `enabled` to `true`, `max_turns` to `default_max_turns()`, `allowed_tools` to `default_allowed_tools()`, `timeout_secs` to `default_timeout_secs()`, `max_resume_attempts` to `default_max_resume_attempts()`).
+Implements: `Default` (manual, sets `enabled` to `true`, `max_turns` to `default_max_turns()`, `allowed_tools` to `default_allowed_tools()`, `timeout_secs` to `default_timeout_secs()`, `max_resume_attempts` to `default_max_resume_attempts()`, `model` to `default_model()`, `model_complex` to `default_model_complex()`).
 
 ### `AnthropicConfig`
 
@@ -295,6 +297,8 @@ All private functions in the module that supply serde defaults:
 | `default_max_context()` | `usize` | `50` |
 | `default_timeout_secs()` | `u64` | `3600` |
 | `default_max_resume_attempts()` | `u32` | `5` |
+| `default_model()` | `String` | `"claude-sonnet-4-6"` |
+| `default_model_complex()` | `String` | `"claude-opus-4-6"` |
 | `default_heartbeat_interval()` | `u64` | `30` |
 | `default_poll_interval()` | `u64` | `60` |
 

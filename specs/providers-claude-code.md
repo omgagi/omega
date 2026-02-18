@@ -39,6 +39,7 @@ Public struct. The provider that wraps the Claude Code CLI.
 | `timeout` | `Duration` | Private | Maximum time to wait for the CLI subprocess to complete. Constructed from `Duration::from_secs(timeout_secs)`. Default: `3600` seconds (60 minutes). |
 | `working_dir` | `Option<PathBuf>` | Private | Optional working directory for the CLI subprocess. When `Some`, sets the `current_dir` on the subprocess `Command`. Used by sandbox mode to confine the provider to a workspace directory (e.g., `~/.omega/workspace/`). Default: `None`. |
 | `max_resume_attempts` | `u32` | Private | Maximum number of auto-resume attempts when the CLI hits `error_max_turns` with a `session_id`. Default: `5`. |
+| `model` | `String` | Private | Default model to pass to the CLI via `--model`. Can be overridden per-request by `Context.model`. Default: `"claude-sonnet-4-6"`. |
 
 ### `ClaudeCliResponse`
 
@@ -74,19 +75,20 @@ Constructs a new `ClaudeCodeProvider` with default settings:
 - `timeout`: `Duration::from_secs(3600)` (60 minutes)
 - `working_dir`: `None`
 - `max_resume_attempts`: `5`
+- `model`: `""` (empty, no `--model` flag passed)
 
 ```rust
 pub fn new() -> Self
 ```
 
-### `ClaudeCodeProvider::from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64, working_dir: Option<PathBuf>, max_resume_attempts: u32) -> Self`
+### `ClaudeCodeProvider::from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64, working_dir: Option<PathBuf>, max_resume_attempts: u32, model: String) -> Self`
 
 **Visibility:** Public
 
-Constructs a `ClaudeCodeProvider` from explicit configuration values. Sets `session_id` to `None`, `timeout` to `Duration::from_secs(timeout_secs)`, `working_dir` to the provided value, and `max_resume_attempts` to the provided value.
+Constructs a `ClaudeCodeProvider` from explicit configuration values. Sets `session_id` to `None`, `timeout` to `Duration::from_secs(timeout_secs)`, `working_dir` to the provided value, `max_resume_attempts` to the provided value, and `model` to the provided value.
 
 ```rust
-pub fn from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64, working_dir: Option<PathBuf>, max_resume_attempts: u32) -> Self
+pub fn from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64, working_dir: Option<PathBuf>, max_resume_attempts: u32, model: String) -> Self
 ```
 
 ### `ClaudeCodeProvider::check_cli() -> bool` (async)
@@ -178,6 +180,8 @@ The core method. Invokes the Claude Code CLI as a subprocess and parses the resu
 
 1. **Prompt construction:** Calls `context.to_prompt_string()` to flatten the `Context` (system prompt + history + current message) into a single string.
 
+1b. **Effective model resolution:** Resolves the model to use via `context.model.as_deref().unwrap_or(&self.model)`. The per-request `context.model` override (set by the gateway's classify-and-route logic) takes precedence over the provider's default `self.model`.
+
 2. **MCP setup:** If `context.mcp_servers` is non-empty:
    - Calls `write_mcp_settings()` to create `{workspace}/.claude/settings.local.json` with MCP server configuration.
    - Calls `mcp_tool_patterns()` to generate `--allowedTools` wildcard patterns for the MCP servers.
@@ -239,13 +243,13 @@ Delegates to `Self::check_cli()`. Returns `true` if the `claude` binary is insta
 
 ## CLI Invocation Detail
 
-### `run_cli(prompt, extra_allowed_tools)` (private, async)
+### `run_cli(prompt, extra_allowed_tools, model)` (private, async)
 
-Private helper that assembles and executes the `claude` CLI subprocess. Called by `complete()`.
+Private helper that assembles and executes the `claude` CLI subprocess. Called by `complete()`. Takes an additional `model: &str` parameter; when non-empty, passes `--model <value>` to the CLI.
 
-### `run_cli_with_session(prompt, extra_allowed_tools, session_id)` (private, async)
+### `run_cli_with_session(prompt, extra_allowed_tools, session_id, model)` (private, async)
 
-Private helper that assembles and executes the `claude` CLI subprocess with an explicit `--session-id` argument. Called by the auto-resume loop in `complete()` when a previous invocation returned `error_max_turns` with a `session_id`. Behaves identically to `run_cli()` except it always includes `--session-id <session_id>` in the CLI arguments, overriding `self.session_id`.
+Private helper that assembles and executes the `claude` CLI subprocess with an explicit `--session-id` argument. Called by the auto-resume loop in `complete()` when a previous invocation returned `error_max_turns` with a `session_id`. Behaves identically to `run_cli()` except it always includes `--session-id <session_id>` in the CLI arguments, overriding `self.session_id`. Takes an additional `model: &str` parameter; when non-empty, passes `--model <value>` to the CLI.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -259,6 +263,7 @@ The subprocess is invoked with the following arguments:
 | `-p` | The flattened prompt string | Yes |
 | `--output-format` | `json` | Yes |
 | `--max-turns` | `self.max_turns` (default `10`) | Yes |
+| `--model` | Effective model string | Only if model is non-empty |
 | `--session-id` | `self.session_id` | Only if `session_id` is `Some` |
 | `--allowedTools` | One per tool in `self.allowed_tools` | Yes (repeated per tool) |
 
@@ -342,6 +347,7 @@ Verifies the default constructor:
 - `timeout` is `Duration::from_secs(3600)`
 - `working_dir` is `None`
 - `max_resume_attempts` is `5`
+- `model` is `""` (empty)
 
 ```rust
 #[test]
@@ -354,6 +360,7 @@ fn test_default_provider() {
     assert_eq!(provider.timeout, Duration::from_secs(3600));
     assert!(provider.working_dir.is_none());
     assert_eq!(provider.max_resume_attempts, 5);
+    assert!(provider.model.is_empty());
 }
 ```
 
@@ -363,13 +370,13 @@ fn test_default_provider() {
 
 Verifies that `from_config()` correctly sets the `timeout` field from the provided `timeout_secs` parameter:
 
-- Constructs a provider with `timeout_secs = 300`, `working_dir = None`, and `max_resume_attempts = 5`.
+- Constructs a provider with `timeout_secs = 300`, `working_dir = None`, `max_resume_attempts = 5`, and `model = "claude-sonnet-4-6"`.
 - Asserts `timeout` is `Duration::from_secs(300)`.
 
 ```rust
 #[test]
 fn test_from_config_with_timeout() {
-    let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300, None, 5);
+    let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300, None, 5, "claude-sonnet-4-6".into());
     assert_eq!(provider.timeout, Duration::from_secs(300));
 }
 ```
@@ -380,7 +387,7 @@ fn test_from_config_with_timeout() {
 
 Verifies that `from_config()` correctly sets the `working_dir` field when provided:
 
-- Constructs a provider with `working_dir = Some(PathBuf::from("/tmp/workspace"))`.
+- Constructs a provider with `working_dir = Some(PathBuf::from("/tmp/workspace"))` and `model = "claude-sonnet-4-6"`.
 - Asserts `working_dir` is `Some(PathBuf::from("/tmp/workspace"))`.
 
 ```rust
@@ -392,6 +399,7 @@ fn test_from_config_with_working_dir() {
         600,
         Some(PathBuf::from("/tmp/workspace")),
         5,
+        "claude-sonnet-4-6".into(),
     );
     assert_eq!(provider.working_dir, Some(PathBuf::from("/tmp/workspace")));
 }

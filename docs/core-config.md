@@ -57,6 +57,8 @@ max_turns = 10
 allowed_tools = ["Bash", "Read", "Write", "Edit"]
 timeout_secs = 3600
 max_resume_attempts = 5
+model = "claude-sonnet-4-6"
+model_complex = "claude-opus-4-6"
 
 [provider.anthropic]
 enabled = false
@@ -146,6 +148,8 @@ This is the primary, zero-config provider. It shells out to the `claude` CLI too
 | `allowed_tools` | array of strings | `["Bash", "Read", "Write", "Edit"]` | Which Claude Code tools the agent is allowed to use. |
 | `timeout_secs` | integer | `3600` | Max seconds to wait for CLI response. 60-minute ceiling. |
 | `max_resume_attempts` | integer | `5` | Max auto-resume attempts when CLI hits max turns with a session ID. |
+| `model` | string | `"claude-sonnet-4-6"` | Default model for fast classification and direct responses. Passed as `--model` to the CLI. |
+| `model_complex` | string | `"claude-opus-4-6"` | Model used for complex multi-step task execution. Used when the classifier routes to step-by-step processing. |
 
 No API key is needed -- Claude Code uses the local CLI's authentication.
 
