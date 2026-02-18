@@ -36,7 +36,6 @@ pub struct Gateway {
     prompts: Prompts,
     data_dir: String,
     skills: Vec<omega_skills::Skill>,
-    projects: Vec<omega_skills::Project>,
     uptime: Instant,
     sandbox_mode: String,
     sandbox_prompt: Option<String>,
@@ -58,7 +57,6 @@ impl Gateway {
         prompts: Prompts,
         data_dir: String,
         skills: Vec<omega_skills::Skill>,
-        projects: Vec<omega_skills::Project>,
         sandbox_mode: String,
         sandbox_prompt: Option<String>,
     ) -> Self {
@@ -75,7 +73,6 @@ impl Gateway {
             prompts,
             data_dir,
             skills,
-            projects,
             uptime: Instant::now(),
             sandbox_mode,
             sandbox_prompt,
@@ -605,6 +602,8 @@ impl Gateway {
         }
 
         // --- 3. COMMAND DISPATCH ---
+        // Hot-reload projects from disk so newly created ones are available immediately.
+        let projects = omega_skills::load_projects(&self.data_dir);
         if let Some(cmd) = commands::Command::parse(&clean_incoming.text) {
             let ctx = commands::CommandContext {
                 store: &self.memory,
@@ -614,7 +613,7 @@ impl Gateway {
                 uptime: &self.uptime,
                 provider_name: self.provider.name(),
                 skills: &self.skills,
-                projects: &self.projects,
+                projects: &projects,
                 sandbox_mode: &self.sandbox_mode,
             };
             let response = commands::handle(cmd, &ctx).await;
@@ -686,7 +685,7 @@ impl Gateway {
                 .await
             {
                 if let Some(instructions) =
-                    omega_skills::get_project_instructions(&self.projects, &project_name)
+                    omega_skills::get_project_instructions(&projects, &project_name)
                 {
                     prompt = format!("{instructions}\n\n---\n\n{prompt}");
                 }
@@ -898,13 +897,45 @@ impl Gateway {
             response.text = strip_schedule_marker(&response.text);
         }
 
-        // --- 5c. EXTRACT WHATSAPP_QR MARKER ---
+        // --- 5c. EXTRACT PROJECT MARKER ---
+        if let Some(project_name) = extract_project_activate(&response.text) {
+            // Verify project exists on disk before activating.
+            let fresh_projects = omega_skills::load_projects(&self.data_dir);
+            if omega_skills::get_project_instructions(&fresh_projects, &project_name).is_some() {
+                if let Err(e) = self
+                    .memory
+                    .store_fact(&incoming.sender_id, "active_project", &project_name)
+                    .await
+                {
+                    error!("failed to activate project {project_name}: {e}");
+                } else {
+                    info!("project activated: {project_name}");
+                }
+            } else {
+                warn!("project activate marker for unknown project: {project_name}");
+            }
+            response.text = strip_project_markers(&response.text);
+        }
+        if has_project_deactivate(&response.text) {
+            if let Err(e) = self
+                .memory
+                .delete_fact(&incoming.sender_id, "active_project")
+                .await
+            {
+                error!("failed to deactivate project: {e}");
+            } else {
+                info!("project deactivated");
+            }
+            response.text = strip_project_markers(&response.text);
+        }
+
+        // --- 5e. EXTRACT WHATSAPP_QR MARKER ---
         if has_whatsapp_qr_marker(&response.text) {
             response.text = strip_whatsapp_qr_marker(&response.text);
             self.handle_whatsapp_qr(&incoming).await;
         }
 
-        // --- 5d. EXTRACT LANG_SWITCH MARKER ---
+        // --- 5f. EXTRACT LANG_SWITCH MARKER ---
         if let Some(lang) = extract_lang_switch(&response.text) {
             if let Err(e) = self
                 .memory
@@ -918,7 +949,7 @@ impl Gateway {
             response.text = strip_lang_switch(&response.text);
         }
 
-        // --- 5e. EXTRACT HEARTBEAT_ADD / HEARTBEAT_REMOVE MARKERS ---
+        // --- 5g. EXTRACT HEARTBEAT_ADD / HEARTBEAT_REMOVE MARKERS ---
         let heartbeat_actions = extract_heartbeat_markers(&response.text);
         if !heartbeat_actions.is_empty() {
             apply_heartbeat_changes(&heartbeat_actions);
@@ -1419,6 +1450,42 @@ fn strip_lang_switch(text: &str) -> String {
         .to_string()
 }
 
+/// Extract project name from a `PROJECT_ACTIVATE: <name>` marker line.
+fn extract_project_activate(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| line.trim().starts_with("PROJECT_ACTIVATE:"))
+        .and_then(|line| {
+            let name = line
+                .trim()
+                .strip_prefix("PROJECT_ACTIVATE:")?
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                None
+            } else {
+                Some(name)
+            }
+        })
+}
+
+/// Check if response text contains a `PROJECT_DEACTIVATE` marker line.
+fn has_project_deactivate(text: &str) -> bool {
+    text.lines().any(|line| line.trim() == "PROJECT_DEACTIVATE")
+}
+
+/// Strip all `PROJECT_ACTIVATE:` and `PROJECT_DEACTIVATE` lines from response text.
+fn strip_project_markers(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            let t = line.trim();
+            !t.starts_with("PROJECT_ACTIVATE:") && t != "PROJECT_DEACTIVATE"
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
 /// Strip all `SCHEDULE:` lines from response text.
 fn strip_schedule_marker(text: &str) -> String {
     text.lines()
@@ -1727,6 +1794,61 @@ mod tests {
     fn test_strip_lang_switch() {
         let text = "Sure, I'll speak French now.\nLANG_SWITCH: French";
         assert_eq!(strip_lang_switch(text), "Sure, I'll speak French now.");
+    }
+
+    #[test]
+    fn test_extract_project_activate() {
+        let text = "I've created a project for you.\nPROJECT_ACTIVATE: real-estate";
+        assert_eq!(
+            extract_project_activate(text),
+            Some("real-estate".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_project_activate_none() {
+        assert!(extract_project_activate("Just a normal response.").is_none());
+    }
+
+    #[test]
+    fn test_extract_project_activate_empty_name() {
+        assert!(extract_project_activate("PROJECT_ACTIVATE: ").is_none());
+    }
+
+    #[test]
+    fn test_has_project_deactivate() {
+        let text = "Project deactivated.\nPROJECT_DEACTIVATE";
+        assert!(has_project_deactivate(text));
+    }
+
+    #[test]
+    fn test_has_project_deactivate_false() {
+        assert!(!has_project_deactivate("No marker here."));
+    }
+
+    #[test]
+    fn test_strip_project_markers() {
+        let text =
+            "I've set up the project.\nPROJECT_ACTIVATE: stocks\nLet me know if you need more.";
+        let result = strip_project_markers(text);
+        assert_eq!(
+            result,
+            "I've set up the project.\nLet me know if you need more."
+        );
+    }
+
+    #[test]
+    fn test_strip_project_markers_deactivate() {
+        let text = "Done, project deactivated.\nPROJECT_DEACTIVATE";
+        let result = strip_project_markers(text);
+        assert_eq!(result, "Done, project deactivated.");
+    }
+
+    #[test]
+    fn test_strip_project_markers_both() {
+        let text = "Switching.\nPROJECT_DEACTIVATE\nPROJECT_ACTIVATE: new-proj\nEnjoy!";
+        let result = strip_project_markers(text);
+        assert_eq!(result, "Switching.\nEnjoy!");
     }
 
     #[test]

@@ -721,11 +721,7 @@ description = \"No deps.\"
         let _ = std::fs::remove_dir_all(&tmp);
         let proj_dir = tmp.join("projects/my-project");
         std::fs::create_dir_all(&proj_dir).unwrap();
-        std::fs::write(
-            proj_dir.join("ROLE.md"),
-            "You are a helpful assistant.",
-        )
-        .unwrap();
+        std::fs::write(proj_dir.join("ROLE.md"), "You are a helpful assistant.").unwrap();
 
         let projects = load_projects(tmp.to_str().unwrap());
         assert_eq!(projects.len(), 1);
@@ -756,10 +752,7 @@ description = \"No deps.\"
         // No ROLE.md created.
 
         let projects = load_projects(tmp.to_str().unwrap());
-        assert!(
-            projects.is_empty(),
-            "dir without ROLE.md should be skipped"
-        );
+        assert!(projects.is_empty(), "dir without ROLE.md should be skipped");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

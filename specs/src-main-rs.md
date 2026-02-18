@@ -242,10 +242,9 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
    - Verifies: config validity, database schema, provider health, channel credentials
    - Bails if any check fails
 
-7. **Load projects**
+7. **Ensure projects directory**
    - Call `omega_skills::ensure_projects_dir(&cfg.omega.data_dir)` to create `~/.omega/projects/` if missing.
-   - Call `omega_skills::load_projects(&cfg.omega.data_dir)` to scan and load all projects.
-   - Pass `projects` to `Gateway::new()`.
+   - Projects are hot-reloaded per message in the gateway, not loaded at startup.
 
 8. **Start gateway**
    - Create Gateway instance with provider, channels, memory, auth, channel config, projects, sandbox mode display name, and sandbox prompt

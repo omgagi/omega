@@ -288,8 +288,7 @@ async fn handle_projects(
     projects: &[omega_skills::Project],
 ) -> String {
     if projects.is_empty() {
-        return "No projects found. Create folders in ~/.omega/projects/ with ROLE.md"
-            .to_string();
+        return "No projects found. Create folders in ~/.omega/projects/ with ROLE.md".to_string();
     }
     let active = store
         .get_fact(sender_id, "active_project")

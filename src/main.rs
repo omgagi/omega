@@ -125,9 +125,8 @@ async fn main() -> anyhow::Result<()> {
                 prompts.system.push_str(&skill_block);
             }
 
-            // Ensure projects dir exists, then load all projects.
+            // Ensure projects dir exists (projects are hot-reloaded per message).
             omega_skills::ensure_projects_dir(&cfg.omega.data_dir);
-            let projects = omega_skills::load_projects(&cfg.omega.data_dir);
 
             // Create workspace directory for sandbox isolation.
             let workspace_path = {
@@ -206,7 +205,6 @@ async fn main() -> anyhow::Result<()> {
                 prompts,
                 cfg.omega.data_dir.clone(),
                 skills,
-                projects,
                 sandbox_mode.display_name().to_string(),
                 sandbox_prompt,
             ));

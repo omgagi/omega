@@ -62,7 +62,7 @@ Cargo workspace with 6 crates:
 
 Gateway event loop (`src/gateway.rs`):
 ```
-Message → Dispatch (buffer if sender busy, ack) → Auth → Sanitize → Inbox save → Welcome (non-blocking) → Platform Hint → Group Rules → Heartbeat awareness → Sandbox constraint → Identity+Soul+System compose → Memory (context) → MCP trigger match → Pre-flight planning (>15 words → dedicated planning call → DIRECT or step list) → [if steps: autonomous execution with progress] → Workspace snapshot → Heads-up → Provider (MCP settings write → async CLI + auto-resume on max_turns + status updates → MCP cleanup) → SILENT suppress → Schedule extract → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send → Workspace image diff → Inbox cleanup → Drain buffered messages
+Message → Dispatch (buffer if sender busy, ack) → Auth → Sanitize → Inbox save → Welcome (non-blocking) → Platform Hint → Group Rules → Project hot-reload → Heartbeat awareness → Sandbox constraint → Identity+Soul+System compose → Memory (context) → MCP trigger match → Pre-flight planning (>15 words → dedicated planning call → DIRECT or step list) → [if steps: autonomous execution with progress] → Workspace snapshot → Heads-up → Provider (MCP settings write → async CLI + auto-resume on max_turns + status updates → MCP cleanup) → SILENT suppress → Schedule extract → Project activate/deactivate → Lang switch → Heartbeat add/remove → Memory (store) → Audit → Send → Workspace image diff → Inbox cleanup → Drain buffered messages
 ```
 
 Non-blocking message handling: Gateway wraps in `Arc<Self>`, spawns each message as a concurrent task via `tokio::spawn`. Messages from the same sender are serialized — if a sender has an active provider call, new messages are buffered with a "Got it, I'll get to this next." ack, then processed in order after the active call completes.
@@ -127,7 +127,7 @@ cargo build --release        # Optimized binary
 - Prompts: `~/.omega/SYSTEM_PROMPT.md` (auto-deployed on first run, `## Identity` + `## Soul` + `## System` sections, read at startup)
 - Welcome messages: `~/.omega/WELCOME.toml` (auto-deployed on first run, `[messages]` table keyed by language, read at startup)
 - Skills: `~/.omega/skills/*/SKILL.md` (auto-deployed on first run, TOML or YAML frontmatter + instructions, scanned at startup)
-- Projects: `~/.omega/projects/*/ROLE.md` (user-created, directory name = project name, scanned at startup)
+- Projects: `~/.omega/projects/*/ROLE.md` (user-created or AI-created, directory name = project name, hot-reloaded per message)
 - Workspace: `~/.omega/workspace/` (sandbox working directory, created on startup)
 - Inbox: `~/.omega/workspace/inbox/` (temporary storage for incoming image attachments, auto-cleaned after provider response)
 - Heartbeat checklist: `~/.omega/HEARTBEAT.md` (optional, read by heartbeat loop)
