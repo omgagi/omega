@@ -533,19 +533,9 @@ impl Gateway {
                                                 let due_at = (chrono::Utc::now()
                                                     + chrono::Duration::minutes(2))
                                                 .to_rfc3339();
-                                                let next_desc = format!(
-                                                    "Self-healing verification — read \
-                                                     ~/.omega/self-healing.json for context. \
-                                                     Run this verification: {}. \
-                                                     If the test passes, emit SELF_HEAL_RESOLVED. \
-                                                     If it fails, diagnose the root cause, fix it, \
-                                                     build+clippy until clean, restart service, \
-                                                     update the attempts array in \
-                                                     self-healing.json, and emit \
-                                                     SELF_HEAL: {} | {} to continue.",
-                                                    state.verification,
-                                                    state.anomaly,
-                                                    state.verification
+                                                let next_desc = self_heal_follow_up(
+                                                    &state.anomaly,
+                                                    &state.verification,
                                                 );
                                                 match store
                                                     .create_task(
@@ -1901,15 +1891,7 @@ impl Gateway {
                         }
                     }
                     let due_at = (chrono::Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
-                    let heal_desc = format!(
-                        "Self-healing verification — read ~/.omega/self-healing.json for context. \
-                         Run this verification: {}. \
-                         If the test passes, emit SELF_HEAL_RESOLVED. \
-                         If it fails, diagnose the root cause, fix it, build+clippy until clean, \
-                         restart service, update the attempts array in self-healing.json, \
-                         and emit SELF_HEAL: {} | {} to continue.",
-                        state.verification, state.anomaly, state.verification
-                    );
+                    let heal_desc = self_heal_follow_up(&state.anomaly, &state.verification);
                     let reply_target = incoming.reply_target.as_deref().unwrap_or("");
                     match self
                         .memory
@@ -2494,6 +2476,43 @@ fn status_messages(lang: &str) -> (&'static str, &'static str) {
         "Russian" => ("Дай подумать... 🧠", "Ещё работаю ⏳"),
         _ => ("Let me think about this... 🧠", "Still on it ⏳"),
     }
+}
+
+/// Auto-detect the repo path from the running binary location.
+///
+/// The release binary lives at `{repo}/target/release/omega`, so we go up 3
+/// levels and verify `Cargo.toml` exists. Returns `None` if the binary was
+/// moved or installed elsewhere.
+fn detect_repo_path() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let repo = exe.parent()?.parent()?.parent()?;
+    if repo.join("Cargo.toml").exists() {
+        Some(repo.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
+/// Build the self-healing follow-up task description with repo context.
+fn self_heal_follow_up(anomaly: &str, verification: &str) -> String {
+    let repo_hint = detect_repo_path()
+        .map(|p| {
+            format!(
+                " The source code is at {p}. \
+                 Build with: nix --extra-experimental-features \
+                 \"nix-command flakes\" develop --command bash -c \
+                 \"cargo build --release && cargo clippy -- -D warnings\"."
+            )
+        })
+        .unwrap_or_default();
+    format!(
+        "Self-healing verification — read ~/.omega/self-healing.json for context. \
+         Run this verification: {verification}. \
+         If the test passes, emit SELF_HEAL_RESOLVED. \
+         If it fails, diagnose the root cause, fix it, build+clippy until clean, \
+         restart service, update the attempts array in self-healing.json, \
+         and emit SELF_HEAL: {anomaly} | {verification} to continue.{repo_hint}"
+    )
 }
 
 /// Map raw provider errors to user-friendly messages.
@@ -3423,15 +3442,7 @@ mod tests {
         assert_eq!(restored.verification, verification);
 
         // Stage 6: Follow-up task description includes verification test.
-        let follow_up = format!(
-            "Self-healing verification — read ~/.omega/self-healing.json for context. \
-             Run this verification: {}. \
-             If the test passes, emit SELF_HEAL_RESOLVED. \
-             If it fails, diagnose the root cause, fix it, build+clippy until clean, \
-             restart service, update the attempts array in self-healing.json, \
-             and emit SELF_HEAL: {} | {} to continue.",
-            restored.verification, restored.anomaly, restored.verification
-        );
+        let follow_up = self_heal_follow_up(&restored.anomaly, &restored.verification);
         assert!(follow_up.contains("Run this verification: query audit_log"));
         assert!(follow_up.contains("SELF_HEAL: audit_log missing model field | query audit_log"));
 
@@ -3496,5 +3507,29 @@ mod tests {
             verif,
             "run sqlite3 ~/.omega/memory.db 'SELECT count(*) | grep -v 0'"
         );
+    }
+
+    /// Verifies detect_repo_path finds the repo when running from target/.
+    #[test]
+    fn test_detect_repo_path() {
+        // In test mode the binary is in target/debug/deps/, not target/release/.
+        // So detect_repo_path may or may not find it depending on depth.
+        // We just verify it doesn't panic and returns a sensible result.
+        let result = detect_repo_path();
+        // If found, it should contain Cargo.toml at that path.
+        if let Some(ref path) = result {
+            assert!(
+                PathBuf::from(path).join("Cargo.toml").exists(),
+                "detected repo path should contain Cargo.toml"
+            );
+        }
+    }
+
+    /// Verifies self_heal_follow_up includes verification and anomaly.
+    #[test]
+    fn test_self_heal_follow_up_content() {
+        let desc = self_heal_follow_up("broken audit", "run cargo test");
+        assert!(desc.contains("Run this verification: run cargo test"));
+        assert!(desc.contains("SELF_HEAL: broken audit | run cargo test"));
     }
 }

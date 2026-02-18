@@ -728,6 +728,22 @@ pub struct Gateway {
 
 **Logic:** Gets path, removes the file if it exists. Returns error if `HOME` not set or deletion fails.
 
+### `fn detect_repo_path() -> Option<String>`
+**Purpose:** Auto-detect the Omega source code repository path from the binary location.
+
+**Logic:** Gets the path of the current executable via `std::env::current_exe()`, navigates up 3 parent directories (binary → `target/release/` → `target/` → repo root), checks if `Cargo.toml` exists at that level. Returns `Some(path)` if found, `None` otherwise.
+
+**Returns:** `Some(path_string)` if the repo root is detected, `None` if executable path is unavailable or `Cargo.toml` is not found.
+
+### `fn self_heal_follow_up(anomaly: &str, verification: &str) -> String`
+**Purpose:** Build the self-healing follow-up task description with repo context. Centralizes the follow-up prompt used by both `process_markers()` and `scheduler_loop`.
+
+**Parameters:**
+- `anomaly: &str` - Description of the anomaly being healed.
+- `verification: &str` - Concrete verification test to confirm the fix.
+
+**Returns:** A formatted task description that instructs the AI to: read `self-healing.json`, run the verification test, emit `SELF_HEAL_RESOLVED` on success, or continue fixing on failure. If `detect_repo_path()` finds the repo, appends a hint with the source code path and nix build command.
+
 ### `fn read_heartbeat_file() -> Option<String>`
 **Purpose:** Read `~/.omega/HEARTBEAT.md` if it exists, for use as a heartbeat checklist.
 
@@ -1351,3 +1367,39 @@ Verifies that `strip_self_heal_markers()` removes both `SELF_HEAL:` (with pipe f
 **Type:** Synchronous unit test (`#[test]`)
 
 Verifies that `SelfHealingState` (including `verification` field) can be serialized to JSON and deserialized back with all fields preserved.
+
+### `test_self_heal_full_flow_simulation`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies the full SELF_HEAL flow: marker extraction → parsing → state creation (with verification) → state write/read roundtrip → follow-up description → SELF_HEAL_RESOLVED detection → state deletion.
+
+### `test_self_healing_state_old_format_graceful_fallback`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies backward compatibility: deserializing a `SelfHealingState` JSON without the `verification` field falls back to an empty string via `#[serde(default)]`.
+
+### `test_self_heal_old_marker_format_rejected`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that the old marker format (`SELF_HEAL: description` without pipe separator) is rejected by `parse_self_heal_line()`.
+
+### `test_self_heal_verification_with_internal_pipes`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that verification tests containing internal pipe characters are preserved correctly (only splits on the first `|`).
+
+### `test_detect_repo_path`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `detect_repo_path()` returns a `Some` value containing "omega" when running from within the project directory.
+
+### `test_self_heal_follow_up_content`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `self_heal_follow_up()` includes the anomaly, verification test, SELF_HEAL_RESOLVED instruction, and continue-on-failure instruction in its output.

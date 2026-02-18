@@ -173,10 +173,15 @@ The file is created on first `SELF_HEAL:` detection, updated after each iteratio
 
 `handle_message` (direct path), `execute_steps` (multi-step path), and `scheduler_loop` all process these markers via the unified `process_markers()` method, ensuring self-healing works whether triggered by a direct response, a multi-step plan step, or an action task response.
 
+### Repo Auto-Detection
+
+The gateway auto-detects the Omega source code repository path from the running binary location (`current_exe()` → up 3 directories → verify `Cargo.toml` exists). When detected, follow-up healing tasks include a hint with the source code path and the nix build command. This works across different developer machines without configuration.
+
 ### Safety Guardrails
 
 - **Max 10 iterations** — enforced in gateway code, then human escalation
 - **Build + clippy gate** — the AI must build+clippy before deploying (prompt instruction)
+- **Repo hint** — follow-up tasks include the auto-detected source code path and nix build command
 - **State file** — `~/.omega/self-healing.json` tracks iteration count, anomaly, and attempt history across restarts
 - **Scope limit** — only for genuine infrastructure/code bugs, not feature requests or user tasks
 - **Code-enforced** — iteration limits and escalation are in gateway code, not dependent on AI compliance
