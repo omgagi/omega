@@ -694,6 +694,56 @@ pub struct Gateway {
 
 **Logic:** Filters out any line whose trimmed form starts with `"LANG_SWITCH:"`, then joins remaining lines and trims the result.
 
+### `struct SelfHealingState`
+**Purpose:** State tracked in `~/.omega/self-healing.json` during active self-healing. Derives `Debug`, `Clone`, `Serialize`, `Deserialize`.
+
+**Fields:**
+- `anomaly: String` — Description of the anomaly being healed.
+- `iteration: u32` — Current iteration (1-based).
+- `max_iterations: u32` — Maximum iterations before escalation (default: 10).
+- `started_at: String` — ISO 8601 timestamp when self-healing started.
+- `attempts: Vec<String>` — History of what was tried in each iteration.
+
+### `fn extract_self_heal_marker(text: &str) -> Option<String>`
+**Purpose:** Extract the first `SELF_HEAL:` line from response text.
+
+**Logic:** Iterates through lines, finds the first line whose trimmed form starts with `"SELF_HEAL:"`, returns it trimmed. Returns `None` if not found.
+
+### `fn parse_self_heal_line(line: &str) -> Option<String>`
+**Purpose:** Parse the description from a `SELF_HEAL: description` line.
+
+**Logic:** Strips `"SELF_HEAL:"` prefix, trims, returns the description. Returns `None` if empty or prefix not found.
+
+### `fn has_self_heal_resolved_marker(text: &str) -> bool`
+**Purpose:** Check if response text contains a `SELF_HEAL_RESOLVED` marker line.
+
+**Logic:** Returns `true` if any line's trimmed form equals `"SELF_HEAL_RESOLVED"`.
+
+### `fn strip_self_heal_markers(text: &str) -> String`
+**Purpose:** Strip all `SELF_HEAL:` and `SELF_HEAL_RESOLVED` lines from response text.
+
+**Logic:** Filters out lines whose trimmed form starts with `"SELF_HEAL:"` or equals `"SELF_HEAL_RESOLVED"`, joins remaining lines, trims.
+
+### `fn self_healing_path() -> Option<PathBuf>`
+**Purpose:** Return the path to `~/.omega/self-healing.json`.
+
+**Logic:** Reads `$HOME` env var, returns `Some({home}/.omega/self-healing.json)`. Returns `None` if `HOME` is not set.
+
+### `fn read_self_healing_state() -> Option<SelfHealingState>`
+**Purpose:** Read and deserialize the current self-healing state from disk.
+
+**Logic:** Gets the path via `self_healing_path()`, reads the file, deserializes from JSON. Returns `None` if path unavailable, file missing, or JSON invalid.
+
+### `fn write_self_healing_state(state: &SelfHealingState) -> Result`
+**Purpose:** Serialize and write the self-healing state to disk.
+
+**Logic:** Gets path, serializes state to pretty JSON, writes to file. Returns error if `HOME` not set or I/O fails.
+
+### `fn delete_self_healing_state() -> Result`
+**Purpose:** Delete the self-healing state file.
+
+**Logic:** Gets path, removes the file if it exists. Returns error if `HOME` not set or deletion fails.
+
 ### `fn read_heartbeat_file() -> Option<String>`
 **Purpose:** Read `~/.omega/HEARTBEAT.md` if it exists, for use as a heartbeat checklist.
 
@@ -1090,6 +1140,8 @@ All interactions are logged to SQLite with:
 29. Classify-and-route: every message triggers a context-enriched classification call (using the fast model with active project, last 3 messages, and skill names); DIRECT messages use `model_fast`, multi-step plans use `model_complex`. Multi-step plans are executed autonomously with per-step progress, retry (up to 3 attempts), and a final summary.
 30. Planning steps are tracked in-memory (ephemeral) and are not persisted to the database.
 31. Model routing: `context.model` is set by classify-and-route before the provider call. The provider resolves the effective model via `context.model.as_deref().unwrap_or(&self.model)`.
+32. SELF_HEAL: markers are processed after LIMITATION markers. The gateway creates or updates `~/.omega/self-healing.json`, enforces max 10 iterations in code, schedules follow-up action tasks (2 min delay), and sends owner notifications via heartbeat channel. At max iterations, sends escalation alert and preserves state file. Both `handle_message` and `scheduler_loop` process these markers.
+33. SELF_HEAL_RESOLVED markers trigger deletion of `~/.omega/self-healing.json` and send a resolution notification to the owner via heartbeat channel. Processed in both `handle_message` and `scheduler_loop`.
 
 ## Tests
 
@@ -1254,3 +1306,63 @@ Verifies that `parse_plan_response()` returns `None` when the response contains 
 **Type:** Synchronous unit test (`#[test]`)
 
 Verifies that `parse_plan_response()` correctly parses a numbered list that has non-numbered preamble text before it, returning the steps while ignoring the preamble.
+
+### `test_extract_self_heal_marker`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `extract_self_heal_marker()` extracts the first `SELF_HEAL:` line from response text.
+
+### `test_extract_self_heal_marker_none`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `extract_self_heal_marker()` returns `None` when no `SELF_HEAL:` marker is present.
+
+### `test_parse_self_heal_line`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `parse_self_heal_line()` extracts the description from a `SELF_HEAL:` line.
+
+### `test_parse_self_heal_line_empty`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `parse_self_heal_line()` returns `None` for empty descriptions, whitespace-only, and non-matching lines.
+
+### `test_has_self_heal_resolved_marker`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `has_self_heal_resolved_marker()` returns `true` when `SELF_HEAL_RESOLVED` is present.
+
+### `test_has_self_heal_resolved_marker_none`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `has_self_heal_resolved_marker()` returns `false` when no `SELF_HEAL_RESOLVED` is present.
+
+### `test_strip_self_heal_markers`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `strip_self_heal_markers()` removes `SELF_HEAL:` lines while preserving other content.
+
+### `test_strip_self_heal_markers_resolved`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `strip_self_heal_markers()` removes `SELF_HEAL_RESOLVED` lines while preserving other content.
+
+### `test_strip_self_heal_markers_both`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `strip_self_heal_markers()` removes both `SELF_HEAL:` and `SELF_HEAL_RESOLVED` lines from the same text.
+
+### `test_self_healing_state_serde_roundtrip`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `SelfHealingState` can be serialized to JSON and deserialized back with all fields preserved.

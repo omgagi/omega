@@ -62,6 +62,7 @@ serde_json = { workspace = true }
 sqlx = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true }
+serde = { workspace = true }
 libc = "0.2"
 cliclack = "0.3"
 console = "0.15"

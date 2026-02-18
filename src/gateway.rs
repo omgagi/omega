@@ -453,6 +453,150 @@ impl Gateway {
                                         text = strip_limitation_markers(&text);
                                     }
 
+                                    // Process SELF_HEAL markers.
+                                    if let Some(heal_line) = extract_self_heal_marker(&text) {
+                                        if let Some(heal_desc) = parse_self_heal_line(&heal_line) {
+                                            let mut state = read_self_healing_state()
+                                                .unwrap_or_else(|| SelfHealingState {
+                                                    anomaly: heal_desc.clone(),
+                                                    iteration: 0,
+                                                    max_iterations: 10,
+                                                    started_at: chrono::Utc::now().to_rfc3339(),
+                                                    attempts: Vec::new(),
+                                                });
+                                            state.iteration += 1;
+
+                                            if state.iteration > state.max_iterations {
+                                                let alert = format!(
+                                                    "🚨 SELF-HEALING ESCALATION\n\n\
+                                                     Anomaly: {}\n\
+                                                     Iterations: {}/{}\n\
+                                                     Started: {}\n\n\
+                                                     Attempts:\n{}\n\n\
+                                                     Human intervention required.",
+                                                    state.anomaly,
+                                                    state.iteration,
+                                                    state.max_iterations,
+                                                    state.started_at,
+                                                    state
+                                                        .attempts
+                                                        .iter()
+                                                        .enumerate()
+                                                        .map(|(i, a)| format!("{}. {a}", i + 1))
+                                                        .collect::<Vec<_>>()
+                                                        .join("\n")
+                                                );
+                                                if let Some(ch) =
+                                                    channels.get(&heartbeat_config.channel)
+                                                {
+                                                    let msg = OutgoingMessage {
+                                                        text: alert,
+                                                        metadata: MessageMetadata::default(),
+                                                        reply_target: Some(
+                                                            heartbeat_config.reply_target.clone(),
+                                                        ),
+                                                    };
+                                                    let _ = ch.send(msg).await;
+                                                }
+                                                if let Err(e) = write_self_healing_state(&state) {
+                                                    error!("self-heal: failed to write state: {e}");
+                                                }
+                                                info!(
+                                                    "self-heal: escalated after {} iterations",
+                                                    state.iteration
+                                                );
+                                            } else {
+                                                if let Err(e) = write_self_healing_state(&state) {
+                                                    error!("self-heal: failed to write state: {e}");
+                                                }
+                                                let alert = format!(
+                                                    "🔧 SELF-HEALING ({}/{}): {}",
+                                                    state.iteration,
+                                                    state.max_iterations,
+                                                    state.anomaly
+                                                );
+                                                if let Some(ch) =
+                                                    channels.get(&heartbeat_config.channel)
+                                                {
+                                                    let msg = OutgoingMessage {
+                                                        text: alert,
+                                                        metadata: MessageMetadata::default(),
+                                                        reply_target: Some(
+                                                            heartbeat_config.reply_target.clone(),
+                                                        ),
+                                                    };
+                                                    let _ = ch.send(msg).await;
+                                                }
+                                                let due_at = (chrono::Utc::now()
+                                                    + chrono::Duration::minutes(2))
+                                                .to_rfc3339();
+                                                let next_desc = format!(
+                                                    "Self-healing verification — read \
+                                                     ~/.omega/self-healing.json for context, \
+                                                     check if the anomaly is resolved. \
+                                                     If resolved, emit SELF_HEAL_RESOLVED. \
+                                                     If not, diagnose, fix, build+clippy until \
+                                                     clean, restart service, update the attempts \
+                                                     array in self-healing.json, and emit \
+                                                     SELF_HEAL: {} to continue.",
+                                                    state.anomaly
+                                                );
+                                                match store
+                                                    .create_task(
+                                                        channel_name,
+                                                        "",
+                                                        reply_target,
+                                                        &next_desc,
+                                                        &due_at,
+                                                        None,
+                                                        "action",
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(new_id) => info!(
+                                                        "self-heal: scheduled verification \
+                                                         task {new_id} (iteration {})",
+                                                        state.iteration
+                                                    ),
+                                                    Err(e) => error!(
+                                                        "self-heal: failed to schedule \
+                                                         verification: {e}"
+                                                    ),
+                                                }
+                                            }
+                                        }
+                                        text = strip_self_heal_markers(&text);
+                                    }
+
+                                    // Process SELF_HEAL_RESOLVED marker.
+                                    if has_self_heal_resolved_marker(&text) {
+                                        match delete_self_healing_state() {
+                                            Ok(()) => {
+                                                info!(
+                                                    "self-heal: anomaly resolved (via scheduler)"
+                                                );
+                                                if let Some(ch) =
+                                                    channels.get(&heartbeat_config.channel)
+                                                {
+                                                    let msg = OutgoingMessage {
+                                                        text: "✅ Self-healing complete — anomaly resolved.".to_string(),
+                                                        metadata: MessageMetadata::default(),
+                                                        reply_target: Some(
+                                                            heartbeat_config.reply_target.clone(),
+                                                        ),
+                                                    };
+                                                    let _ = ch.send(msg).await;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!(
+                                                    "self-heal: failed to delete state file: {e}"
+                                                );
+                                            }
+                                        }
+                                        text = strip_self_heal_markers(&text);
+                                    }
+
                                     // Send response to channel (if non-empty after stripping markers).
                                     let cleaned = text.trim();
                                     if !cleaned.is_empty() && cleaned != "HEARTBEAT_OK" {
@@ -1336,6 +1480,139 @@ impl Gateway {
             response.text = strip_limitation_markers(&response.text);
         }
 
+        // --- 5i. EXTRACT SELF_HEAL MARKER ---
+        if let Some(heal_line) = extract_self_heal_marker(&response.text) {
+            if let Some(description) = parse_self_heal_line(&heal_line) {
+                let mut state = read_self_healing_state().unwrap_or_else(|| SelfHealingState {
+                    anomaly: description.clone(),
+                    iteration: 0,
+                    max_iterations: 10,
+                    started_at: chrono::Utc::now().to_rfc3339(),
+                    attempts: Vec::new(),
+                });
+                state.iteration += 1;
+
+                if state.iteration > state.max_iterations {
+                    // Escalate to owner — max iterations reached.
+                    let alert = format!(
+                        "🚨 SELF-HEALING ESCALATION\n\n\
+                         Anomaly: {}\n\
+                         Iterations: {}/{}\n\
+                         Started: {}\n\n\
+                         Attempts:\n{}\n\n\
+                         Human intervention required.",
+                        state.anomaly,
+                        state.iteration,
+                        state.max_iterations,
+                        state.started_at,
+                        state
+                            .attempts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, a)| format!("{}. {a}", i + 1))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
+                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                        let msg = OutgoingMessage {
+                            text: alert,
+                            metadata: MessageMetadata::default(),
+                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
+                        };
+                        if let Err(e) = ch.send(msg).await {
+                            error!("self-heal: failed to send escalation: {e}");
+                        }
+                    }
+                    // Keep file for owner review.
+                    if let Err(e) = write_self_healing_state(&state) {
+                        error!("self-heal: failed to write state: {e}");
+                    }
+                    info!(
+                        "self-heal: escalated after {} iterations: {}",
+                        state.iteration, state.anomaly
+                    );
+                } else {
+                    // Normal iteration — notify owner and schedule follow-up.
+                    if let Err(e) = write_self_healing_state(&state) {
+                        error!("self-heal: failed to write state: {e}");
+                    }
+                    let alert = format!(
+                        "🔧 SELF-HEALING ({}/{}): {}",
+                        state.iteration, state.max_iterations, state.anomaly
+                    );
+                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                        let msg = OutgoingMessage {
+                            text: alert,
+                            metadata: MessageMetadata::default(),
+                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
+                        };
+                        if let Err(e) = ch.send(msg).await {
+                            error!("self-heal: failed to send notification: {e}");
+                        }
+                    }
+                    // Schedule follow-up verification in 2 minutes.
+                    let due_at = (chrono::Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
+                    let heal_desc = format!(
+                        "Self-healing verification — read ~/.omega/self-healing.json for context, \
+                         check if the anomaly is resolved. If resolved, emit SELF_HEAL_RESOLVED. \
+                         If not, diagnose, fix, build+clippy until clean, restart service, \
+                         update the attempts array in self-healing.json, \
+                         and emit SELF_HEAL: {} to continue.",
+                        state.anomaly
+                    );
+                    let reply_target = incoming.reply_target.as_deref().unwrap_or("");
+                    match self
+                        .memory
+                        .create_task(
+                            &incoming.channel,
+                            &incoming.sender_id,
+                            reply_target,
+                            &heal_desc,
+                            &due_at,
+                            None,
+                            "action",
+                        )
+                        .await
+                    {
+                        Ok(id) => {
+                            info!(
+                                "self-heal: scheduled verification task {id} (iteration {})",
+                                state.iteration
+                            );
+                        }
+                        Err(e) => {
+                            error!("self-heal: failed to schedule verification: {e}");
+                        }
+                    }
+                }
+            }
+            response.text = strip_self_heal_markers(&response.text);
+        }
+
+        // --- 5j. EXTRACT SELF_HEAL_RESOLVED MARKER ---
+        if has_self_heal_resolved_marker(&response.text) {
+            match delete_self_healing_state() {
+                Ok(()) => {
+                    info!("self-heal: anomaly resolved, state file deleted");
+                    let alert = "✅ Self-healing complete — anomaly resolved.".to_string();
+                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                        let msg = OutgoingMessage {
+                            text: alert,
+                            metadata: MessageMetadata::default(),
+                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
+                        };
+                        if let Err(e) = ch.send(msg).await {
+                            error!("self-heal: failed to send resolution notice: {e}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("self-heal: failed to delete state file: {e}");
+                }
+            }
+            response.text = strip_self_heal_markers(&response.text);
+        }
+
         // --- 6. STORE IN MEMORY ---
         if let Err(e) = self.memory.store_exchange(&incoming, &response).await {
             error!("failed to store exchange: {e}");
@@ -2123,6 +2400,85 @@ fn strip_limitation_markers(text: &str) -> String {
         .join("\n")
         .trim()
         .to_string()
+}
+
+/// State tracked in `~/.omega/self-healing.json` during active self-healing.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SelfHealingState {
+    /// Description of the anomaly being healed.
+    pub anomaly: String,
+    /// Current iteration (1-based).
+    pub iteration: u32,
+    /// Maximum iterations before escalation.
+    pub max_iterations: u32,
+    /// ISO 8601 timestamp when self-healing started.
+    pub started_at: String,
+    /// History of what was tried in each iteration.
+    pub attempts: Vec<String>,
+}
+
+/// Extract the first `SELF_HEAL:` line from response text.
+fn extract_self_heal_marker(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| line.trim().starts_with("SELF_HEAL:"))
+        .map(|line| line.trim().to_string())
+}
+
+/// Parse the description from a `SELF_HEAL: description` line.
+fn parse_self_heal_line(line: &str) -> Option<String> {
+    let content = line.strip_prefix("SELF_HEAL:")?.trim();
+    if content.is_empty() {
+        return None;
+    }
+    Some(content.to_string())
+}
+
+/// Check if response text contains a `SELF_HEAL_RESOLVED` marker line.
+fn has_self_heal_resolved_marker(text: &str) -> bool {
+    text.lines().any(|line| line.trim() == "SELF_HEAL_RESOLVED")
+}
+
+/// Strip all `SELF_HEAL:` and `SELF_HEAL_RESOLVED` lines from response text.
+fn strip_self_heal_markers(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.starts_with("SELF_HEAL:") && trimmed != "SELF_HEAL_RESOLVED"
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Return the path to `~/.omega/self-healing.json`.
+fn self_healing_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(format!("{home}/.omega/self-healing.json")))
+}
+
+/// Read the current self-healing state from disk.
+fn read_self_healing_state() -> Option<SelfHealingState> {
+    let path = self_healing_path()?;
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+/// Write the self-healing state to disk.
+fn write_self_healing_state(state: &SelfHealingState) -> anyhow::Result<()> {
+    let path = self_healing_path().ok_or_else(|| anyhow::anyhow!("HOME not set"))?;
+    let json = serde_json::to_string_pretty(state)?;
+    std::fs::write(path, json)?;
+    Ok(())
+}
+
+/// Delete the self-healing state file.
+fn delete_self_healing_state() -> anyhow::Result<()> {
+    let path = self_healing_path().ok_or_else(|| anyhow::anyhow!("HOME not set"))?;
+    if path.exists() {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
 }
 
 /// Return localized status messages for the delayed provider nudge.
@@ -2923,5 +3279,88 @@ mod tests {
         assert!(result.contains("Active project: trader"));
         assert!(!result.contains("Recent conversation:"));
         assert!(!result.contains("Available skills:"));
+    }
+
+    // --- SELF_HEAL marker tests ---
+
+    #[test]
+    fn test_extract_self_heal_marker() {
+        let text = "Something is wrong.\nSELF_HEAL: Build pipeline broken\nLet me fix it.";
+        let result = extract_self_heal_marker(text);
+        assert_eq!(result, Some("SELF_HEAL: Build pipeline broken".to_string()));
+    }
+
+    #[test]
+    fn test_extract_self_heal_marker_none() {
+        let text = "Everything is working fine.";
+        assert!(extract_self_heal_marker(text).is_none());
+    }
+
+    #[test]
+    fn test_parse_self_heal_line() {
+        let line = "SELF_HEAL: Build pipeline broken";
+        let result = parse_self_heal_line(line).unwrap();
+        assert_eq!(result, "Build pipeline broken");
+    }
+
+    #[test]
+    fn test_parse_self_heal_line_empty() {
+        assert!(parse_self_heal_line("SELF_HEAL:").is_none());
+        assert!(parse_self_heal_line("SELF_HEAL:   ").is_none());
+        assert!(parse_self_heal_line("not a self-heal line").is_none());
+    }
+
+    #[test]
+    fn test_has_self_heal_resolved_marker() {
+        let text = "Fixed the issue.\nSELF_HEAL_RESOLVED\nAll good now.";
+        assert!(has_self_heal_resolved_marker(text));
+    }
+
+    #[test]
+    fn test_has_self_heal_resolved_marker_none() {
+        let text = "No resolved marker here.";
+        assert!(!has_self_heal_resolved_marker(text));
+    }
+
+    #[test]
+    fn test_strip_self_heal_markers() {
+        let text = "Detected issue.\nSELF_HEAL: Build broken\nFixing now.";
+        let result = strip_self_heal_markers(text);
+        assert_eq!(result, "Detected issue.\nFixing now.");
+    }
+
+    #[test]
+    fn test_strip_self_heal_markers_resolved() {
+        let text = "Fixed it.\nSELF_HEAL_RESOLVED\nAll done.";
+        let result = strip_self_heal_markers(text);
+        assert_eq!(result, "Fixed it.\nAll done.");
+    }
+
+    #[test]
+    fn test_strip_self_heal_markers_both() {
+        let text = "Start.\nSELF_HEAL: Bug found\nMiddle.\nSELF_HEAL_RESOLVED\nEnd.";
+        let result = strip_self_heal_markers(text);
+        assert_eq!(result, "Start.\nMiddle.\nEnd.");
+    }
+
+    #[test]
+    fn test_self_healing_state_serde_roundtrip() {
+        let state = SelfHealingState {
+            anomaly: "Build broken".to_string(),
+            iteration: 3,
+            max_iterations: 10,
+            started_at: "2026-02-18T12:00:00Z".to_string(),
+            attempts: vec![
+                "1: Tried restarting service".to_string(),
+                "2: Fixed import path".to_string(),
+                "3: Rebuilt binary".to_string(),
+            ],
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let deserialized: SelfHealingState = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.anomaly, "Build broken");
+        assert_eq!(deserialized.iteration, 3);
+        assert_eq!(deserialized.max_iterations, 10);
+        assert_eq!(deserialized.attempts.len(), 3);
     }
 }

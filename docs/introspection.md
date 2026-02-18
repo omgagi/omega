@@ -126,14 +126,25 @@ When something doesn't add up, OMEGA can query these tables to verify its own be
 
 ## Self-Healing Protocol
 
-When OMEGA detects a genuine infrastructure or code bug (not a user request or cosmetic issue), it triggers the self-healing protocol:
+When OMEGA detects a genuine infrastructure or code bug, it emits a `SELF_HEAL: description` marker. The **gateway** (not the AI) manages the entire lifecycle:
 
-1. **Check state**: Read `~/.omega/self-healing.json`. If it exists, continue from the current iteration. If not, create it with iteration 1.
-2. **Diagnose**: Query `~/.omega/memory.db`, read logs at `~/.omega/omega.log`, inspect source code. Understand the root cause.
-3. **Fix**: Write the code fix. Build with `cargo build --release` via Nix. If compilation fails, read the errors and fix them — repeat until the build is clean. Run `cargo clippy -- -D warnings` — fix lint errors until clippy passes. Never deploy code that doesn't compile or has warnings.
-4. **Deploy & Verify**: Update `~/.omega/self-healing.json` with what was tried. Restart the service. Schedule a verification via `SCHEDULE_ACTION` (2 minutes later).
-5. **Iterate**: The scheduled verification reads `~/.omega/self-healing.json` for context, checks if the anomaly is resolved. If resolved, delete the file and inform the owner. If not, increment iteration and repeat steps 2-4.
-6. **Escalate**: At iteration 10, STOP. Send the owner a detailed message with the full attempt history. Keep the file for review. Do not schedule further actions.
+### Markers
+
+| Marker | Trigger | Gateway Action |
+|--------|---------|---------------|
+| `SELF_HEAL: description` | AI detects anomaly | Create/update state, notify owner, schedule follow-up |
+| `SELF_HEAL_RESOLVED` | AI confirms fix | Delete state file, notify owner |
+
+### Gateway-Managed Lifecycle
+
+1. **AI emits** `SELF_HEAL: description` on its own line
+2. **Gateway reads** `~/.omega/self-healing.json` (or creates it with iteration 1)
+3. **Gateway increments** the iteration counter
+4. **If iteration ≤ 10**: writes state, notifies owner ("🔧 SELF-HEALING (N/10): ..."), schedules a `SCHEDULE_ACTION` verification task (2 min delay)
+5. **If iteration > 10**: sends escalation alert ("🚨 SELF-HEALING ESCALATION"), preserves state file for owner review, does **not** schedule further actions
+6. **On resolution**: AI emits `SELF_HEAL_RESOLVED`, gateway deletes state file and notifies owner ("✅ Self-healing complete")
+
+The AI's responsibility during healing tasks is: read `~/.omega/self-healing.json` for context, diagnose, fix, build+clippy until clean, restart service, update the attempts array. The gateway handles everything else (iteration tracking, scheduling, escalation).
 
 ### State Tracking
 
@@ -144,7 +155,7 @@ All self-healing state is persisted in `~/.omega/self-healing.json`:
   "anomaly": "audit_log not recording model field",
   "iteration": 3,
   "max_iterations": 10,
-  "started_at": "2026-02-18T19:00:00",
+  "started_at": "2026-02-18T19:00:00Z",
   "attempts": [
     "1: Added model fallback in provider — build passed, still not recording",
     "2: Fixed audit entry to pass model from response — clippy failed, fixed, deployed",
@@ -153,11 +164,16 @@ All self-healing state is persisted in `~/.omega/self-healing.json`:
 }
 ```
 
-The file is created on first detection, updated after each attempt, and deleted on resolution. If OMEGA reaches the max iteration limit, the file is preserved so the owner can review the full history.
+The file is created on first `SELF_HEAL:` detection, updated after each iteration, and deleted on `SELF_HEAL_RESOLVED`. If max iterations are reached, the file is preserved for owner review.
+
+### Processing Locations
+
+Both `handle_message` (Stages 5i/5j) and `scheduler_loop` process these markers, ensuring self-healing works whether triggered by a direct message response or an action task response.
 
 ### Safety Guardrails
 
-- **Max 10 iterations** — hard limit, then human escalation
-- **Build + clippy gate** — broken code is never deployed; compilation errors are fixed within the same iteration
-- **State file** — `~/.omega/self-healing.json` tracks iteration count, anomaly, and attempt history across restarts; prevents count loss between invocations
+- **Max 10 iterations** — enforced in gateway code, then human escalation
+- **Build + clippy gate** — the AI must build+clippy before deploying (prompt instruction)
+- **State file** — `~/.omega/self-healing.json` tracks iteration count, anomaly, and attempt history across restarts
 - **Scope limit** — only for genuine infrastructure/code bugs, not feature requests or user tasks
+- **Code-enforced** — iteration limits and escalation are in gateway code, not dependent on AI compliance
