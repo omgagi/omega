@@ -17,6 +17,8 @@ use omega_providers::claude_code::ClaudeCodeProvider;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Parser)]
 #[command(
@@ -68,19 +70,6 @@ enum ServiceAction {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Only enable verbose logging for commands that run the agent.
-    // Init and Service are interactive CLI flows — no backend noise.
-    let log_level = match cli.command {
-        Commands::Init | Commands::Service { .. } => "error",
-        _ => "info",
-    };
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_level)),
-        )
-        .init();
-
     // Refuse to run as root — claude CLI rejects root for security.
     if unsafe { libc::geteuid() } == 0 {
         anyhow::bail!(
@@ -92,6 +81,24 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Start => {
             let mut cfg = config::load(&cli.config)?;
+
+            // Set up logging: stdout + file appender to {data_dir}/omega.log.
+            let data_dir = shellexpand(&cfg.omega.data_dir);
+            let file_appender = tracing_appender::rolling::never(&data_dir, "omega.log");
+            let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+            let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(tracing_subscriber::fmt::layer()) // stdout
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_writer(non_blocking)
+                        .with_ansi(false), // no color codes in file
+                )
+                .init();
 
             // Env var override: OPENAI_API_KEY → whisper_api_key (if not set in config).
             if let Some(ref mut tg) = cfg.channel.telegram {
@@ -206,6 +213,7 @@ async fn main() -> anyhow::Result<()> {
             gw.run().await?;
         }
         Commands::Status => {
+            init_stdout_tracing("error");
             let cfg = config::load(&cli.config)?;
             cliclack::intro(console::style("omega status").bold().to_string())?;
 
@@ -245,6 +253,7 @@ async fn main() -> anyhow::Result<()> {
             cliclack::outro("Status check complete")?;
         }
         Commands::Ask { message } => {
+            init_stdout_tracing("info");
             if message.is_empty() {
                 anyhow::bail!("no message provided. Usage: omega ask <message>");
             }
@@ -274,16 +283,30 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", response.text);
         }
         Commands::Init => {
+            init_stdout_tracing("error");
             init::run().await?;
         }
-        Commands::Service { action } => match action {
-            ServiceAction::Install => service::install(&cli.config)?,
-            ServiceAction::Uninstall => service::uninstall()?,
-            ServiceAction::Status => service::status()?,
-        },
+        Commands::Service { action } => {
+            init_stdout_tracing("error");
+            match action {
+                ServiceAction::Install => service::install(&cli.config)?,
+                ServiceAction::Uninstall => service::uninstall()?,
+                ServiceAction::Status => service::status()?,
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Set up stdout-only tracing for non-daemon commands.
+fn init_stdout_tracing(level: &str) {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level)),
+        )
+        .init();
 }
 
 /// Build the configured provider.
