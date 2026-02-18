@@ -107,3 +107,36 @@ LIMITATION: No PDF editing | Cannot modify PDF documents | Integrate PDF manipul
 ```
 
 The limitation is stored and monitored from that point forward.
+
+## Self-Audit
+
+Beyond capability gaps, OMEGA monitors its own behavior for anomalies. The self-audit instruction in the system prompt tells OMEGA to flag immediately when:
+
+- Output doesn't match expectations
+- Claims can't be backed up with evidence
+- Tools fail silently
+- Results don't add up
+
+OMEGA has read access to its own audit trail at `~/.omega/memory.db`:
+- `audit_log` — every exchange with model used, processing time, status
+- `conversations` — conversation history
+- `facts` — user profile data
+
+When something doesn't add up, OMEGA can query these tables to verify its own behavior before reporting.
+
+## Self-Healing Protocol
+
+When OMEGA detects a genuine infrastructure or code bug (not a user request or cosmetic issue), it triggers the self-healing protocol:
+
+1. **Diagnose**: Query `~/.omega/memory.db`, read logs at `~/.omega/omega.log`, inspect source code. Understand the root cause.
+2. **Fix**: Write the code fix. Build with `cargo build --release` via Nix. If compilation fails, read the errors and fix them — repeat until the build is clean. Run `cargo clippy -- -D warnings` — fix lint errors until clippy passes. Never deploy code that doesn't compile or has warnings.
+3. **Deploy & Verify**: Restart the service. Schedule a verification action via `SCHEDULE_ACTION` with the anomaly description, what was tried, and the current iteration count (e.g., "iteration 3/10").
+4. **Iterate**: The scheduled verification fires, checks if the anomaly is resolved. If not, repeat steps 1-3.
+5. **Escalate**: At iteration 10, STOP. Send the owner a detailed message: what the anomaly is, what was tried across all iterations, why it's not fixed, and what needs human intervention.
+
+### Safety Guardrails
+
+- **Max 10 iterations** — hard limit, then human escalation
+- **Build + clippy gate** — broken code is never deployed; compilation errors are fixed within the same iteration
+- **Context continuity** — each SCHEDULE_ACTION carries the full context (anomaly, attempts, iteration count) so the next instance can continue without losing information
+- **Scope limit** — only for genuine infrastructure/code bugs, not feature requests or user tasks
