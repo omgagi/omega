@@ -67,7 +67,7 @@ This prevents hammering the API during outages while recovering quickly once the
 When a message arrives from Telegram, the channel applies several filters before forwarding it to the gateway:
 
 1. **Must be a message** -- non-message updates (edited messages, channel posts, callbacks) are skipped.
-2. **Must have text or transcribable voice** -- if the message has text, it's used directly. If it has a voice attachment and `whisper_api_key` is configured, the audio is downloaded and transcribed via OpenAI Whisper. Photos, stickers, and other media types are ignored.
+2. **Must have text, transcribable voice, or photo** -- if the message has text, it's used directly. If it has a voice attachment and `whisper_api_key` is configured, the audio is downloaded and transcribed via OpenAI Whisper. If it has a photo, the largest size is downloaded and attached as an image. Stickers, documents, and other media types are ignored.
 3. **Must have a sender** -- anonymous messages are skipped.
 4. **Must be authorized** -- if `allowed_users` is configured (non-empty), the sender's Telegram user ID must be in the list. Unauthorized messages are logged and silently dropped.
 
@@ -205,6 +205,22 @@ Telegram voice messages use OGG Opus format, which Whisper supports natively. Co
 
 ---
 
+## Photo Support
+
+When a user sends a photo to the bot, the Telegram channel downloads it and passes it to the gateway as an image attachment:
+
+1. Telegram sends multiple sizes of the same photo (thumbnails through full resolution) in the `photo` array on the message.
+2. The channel selects the **largest version** (the last element in the array) to get the best quality.
+3. The photo is downloaded from Telegram servers using the same `getFile` mechanism used for voice messages.
+4. The downloaded bytes are wrapped in an `Attachment` with `file_type: Image` and a generated `{uuid}.jpg` filename.
+5. If the photo has a **caption**, it is used as the message text. Otherwise, the text defaults to `"[Photo]"`.
+
+The attachment is included on the `IncomingMessage` and flows through the gateway's normal inbox processing, allowing the AI provider to see and reason about the image.
+
+If the photo download fails, the message is silently skipped (logged as a warning), similar to how voice download failures are handled.
+
+---
+
 ## Group Chat Awareness
 
 The Telegram channel detects group chats using the `type` field from the Telegram Bot API's `Chat` object. When the chat type is `"group"` or `"supergroup"`, the `is_group` flag on `IncomingMessage` is set to `true`.
@@ -217,7 +233,7 @@ When `is_group` is true, the gateway:
 
 ## Limitations
 
-- **Text and voice only.** Photos, documents, stickers, and other media types are silently skipped. Voice messages require an OpenAI API key (`whisper_api_key`) for transcription; without it, voice messages are also skipped.
+- **Text, voice, and photo only.** Documents, stickers, and other media types are silently skipped. Voice messages require an OpenAI API key (`whisper_api_key`) for transcription; without it, voice messages are also skipped.
 - **No inline keyboards or buttons.** Responses are plain text (with optional Markdown formatting).
 - **No webhook mode.** Only long polling is supported. This is simpler but slightly higher latency than webhooks.
 - **Message chunking is byte-based.** The 4096-byte split operates on byte offsets, not Unicode grapheme clusters. In practice this is fine because Telegram's own limit is also byte-based.

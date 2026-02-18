@@ -96,7 +96,16 @@ pub struct WhatsAppChannel {
 3. **Auth check**: Verify sender phone is in `allowed_users` (or list is empty)
 4. **Unwrap wrappers**: Extract inner message from `DeviceSentMessage`, `EphemeralMessage`, or `ViewOnceMessage` containers
 5. **Text extraction**: Read from `conversation` or `extended_text_message.text`
-6. **Forward**: Send `IncomingMessage` to gateway via mpsc channel
+6. **Image handling**: If no text was extracted, check `inner.image_message`. If an image message is found:
+   - Extract caption from `img.caption` (defaults to `"[Photo]"` if empty)
+   - Acquire the client from `client_store` (lock, clone, drop)
+   - Download image bytes via `wa_client.download(img.as_ref())` (`ImageMessage` implements `Downloadable`)
+   - Derive file extension from `img.mimetype` (e.g., `"image/jpeg"` -> `"jpeg"`)
+   - Build `Attachment { file_type: Image, data: Some(bytes), filename: Some("{uuid}.{ext}") }`
+   - Set text to the caption
+   - On download failure, log a warning and skip the message
+7. **Empty guard**: If text is still empty and no image attachment was built, skip the message
+8. **Forward**: Send `IncomingMessage` (with `attachments` populated from step 6 if applicable) to gateway via mpsc channel
 
 ---
 
@@ -146,6 +155,7 @@ The gateway extracts `WHATSAPP_QR` lines from AI responses (like `SCHEDULE:` and
 | `sender_name` | Phone number (profile name not always available) |
 | `reply_target` | Chat JID (e.g. `"5511999887766@s.whatsapp.net"`) |
 | `is_group` | `false` (WhatsApp is currently self-chat only) |
+| `attachments` | Empty for text-only messages; contains `Attachment { file_type: Image, data: Some(bytes), filename: Some("{uuid}.{ext}") }` for image messages |
 
 ### Outgoing (Gateway → WhatsApp)
 
@@ -162,6 +172,10 @@ A custom `SqlxWhatsAppStore` (`crates/omega-channels/src/whatsapp_store.rs`) imp
 - LID mappings and device lists
 
 On restart, the bot reconnects using the persisted session without requiring a new QR scan.
+
+### Image Download Error Handling
+
+When an incoming image message is detected but the download fails (`wa_client.download()` returns an error), the handler logs a warning with the error details and skips the message entirely. The message is not forwarded to the gateway. This prevents partial or broken attachments from reaching the provider.
 
 ### Store Notes
 - `Device` struct uses custom serde (`key_pair_serde`, `BigArray`) requiring binary serialization — `serde_json` cannot handle it; `bincode` is used instead.

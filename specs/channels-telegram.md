@@ -2,7 +2,7 @@
 
 **File:** `crates/omega-channels/src/telegram.rs`
 **Crate:** `omega-channels`
-**Last updated:** 2026-02-17
+**Last updated:** 2026-02-18
 
 ## Purpose
 
@@ -74,6 +74,8 @@ The main public struct. Holds configuration, HTTP client, and polling state.
 | `chat` | `TgChat` | Chat the message belongs to |
 | `text` | `Option<String>` | Text content of the message |
 | `voice` | `Option<TgVoice>` | Voice message attachment, if present |
+| `photo` | `Option<Vec<TgPhotoSize>>` | Photo attachments in multiple sizes, if present |
+| `caption` | `Option<String>` | Caption text for media messages (photos, etc.) |
 
 Note: `message_id` and `from` are marked `#[allow(dead_code)]` -- `message_id` is deserialized but not currently used; `from` is used for auth and sender name resolution.
 
@@ -84,6 +86,15 @@ Note: `message_id` and `from` are marked `#[allow(dead_code)]` -- `message_id` i
 | `file_id` | `String` | Unique file identifier for downloading via `getFile` |
 | `duration` | `i64` | Duration of the voice message in seconds |
 | `mime_type` | `Option<String>` | MIME type (typically `audio/ogg`) |
+| `file_size` | `Option<i64>` | File size in bytes |
+
+#### `TgPhotoSize`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `file_id` | `String` | Unique file identifier for downloading via `getFile` |
+| `width` | `i64` | Photo width in pixels |
+| `height` | `i64` | Photo height in pixels |
 | `file_size` | `Option<i64>` | File size in bytes |
 
 #### `TgFile`
@@ -231,7 +242,7 @@ The polling loop runs inside a `tokio::spawn` task created in `start()`. It shar
 For each `TgUpdate` in the response:
 
 1. **Skip non-message updates:** If `update.message` is `None`, skip.
-2. **Extract text:** If `message.text` is `Some`, use it directly. If `message.voice` is `Some` and `whisper_api_key` is configured, download the voice file via `getFile` and transcribe it via OpenAI Whisper; the result is wrapped as `"[Voice message] {transcript}"`. If neither text nor transcribable voice is present, skip.
+2. **Extract text and attachments:** Returns a `(text, attachments)` tuple. If `message.text` is `Some`, use it directly with empty attachments. If `message.voice` is `Some` and `whisper_api_key` is configured, download the voice file via `getFile` and transcribe it via OpenAI Whisper; the result is wrapped as `"[Voice message] {transcript}"` with empty attachments. If `message.photo` is `Some`, download the largest photo (last element in the array) via `download_telegram_file()`, build an `Attachment { file_type: Image, data: Some(bytes), filename: Some("{uuid}.jpg") }`, and use the caption as text or `"[Photo]"` if no caption is present. If none of these are present, skip.
 3. **Skip anonymous messages:** If `message.from` is `None`, skip.
 4. **Authorization check:** If `allowed_users` is non-empty and the sender's `user.id` is not in the list, log a warning and skip.
 5. **Resolve sender name:** Priority order:
@@ -249,7 +260,7 @@ For each `TgUpdate` in the response:
 | `text` | `message.text` |
 | `timestamp` | `chrono::Utc::now()` |
 | `reply_to` | `None` |
-| `attachments` | `Vec::new()` (empty) |
+| `attachments` | Photo attachments from downloaded images, empty Vec otherwise |
 | `reply_target` | `Some(chat.id.to_string())` |
 | `is_group` | `true` if `chat.chat_type` is `"group"` or `"supergroup"`, `false` otherwise |
 
@@ -327,6 +338,7 @@ All errors are wrapped in `OmegaError::Channel(String)`.
 | Voice download failure | Log warning, skip message |
 | Voice transcription failure | Log warning, skip message |
 | Voice without whisper key | Log debug, skip message |
+| Photo download failure | Log warning, skip message |
 
 ---
 
@@ -365,6 +377,16 @@ mod tests {
     fn test_tg_message_text_only()
     // Deserializes a TgMessage with text only (no voice).
     // Verifies voice is None.
+
+    #[test]
+    fn test_tg_message_with_photo()
+    // Deserializes a TgMessage with a photo array and caption.
+    // Verifies photo sizes are correctly parsed and caption is present.
+
+    #[test]
+    fn test_tg_message_with_photo_no_caption()
+    // Deserializes a TgMessage with a photo array but no caption.
+    // Verifies photo sizes are correctly parsed and caption is None.
 }
 ```
 
@@ -382,15 +404,15 @@ mod tests {
                |    TelegramChannel::start   |
                |    (tokio::spawn loop)      |
                +-----------------------------+
-                    |                   |
-              text message         voice message
-                    |                   |
-                    |         getFile + download
-                    |                   |
-                    |          OpenAI Whisper API
-                    |           (transcribe)
-                    |                   |
-                    +----> "[Voice message] ..."
+                    |            |            |
+              text message  voice message  photo message
+                    |            |            |
+                    |   getFile + download    |
+                    |            |      getFile + download
+                    |   OpenAI Whisper API    |
+                    |    (transcribe)    Attachment(Image)
+                    |            |       caption or "[Photo]"
+                    +----> (text, attachments)
                               |
                    mpsc::channel(64)
                               |

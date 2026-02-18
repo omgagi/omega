@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use omega_core::{
     config::TelegramConfig,
     error::OmegaError,
-    message::{IncomingMessage, OutgoingMessage},
+    message::{Attachment, AttachmentType, IncomingMessage, OutgoingMessage},
     traits::Channel,
 };
 use serde::Deserialize;
@@ -48,6 +48,8 @@ struct TgMessage {
     chat: TgChat,
     text: Option<String>,
     voice: Option<TgVoice>,
+    photo: Option<Vec<TgPhotoSize>>,
+    caption: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +64,15 @@ struct TgVoice {
 #[derive(Debug, Deserialize)]
 struct TgFile {
     file_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct TgPhotoSize {
+    file_id: String,
+    width: i64,
+    height: i64,
+    file_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -273,8 +284,8 @@ impl Channel for TelegramChannel {
                         None => continue,
                     };
 
-                    let text = if let Some(t) = msg.text {
-                        t
+                    let (text, attachments) = if let Some(t) = msg.text {
+                        (t, Vec::new())
                     } else if let Some(ref voice) = msg.voice {
                         match whisper_api_key.as_deref() {
                             Some(key) if !key.is_empty() => {
@@ -293,7 +304,10 @@ impl Channel for TelegramChannel {
                                                     "transcribed voice message ({}s)",
                                                     voice.duration
                                                 );
-                                                format!("[Voice message] {transcript}")
+                                                (
+                                                    format!("[Voice message] {transcript}"),
+                                                    Vec::new(),
+                                                )
                                             }
                                             Err(e) => {
                                                 warn!("voice transcription failed: {e}");
@@ -311,6 +325,43 @@ impl Channel for TelegramChannel {
                                 debug!("skipping voice (no whisper key)");
                                 continue;
                             }
+                        }
+                    } else if let Some(ref photos) = msg.photo {
+                        // Telegram sends multiple sizes; the last is the largest.
+                        if let Some(largest) = photos.last() {
+                            match download_telegram_file(
+                                &client,
+                                &base_url,
+                                &bot_token,
+                                &largest.file_id,
+                            )
+                            .await
+                            {
+                                Ok(bytes) => {
+                                    let filename = format!("{}.jpg", Uuid::new_v4());
+                                    let attachment = Attachment {
+                                        file_type: AttachmentType::Image,
+                                        url: None,
+                                        data: Some(bytes),
+                                        filename: Some(filename),
+                                    };
+                                    let text = msg
+                                        .caption
+                                        .clone()
+                                        .unwrap_or_else(|| "[Photo]".to_string());
+                                    info!(
+                                        "downloaded photo ({}x{})",
+                                        largest.width, largest.height
+                                    );
+                                    (text, vec![attachment])
+                                }
+                                Err(e) => {
+                                    warn!("photo download failed: {e}");
+                                    continue;
+                                }
+                            }
+                        } else {
+                            continue;
                         }
                     } else {
                         continue;
@@ -345,7 +396,7 @@ impl Channel for TelegramChannel {
                         text,
                         timestamp: chrono::Utc::now(),
                         reply_to: None,
-                        attachments: Vec::new(),
+                        attachments,
                         reply_target: Some(msg.chat.id.to_string()),
                         is_group,
                     };
@@ -577,6 +628,46 @@ mod tests {
         assert_eq!(voice.file_id, "abc123");
         assert_eq!(voice.duration, 5);
         assert_eq!(voice.mime_type.as_deref(), Some("audio/ogg"));
+    }
+
+    #[test]
+    fn test_tg_message_with_photo() {
+        let json = r#"{
+            "message_id": 3,
+            "chat": {"id": 100, "type": "private"},
+            "photo": [
+                {"file_id": "small", "width": 90, "height": 90, "file_size": 1000},
+                {"file_id": "medium", "width": 320, "height": 320, "file_size": 5000},
+                {"file_id": "large", "width": 800, "height": 800, "file_size": 20000}
+            ],
+            "caption": "Check this out"
+        }"#;
+        let msg: TgMessage = serde_json::from_str(json).unwrap();
+        assert!(msg.text.is_none());
+        assert!(msg.voice.is_none());
+        let photos = msg.photo.unwrap();
+        assert_eq!(photos.len(), 3);
+        assert_eq!(photos.last().unwrap().file_id, "large");
+        assert_eq!(photos.last().unwrap().width, 800);
+        assert_eq!(msg.caption.as_deref(), Some("Check this out"));
+    }
+
+    #[test]
+    fn test_tg_message_with_photo_no_caption() {
+        let json = r#"{
+            "message_id": 4,
+            "chat": {"id": 100, "type": "private"},
+            "photo": [
+                {"file_id": "only", "width": 640, "height": 480}
+            ]
+        }"#;
+        let msg: TgMessage = serde_json::from_str(json).unwrap();
+        assert!(msg.photo.is_some());
+        assert!(msg.caption.is_none());
+        let photos = msg.photo.unwrap();
+        assert_eq!(photos.len(), 1);
+        assert_eq!(photos[0].file_id, "only");
+        assert!(photos[0].file_size.is_none());
     }
 
     #[test]

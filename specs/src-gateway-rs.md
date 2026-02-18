@@ -308,6 +308,13 @@ pub struct Gateway {
 - If modified, log warning with sanitization warnings.
 - Clone the incoming message and replace its text with sanitized version.
 
+**Stage 2a: Inbox Image Save**
+- If `incoming.attachments` is non-empty:
+  - Call `ensure_inbox_dir(data_dir)` to create `{data_dir}/workspace/inbox/` if it does not exist.
+  - Call `save_attachments_to_inbox(&inbox_dir, &incoming.attachments)` to save Image-type attachments to disk.
+  - For each saved image path, prepend `[Attached image: /full/path.jpg]` to `clean_incoming.text`.
+  - Store the returned `Vec<PathBuf>` as `inbox_images` for later cleanup.
+
 **Stage 2b: Welcome Check (First-Time Users)**
 - If the sender has no `welcomed` fact (first-time user):
   - Detect language from the incoming message text.
@@ -444,6 +451,10 @@ pub struct Gateway {
   - Delete the file after sending (cleanup).
   - Log with `tracing`: `info!` on success, `warn!` on failure.
 - Uses `snapshot_workspace_images()` to collect top-level image files before and after the provider call, then computes the set difference.
+
+**Stage 9: Cleanup Inbox Images**
+- Call `cleanup_inbox_images(&inbox_images)` to remove temporary inbox files that were saved in Stage 2a.
+- Each file is removed individually; errors are logged at warn level but do not stop the cleanup.
 
 **Async Patterns:**
 - All stages are awaited sequentially.
@@ -595,6 +606,48 @@ pub struct Gateway {
 1. Read the workspace directory via `std::fs::read_dir()`. Return empty set on error.
 2. Filter to regular files whose extension (case-insensitive) matches `IMAGE_EXTENSIONS`.
 3. Collect into a `HashSet<PathBuf>`.
+
+### `fn ensure_inbox_dir(data_dir: &str) -> PathBuf`
+**Purpose:** Create and return the inbox directory path at `{data_dir}/workspace/inbox/`.
+
+**Parameters:**
+- `data_dir: &str` - The Omega data directory (e.g., `~/.omega`).
+
+**Returns:** `PathBuf` pointing to `{data_dir}/workspace/inbox/`.
+
+**Logic:**
+1. Build the path `{data_dir}/workspace/inbox/`.
+2. Create the directory (and parents) if it does not exist via `std::fs::create_dir_all()`.
+3. Return the path.
+
+### `fn save_attachments_to_inbox(inbox: &Path, attachments: &[Attachment]) -> Vec<PathBuf>`
+**Purpose:** Save Image-type attachments to the inbox directory on disk and return the list of saved file paths.
+
+**Parameters:**
+- `inbox: &Path` - Path to the inbox directory.
+- `attachments: &[Attachment]` - Slice of attachments from the incoming message.
+
+**Returns:** `Vec<PathBuf>` containing paths to saved image files. Non-image attachments are skipped.
+
+**Logic:**
+1. Iterate over attachments.
+2. Skip any attachment whose `attachment_type` is not `AttachmentType::Image`.
+3. For each image attachment, write `attachment.data` to `{inbox}/{attachment.filename}`.
+4. Log success at info level, failures at warn level.
+5. Collect and return the paths of successfully written files.
+
+### `fn cleanup_inbox_images(paths: &[PathBuf])`
+**Purpose:** Remove temporary inbox image files after the provider response has been processed.
+
+**Parameters:**
+- `paths: &[PathBuf]` - Slice of file paths to remove.
+
+**Returns:** None (void).
+
+**Logic:**
+1. Iterate over paths.
+2. Remove each file via `std::fs::remove_file()`.
+3. Log failures at warn level but continue removing remaining files.
 
 ### `fn status_messages(lang: &str) -> (&'static str, &'static str)`
 **Purpose:** Return localized status messages for the delayed provider nudge.
@@ -891,6 +944,7 @@ All interactions are logged to SQLite with:
 23. When `sandbox_prompt` is `Some`, the sandbox constraint text is prepended to the system prompt before context building.
 24. The startup log includes the active sandbox mode for operational visibility.
 25. After sending the text response, new image files created in the workspace by the provider are delivered via `channel.send_photo()` and then deleted from the workspace.
+26. Incoming image attachments are saved to `{data_dir}/workspace/inbox/` before the provider call (Stage 2a) and cleaned up after the response is sent (Stage 9).
 
 ## Tests
 
@@ -1013,3 +1067,21 @@ Verifies that `snapshot_workspace_images()` returns an empty set gracefully for 
 **Type:** Synchronous unit test (`#[test]`)
 
 Verifies that `snapshot_workspace_images()` detects all 5 supported image extensions (png, jpg, jpeg, gif, webp).
+
+### `test_ensure_inbox_dir`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `ensure_inbox_dir()` creates the `{data_dir}/workspace/inbox/` directory and returns the correct path. Uses a temporary directory.
+
+### `test_save_and_cleanup_inbox_images`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `save_attachments_to_inbox()` writes Image-type attachments to disk, returns the correct paths, and that `cleanup_inbox_images()` removes the files afterwards. Uses a temporary directory.
+
+### `test_save_attachments_skips_non_images`
+
+**Type:** Synchronous unit test (`#[test]`)
+
+Verifies that `save_attachments_to_inbox()` skips non-Image attachment types (e.g., audio, document) and only saves Image-type attachments.

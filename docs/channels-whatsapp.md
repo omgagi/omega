@@ -75,7 +75,7 @@ WhatsApp is a **personal channel** — it only processes messages from your self
 
 2. **Receiving messages**: The bot's event handler receives `Event::Message` events. Only self-chat messages are processed (`is_from_me` + sender matches chat JID). Messages from other chats are silently ignored.
 
-3. **Message unwrapping**: Self-chat messages are often wrapped in `DeviceSentMessage`, `EphemeralMessage`, or `ViewOnceMessage` containers. The handler unwraps these before extracting text from `conversation` or `extended_text_message.text`. Non-text messages are skipped.
+3. **Message unwrapping**: Self-chat messages are often wrapped in `DeviceSentMessage`, `EphemeralMessage`, or `ViewOnceMessage` containers. The handler unwraps these before extracting text from `conversation` or `extended_text_message.text`. If no text is found, the handler checks for an `image_message`. Image messages are downloaded via the WhatsApp client (`ImageMessage` implements the `Downloadable` trait), and the image bytes are passed through as an `Attachment` with the caption as text (defaults to `"[Photo]"`). Other non-text message types are skipped.
 
 4. **Echo prevention**: Sent message IDs are tracked in a `HashSet`. When the bot sends a reply, the message ID is recorded. When the echo arrives back as an incoming event, the ID is matched and the message is skipped, preventing infinite loops.
 
@@ -135,6 +135,8 @@ Check that the `whatsapp-rust` dependencies are correctly installed. The library
 
 ### Messages not received
 - WhatsApp only processes self-chat messages (messages you send to yourself). It will not respond to messages from other people.
+- Text messages and image messages are supported. Other media types (video, audio, documents) are not yet processed and will be silently skipped.
+- If an image fails to download, the message is skipped — check logs for download warnings.
 - Check `allowed_users` in config — your phone number must be listed (or leave empty for all)
 - Verify the session is still valid (check logs for "WhatsApp connected" or "logged out")
 

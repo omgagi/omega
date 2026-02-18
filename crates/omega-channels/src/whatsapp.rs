@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use omega_core::{
     config::WhatsAppConfig,
     error::OmegaError,
-    message::{IncomingMessage, OutgoingMessage},
+    message::{Attachment, AttachmentType, IncomingMessage, OutgoingMessage},
     traits::Channel,
 };
 use std::collections::HashSet;
@@ -198,9 +198,47 @@ impl Channel for WhatsAppChannel {
                                 .unwrap_or("")
                                 .to_string();
 
-                            if text.is_empty() {
+                            // Check for image message.
+                            let (text, attachments) = if let Some(ref img) = inner.image_message {
+                                let caption =
+                                    img.caption.as_deref().unwrap_or("[Photo]").to_string();
+                                // Download the image via the client.
+                                let wa_client = {
+                                    let guard = client_store.lock().await;
+                                    guard.clone()
+                                };
+                                if let Some(wa_client) = wa_client {
+                                    match wa_client.download(img.as_ref()).await {
+                                        Ok(bytes) => {
+                                            let ext = img
+                                                .mimetype
+                                                .as_deref()
+                                                .and_then(|m| m.split('/').nth(1))
+                                                .unwrap_or("jpg");
+                                            let filename = format!("{}.{ext}", Uuid::new_v4());
+                                            let attachment = Attachment {
+                                                file_type: AttachmentType::Image,
+                                                url: None,
+                                                data: Some(bytes),
+                                                filename: Some(filename),
+                                            };
+                                            info!("downloaded whatsapp image");
+                                            (caption, vec![attachment])
+                                        }
+                                        Err(e) => {
+                                            warn!("whatsapp image download failed: {e}");
+                                            return;
+                                        }
+                                    }
+                                } else {
+                                    warn!("whatsapp client not available for image download");
+                                    return;
+                                }
+                            } else if text.is_empty() {
                                 return;
-                            }
+                            } else {
+                                (text, Vec::new())
+                            };
 
                             let chat_jid = info.source.chat.to_string();
 
@@ -212,7 +250,7 @@ impl Channel for WhatsAppChannel {
                                 text,
                                 timestamp: chrono::Utc::now(),
                                 reply_to: None,
-                                attachments: Vec::new(),
+                                attachments,
                                 reply_target: Some(chat_jid),
                                 is_group: false,
                             };

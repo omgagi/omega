@@ -8,7 +8,7 @@ use omega_channels::whatsapp;
 use omega_core::{
     config::{shellexpand, AuthConfig, ChannelConfig, HeartbeatConfig, Prompts, SchedulerConfig},
     context::Context,
-    message::{IncomingMessage, MessageMetadata, OutgoingMessage},
+    message::{AttachmentType, IncomingMessage, MessageMetadata, OutgoingMessage},
     sanitize,
     traits::{Channel, Provider},
 };
@@ -516,6 +516,23 @@ impl Gateway {
         let mut clean_incoming = incoming.clone();
         clean_incoming.text = sanitized.text;
 
+        // --- 2a. SAVE INCOMING IMAGE ATTACHMENTS ---
+        let inbox_images = if !incoming.attachments.is_empty() {
+            let inbox = ensure_inbox_dir(&self.data_dir);
+            let paths = save_attachments_to_inbox(&inbox, &incoming.attachments);
+            // Prepend image paths to the message text so the provider can read them.
+            for path in &paths {
+                clean_incoming.text = format!(
+                    "[Attached image: {}]\n{}",
+                    path.display(),
+                    clean_incoming.text
+                );
+            }
+            paths
+        } else {
+            Vec::new()
+        };
+
         // --- 2b. FIRST-TIME USER DETECTION ---
         // No separate welcome message — the AI handles introduction via onboarding hint.
         // We still detect language and mark the user as welcomed for onboarding tracking.
@@ -908,6 +925,11 @@ impl Gateway {
         } else {
             error!("no channel found for '{}'", incoming.channel);
         }
+
+        // --- 9. CLEANUP INBOX IMAGES ---
+        if !inbox_images.is_empty() {
+            cleanup_inbox_images(&inbox_images);
+        }
     }
 
     /// Check if an incoming message is authorized.
@@ -1053,6 +1075,48 @@ impl Gateway {
             if let Err(e) = channel.send(msg).await {
                 error!("failed to send message: {e}");
             }
+        }
+    }
+}
+
+/// Ensure the inbox directory exists under `{data_dir}/workspace/inbox/`.
+fn ensure_inbox_dir(data_dir: &str) -> PathBuf {
+    let dir = PathBuf::from(shellexpand(data_dir))
+        .join("workspace")
+        .join("inbox");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// Save image attachments to the inbox directory. Returns the paths of saved files.
+fn save_attachments_to_inbox(
+    inbox: &Path,
+    attachments: &[omega_core::message::Attachment],
+) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for att in attachments {
+        if !matches!(att.file_type, AttachmentType::Image) {
+            continue;
+        }
+        if let Some(ref data) = att.data {
+            let filename = att.filename.as_deref().unwrap_or("image.jpg");
+            let path = inbox.join(filename);
+            if let Err(e) = std::fs::write(&path, data) {
+                warn!("failed to save inbox image {filename}: {e}");
+            } else {
+                info!("saved inbox image: {}", path.display());
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
+/// Remove previously saved inbox image files.
+fn cleanup_inbox_images(paths: &[PathBuf]) {
+    for path in paths {
+        if let Err(e) = std::fs::remove_file(path) {
+            warn!("failed to remove inbox image {}: {e}", path.display());
         }
     }
 }
@@ -1722,6 +1786,76 @@ mod tests {
 
         let result = snapshot_workspace_images(&dir);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_ensure_inbox_dir() {
+        let tmp = std::env::temp_dir().join("omega_test_inbox_dir");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // ensure_inbox_dir expects a data_dir and creates workspace/inbox/ under it.
+        let inbox = ensure_inbox_dir(tmp.to_str().unwrap());
+        assert!(inbox.exists());
+        assert!(inbox.is_dir());
+        assert!(inbox.ends_with("workspace/inbox"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_save_and_cleanup_inbox_images() {
+        use omega_core::message::{Attachment, AttachmentType};
+
+        let tmp = std::env::temp_dir().join("omega_test_save_inbox");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let attachments = vec![Attachment {
+            file_type: AttachmentType::Image,
+            url: None,
+            data: Some(b"fake image data".to_vec()),
+            filename: Some("test_photo.jpg".to_string()),
+        }];
+
+        let paths = save_attachments_to_inbox(&tmp, &attachments);
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].exists());
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), b"fake image data");
+
+        cleanup_inbox_images(&paths);
+        assert!(!paths[0].exists());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_save_attachments_skips_non_images() {
+        use omega_core::message::{Attachment, AttachmentType};
+
+        let tmp = std::env::temp_dir().join("omega_test_skip_non_img");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let attachments = vec![
+            Attachment {
+                file_type: AttachmentType::Document,
+                url: None,
+                data: Some(b"some doc".to_vec()),
+                filename: Some("doc.pdf".to_string()),
+            },
+            Attachment {
+                file_type: AttachmentType::Audio,
+                url: None,
+                data: Some(b"some audio".to_vec()),
+                filename: Some("audio.mp3".to_string()),
+            },
+        ];
+
+        let paths = save_attachments_to_inbox(&tmp, &attachments);
+        assert!(paths.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

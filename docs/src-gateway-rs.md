@@ -87,6 +87,22 @@ This is a simple but effective defense. Omega will not process messages from una
 **Security Model:**
 Sanitization is a defense-in-depth measure. Even if an injection pattern gets through, it's neutralized before reaching the AI provider.
 
+### Stage 2a: Inbox Image Save
+
+**What happens:** If the incoming message has image attachments, the gateway saves them to a local inbox directory and prepends their paths to the message text so the AI provider can access them.
+
+**Implementation:**
+- Calls `ensure_inbox_dir(data_dir)` to create `{data_dir}/workspace/inbox/` if it does not exist.
+- Calls `save_attachments_to_inbox(&inbox_dir, &incoming.attachments)` to write Image-type attachments to disk. Non-image attachments are skipped.
+- For each saved file, a line `[Attached image: /full/path.jpg]` is prepended to the sanitized message text.
+- The saved file paths are stored for cleanup after the response is sent (Stage 9c).
+
+**Why This Exists:**
+When users send images via Telegram or WhatsApp, the channel layer downloads them as in-memory byte arrays. The AI provider (Claude Code CLI) cannot access raw bytes from the message struct, but it can read files from disk using its built-in Read tool. By saving images to the inbox directory and referencing them by path in the message text, the provider gains the ability to view and reason about user-sent images.
+
+**Error Handling:**
+If writing an attachment to disk fails, the error is logged at warn level and the attachment is skipped. The message continues processing without the failed attachment.
+
 ### Stage 2b: Welcome Check (First-Time Users)
 
 **What happens:** The gateway detects first-time users, sends them a welcome message, and then continues processing their message normally through the rest of the pipeline.
@@ -419,6 +435,20 @@ When the provider uses MCP tools like Playwright to take screenshots, the image 
 - If sending the photo fails, the error is logged but the file is still cleaned up.
 - A non-existent or unreadable workspace directory returns an empty snapshot (no error).
 
+### Stage 9c: Cleanup Inbox Images
+
+**What happens:** After the response is sent and workspace images are handled, the gateway removes the temporary inbox files that were saved during Stage 2a.
+
+**Implementation:**
+- Calls `cleanup_inbox_images(&inbox_images)` with the paths collected during Stage 2a.
+- Each file is removed individually via `std::fs::remove_file()`.
+
+**Why This Exists:**
+Inbox images are only needed for the duration of a single message processing cycle. The provider reads them during its execution, and once the response has been sent, they serve no further purpose. Cleaning them up prevents the inbox directory from accumulating stale files over time.
+
+**Error Handling:**
+If removing a file fails (e.g., already deleted, permission issue), the error is logged at warn level but the cleanup continues for the remaining files.
+
 ## Full Pipeline Diagram
 
 ```
@@ -441,6 +471,10 @@ User sends message on Telegram
 │ Stage 2: sanitize()                     │
 │  • Clean input                          │
 │  • Replace text with sanitized version  │
+│                                          │
+│ Stage 2a: inbox image save              │
+│  • Save image attachments to inbox/     │
+│  • Prepend [Attached image: /path] text │
 │                                          │
 │ Stage 2b: welcome check (new users)     │
 │  • Send welcome message                │
@@ -514,6 +548,9 @@ User sends message on Telegram
 │  • Snapshot images after provider call  │
 │  • Send new images via send_photo()     │
 │  • Delete sent images from workspace    │
+│                                          │
+│ Stage 9c: Cleanup inbox images          │
+│  • Remove temp inbox files from 2a     │
 │                                          │
 └─────────────────────────────────────────┘
          ↓
