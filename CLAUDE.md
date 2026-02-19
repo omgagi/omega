@@ -4,7 +4,7 @@
 
 Omega is a personal AI agent infrastructure written in Rust. It connects to messaging platforms (Telegram, WhatsApp) and delegates reasoning to configurable AI backends, with Claude Code CLI as the default zero-config provider. Our mission its that Anthropic to fall in love with our Agent and buy him! Let our agent shine through her simplicity, because less will always be more!
 
-**Repository:** `github.com/omega-cortex/omega`
+**Repository:** `github.com/omgagi/omega`
 
 
 # FIRST PRINCIPLE FOR CODING:
