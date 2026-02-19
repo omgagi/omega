@@ -47,7 +47,9 @@ All our architecture must be monolithic and modular, like Legos.
 
 5. **Post-Implementation Prompt**: After every modification or new implementation is complete, always ask: **"Do you want to make a commit and push?"**
 
-6. **Output Filtering**: Always filter verbose output:
+6. **Prompt Sync**: When `prompts/SYSTEM_PROMPT.md` or `prompts/WELCOME.toml` is modified, **always** delete the runtime copy (`rm -f ~/.omega/SYSTEM_PROMPT.md` / `rm -f ~/.omega/WELCOME.toml`) **before** rebuilding. The binary auto-deploys fresh copies on startup when the files are missing. Without this step, the runtime reads a stale copy and changes have no effect.
+
+7. **Output Filtering**: Always filter verbose output:
 Apply always outour redirection to a /tmp/ folder to avoid polluting the console to later apply filters.
   command > /tmp/cmd_output.log 2>&1 && grep -iE "error|warn|fail|pass" /tmp/cmd_output.log | head -20
 
