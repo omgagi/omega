@@ -78,7 +78,7 @@ System prompt composition: The `Prompts` struct splits prompts into three fields
 
 User profile: `format_user_profile()` in `omega-memory` replaces the flat "Known facts" dump with a structured "User profile:" block that filters system keys (`welcomed`, `preferred_language`, `active_project`) and groups identity keys first, context keys second, rest last.
 
-Fact validation: `is_valid_fact()` in `gateway.rs` validates every extracted fact before storing. Rejects: keys >50 chars or starting with digit, values >200 chars or starting with `$`, pipe-delimited table rows, and pure numeric values. The facts prompt in `SYSTEM_PROMPT.md` has strict acceptance criteria (personal facts only, no trading data/prices/instructions).
+Fact validation: `is_valid_fact()` in `gateway.rs` validates every extracted fact before storing. Rejects: system-managed keys (`welcomed`, `preferred_language`, `active_project`, `personality` — only settable via bot commands), keys >50 chars or starting with digit, values >200 chars or starting with `$`, pipe-delimited table rows, and pure numeric values. The facts prompt in `SYSTEM_PROMPT.md` has strict acceptance criteria (personal facts only, no trading data/prices/instructions).
 
 Conversational onboarding: No separate welcome message — the AI handles introduction and onboarding naturally. On first contact (0 real facts), a strong onboarding hint tells OMEGA to introduce itself and prioritize getting to know the person. With 1-2 real facts, a lighter "naturally weave in a question" hint. At 3+ real facts, no hint. The `welcomed` fact and language detection are still stored on first contact for tracking.
 

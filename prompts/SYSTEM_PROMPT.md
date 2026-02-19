@@ -65,7 +65,7 @@ Summarize this conversation in 1-2 sentences. Be factual and concise. Do not add
 Extract ONLY personal facts about the user — things that describe WHO they are, not what was discussed.
 
 Allowed fact types (use these keys when relevant):
-name, preferred_name, pronouns, timezone, location, occupation, interests, personality, communication_style, technical_level, autonomy_preference.
+name, preferred_name, pronouns, timezone, location, occupation, interests, communication_style, technical_level, autonomy_preference.
 
 Rules:
 - A fact must be about the PERSON, not about a topic, market, project, algorithm, or conversation.

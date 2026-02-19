@@ -25,7 +25,20 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
 /// Validate a fact key/value before storing. Rejects junk patterns.
+/// System-managed fact keys that only bot commands may write.
+const SYSTEM_FACT_KEYS: &[&str] = &[
+    "welcomed",
+    "preferred_language",
+    "active_project",
+    "personality",
+];
+
 fn is_valid_fact(key: &str, value: &str) -> bool {
+    // Reject system-managed keys — only bot commands may set these.
+    if SYSTEM_FACT_KEYS.contains(&key) {
+        return false;
+    }
+
     // Length limits.
     if key.len() > 50 || value.len() > 200 {
         return false;
@@ -3062,6 +3075,14 @@ mod tests {
         assert!(!is_valid_fact(&long_key, "value"));
         let long_value = "b".repeat(201);
         assert!(!is_valid_fact("key", &long_value));
+    }
+
+    #[test]
+    fn test_is_valid_fact_rejects_system_keys() {
+        assert!(!is_valid_fact("welcomed", "true"));
+        assert!(!is_valid_fact("preferred_language", "en"));
+        assert!(!is_valid_fact("active_project", "trader"));
+        assert!(!is_valid_fact("personality", "direct, results-oriented"));
     }
 
     // --- Heartbeat marker tests ---
