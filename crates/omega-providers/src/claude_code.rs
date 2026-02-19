@@ -73,12 +73,7 @@ impl ClaudeCodeProvider {
         Self {
             session_id: None,
             max_turns: 100,
-            allowed_tools: vec![
-                "Bash".to_string(),
-                "Read".to_string(),
-                "Write".to_string(),
-                "Edit".to_string(),
-            ],
+            allowed_tools: vec![],
             timeout: DEFAULT_TIMEOUT,
             working_dir: None,
             sandbox_mode: SandboxMode::default(),
@@ -565,7 +560,7 @@ mod tests {
         assert_eq!(provider.name(), "claude-code");
         assert!(!provider.requires_api_key());
         assert_eq!(provider.max_turns, 100);
-        assert_eq!(provider.allowed_tools.len(), 4);
+        assert!(provider.allowed_tools.is_empty());
         assert_eq!(provider.timeout, Duration::from_secs(3600));
         assert!(provider.working_dir.is_none());
         assert_eq!(provider.sandbox_mode, SandboxMode::Sandbox);

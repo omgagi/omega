@@ -24,7 +24,7 @@ default = "claude-code"
 [provider.claude-code]
 enabled = true
 max_turns = 100
-allowed_tools = ["Bash", "Read", "Write", "Edit"]
+allowed_tools = []  # empty = full tool access
 timeout_secs = 3600
 max_resume_attempts = 5
 model = "claude-sonnet-4-6"

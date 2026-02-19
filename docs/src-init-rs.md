@@ -543,7 +543,7 @@ default = "claude-code"
 [provider.claude-code]
 enabled = true
 max_turns = 10
-allowed_tools = ["Bash", "Read", "Write", "Edit"]
+allowed_tools = []  # empty = full tool access
 
 [channel.telegram]
 enabled = true
@@ -660,7 +660,7 @@ The `└` marker from `cliclack::outro` signals the end of the wizard session.
 The user should open `config.toml` in a text editor and:
 - Verify the bot token and user ID are correct
 - Adjust settings like `log_level` (change to `debug` for troubleshooting)
-- Review allowed tools (Bash, Read, Write, Edit are safe defaults)
+- Review allowed tools (empty array = full tool access by default; add specific tool names to restrict)
 
 This step ensures the user understands what they just configured.
 

@@ -62,7 +62,7 @@ default = "claude-code"
 [provider.claude-code]
 enabled = true
 max_turns = 10
-allowed_tools = ["Bash", "Read", "Write", "Edit"]
+allowed_tools = []  # empty = full tool access
 timeout_secs = 600
 model = "claude-sonnet-4-6"
 model_complex = "claude-opus-4-6"
@@ -72,7 +72,7 @@ model_complex = "claude-opus-4-6"
 - `default = "claude-code"`: Use Claude Code as the primary AI.
 - `enabled = true`: Turn it on.
 - `max_turns = 10`: Conversations auto-summarize after 10 exchanges (prevents runaway context).
-- `allowed_tools`: Let the AI use the `Bash`, `Read`, `Write`, `Edit` tools. Don't change this unless you know what you're doing.
+- `allowed_tools`: Empty array grants access to all Claude Code tools. Add specific tool names (e.g., `["Read", "Write"]`) to restrict access.
 - `timeout_secs = 600`: Max seconds to wait for the CLI to respond. 10-minute ceiling prevents runaway invocations.
 - `model = "claude-sonnet-4-6"`: The fast model used for classification and direct responses. Sonnet handles simple messages quickly and cheaply.
 - `model_complex = "claude-opus-4-6"`: The complex model used for multi-step task execution. Opus handles tasks that require deep reasoning.
@@ -441,7 +441,7 @@ default = "claude-code"
 [provider.claude-code]
 enabled = true
 max_turns = 10
-allowed_tools = ["Bash", "Read", "Write", "Edit"]
+allowed_tools = []  # empty = full tool access
 timeout_secs = 600
 model = "claude-sonnet-4-6"
 model_complex = "claude-opus-4-6"

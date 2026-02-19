@@ -64,7 +64,7 @@ println!("Default provider: {}", cfg.provider.default); // "claude-code"
 // Claude Code specifics
 if let Some(cc) = &cfg.provider.claude_code {
     println!("Max turns: {}", cc.max_turns);         // 10
-    println!("Tools: {:?}", cc.allowed_tools);       // ["Bash", "Read", "Write", "Edit"]
+    println!("Tools: {:?}", cc.allowed_tools);       // [] (empty = full tool access)
 }
 
 // Channels

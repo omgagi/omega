@@ -35,7 +35,7 @@ Public struct. The provider that wraps the Claude Code CLI.
 |-------|------|------------|-------------|
 | `session_id` | `Option<String>` | Private | Optional session ID passed to the CLI for conversation continuity across invocations. |
 | `max_turns` | `u32` | Private | Maximum number of agentic turns the CLI is allowed per single invocation. Default: `10`. |
-| `allowed_tools` | `Vec<String>` | Private | List of tool names the CLI is permitted to use. Default: `["Bash", "Read", "Write", "Edit"]`. |
+| `allowed_tools` | `Vec<String>` | Private | List of tool names the CLI is permitted to use. Default: `[]` (empty = full tool access, no `--allowedTools` flag passed). |
 | `timeout` | `Duration` | Private | Maximum time to wait for the CLI subprocess to complete. Constructed from `Duration::from_secs(timeout_secs)`. Default: `3600` seconds (60 minutes). |
 | `working_dir` | `Option<PathBuf>` | Private | Optional working directory for the CLI subprocess. When `Some`, sets the `current_dir` on the subprocess `Command`. Used by sandbox mode to confine the provider to a workspace directory (e.g., `~/.omega/workspace/`). Default: `None`. |
 | `max_resume_attempts` | `u32` | Private | Maximum number of auto-resume attempts when the CLI hits `error_max_turns` with a `session_id`. Default: `5`. |
@@ -71,7 +71,7 @@ Constructs a new `ClaudeCodeProvider` with default settings:
 
 - `session_id`: `None`
 - `max_turns`: `10`
-- `allowed_tools`: `["Bash", "Read", "Write", "Edit"]`
+- `allowed_tools`: `[]` (full tool access)
 - `timeout`: `Duration::from_secs(3600)` (60 minutes)
 - `working_dir`: `None`
 - `max_resume_attempts`: `5`
@@ -343,7 +343,7 @@ Verifies the default constructor:
 - `name()` returns `"claude-code"`
 - `requires_api_key()` returns `false`
 - `max_turns` is `10`
-- `allowed_tools` has 4 entries
+- `allowed_tools` is empty (full tool access)
 - `timeout` is `Duration::from_secs(3600)`
 - `working_dir` is `None`
 - `max_resume_attempts` is `5`
@@ -356,7 +356,7 @@ fn test_default_provider() {
     assert_eq!(provider.name(), "claude-code");
     assert!(!provider.requires_api_key());
     assert_eq!(provider.max_turns, 10);
-    assert_eq!(provider.allowed_tools.len(), 4);
+    assert!(provider.allowed_tools.is_empty());
     assert_eq!(provider.timeout, Duration::from_secs(3600));
     assert!(provider.working_dir.is_none());
     assert_eq!(provider.max_resume_attempts, 5);

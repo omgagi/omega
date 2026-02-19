@@ -29,7 +29,7 @@ You can create the provider in two ways:
 ```rust
 let provider = ClaudeCodeProvider::new();
 // max_turns: 10
-// allowed_tools: ["Bash", "Read", "Write", "Edit"]
+// allowed_tools: [] (empty = full tool access)
 ```
 
 **Custom settings** from your config:
@@ -136,7 +136,7 @@ When the `Context` contains MCP servers (populated by skill trigger matching), t
 
 ### Updated `run_cli()` Signature
 
-`run_cli()` now accepts an additional `extra_allowed_tools: &[String]` parameter. These patterns are appended as additional `--allowedTools` arguments to the CLI command, alongside the base tool list (`Bash`, `Read`, `Write`, `Edit`).
+`run_cli()` now accepts an additional `extra_allowed_tools: &[String]` parameter. These patterns are appended as additional `--allowedTools` arguments to the CLI command, alongside the base tool list (empty by default = full tool access).
 
 ---
 

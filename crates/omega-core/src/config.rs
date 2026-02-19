@@ -102,7 +102,7 @@ impl Default for ClaudeCodeConfig {
         Self {
             enabled: true,
             max_turns: 100,
-            allowed_tools: default_allowed_tools(),
+            allowed_tools: vec![],
             timeout_secs: default_timeout_secs(),
             max_resume_attempts: default_max_resume_attempts(),
             model: default_model(),
@@ -418,7 +418,7 @@ fn default_max_turns() -> u32 {
     100
 }
 fn default_allowed_tools() -> Vec<String> {
-    vec!["Bash".into(), "Read".into(), "Write".into(), "Edit".into()]
+    vec![]
 }
 fn default_anthropic_model() -> String {
     "claude-sonnet-4-20250514".to_string()

@@ -54,7 +54,7 @@ default = "claude-code"
 [provider.claude-code]
 enabled = true
 max_turns = 10
-allowed_tools = ["Bash", "Read", "Write", "Edit"]
+allowed_tools = []  # empty = full tool access
 timeout_secs = 3600
 max_resume_attempts = 5
 model = "claude-sonnet-4-6"
@@ -145,7 +145,7 @@ This is the primary, zero-config provider. It shells out to the `claude` CLI too
 |-----|------|---------|-------------|
 | `enabled` | bool | `true` | Whether this provider is available for selection. |
 | `max_turns` | integer | `10` | Maximum number of agentic turns Claude Code can take per request. |
-| `allowed_tools` | array of strings | `["Bash", "Read", "Write", "Edit"]` | Which Claude Code tools the agent is allowed to use. |
+| `allowed_tools` | array of strings | `[]` (empty = full tool access) | Which Claude Code tools the agent is allowed to use. Empty array grants access to all tools. |
 | `timeout_secs` | integer | `3600` | Max seconds to wait for CLI response. 60-minute ceiling. |
 | `max_resume_attempts` | integer | `5` | Max auto-resume attempts when CLI hits max turns with a session ID. |
 | `model` | string | `"claude-sonnet-4-6"` | Default model for fast classification and direct responses. Passed as `--model` to the CLI. |

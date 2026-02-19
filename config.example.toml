@@ -16,7 +16,7 @@ default = "claude-code"
 [provider.claude-code]
 enabled = true
 max_turns = 100
-allowed_tools = ["Bash", "Read", "Write", "Edit"]
+allowed_tools = []              # Empty = full tool access (all Claude Code tools available)
 timeout_secs = 3600             # Max wait for CLI response (60 min ceiling)
 max_resume_attempts = 5         # Auto-resume when Claude hits max_turns (0 = disabled)
 model = "claude-sonnet-4-6"     # Fast model: classification + direct responses
