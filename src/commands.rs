@@ -31,6 +31,7 @@ pub enum Command {
     Projects,
     Project,
     Purge,
+    Quant,
     WhatsApp,
     Help,
 }
@@ -56,6 +57,7 @@ impl Command {
             "/projects" => Some(Self::Projects),
             "/project" => Some(Self::Project),
             "/purge" => Some(Self::Purge),
+            "/quant" => Some(Self::Quant),
             "/whatsapp" => Some(Self::WhatsApp),
             "/help" => Some(Self::Help),
             _ => None,
@@ -90,6 +92,7 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
             .await
         }
         Command::Purge => handle_purge(ctx.store, ctx.sender_id).await,
+        Command::Quant => handle_quant(ctx.store, ctx.sender_id, ctx.text).await,
         Command::WhatsApp => handle_whatsapp(),
         Command::Help => handle_help(),
     }
@@ -406,6 +409,117 @@ async fn handle_purge(store: &Store, sender_id: &str) -> String {
     )
 }
 
+/// Handle /quant — manage the IBKR quantitative trading engine.
+///
+/// Returns marker strings like "QUANT_ENABLE" or "QUANT_DISABLE" that the
+/// gateway intercepts to start/stop the engine. Plain text responses are
+/// sent directly to the user.
+async fn handle_quant(store: &Store, sender_id: &str, text: &str) -> String {
+    let args: Vec<&str> = text.split_whitespace().skip(1).collect();
+    let sub = args.first().copied().unwrap_or("");
+
+    match sub {
+        "" => {
+            // Show current status.
+            let enabled = store
+                .get_fact(sender_id, "quant_enabled")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            let symbol = store
+                .get_fact(sender_id, "quant_symbol")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "AAPL".to_string());
+            let portfolio = store
+                .get_fact(sender_id, "quant_portfolio")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "10000".to_string());
+            let mode = store
+                .get_fact(sender_id, "quant_mode")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "paper".to_string());
+
+            let status = if enabled == "true" {
+                "enabled"
+            } else {
+                "disabled"
+            };
+
+            format!(
+                "IBKR Quant Engine\n\
+                 Status: {status}\n\
+                 Symbol: {symbol}\n\
+                 Portfolio: ${portfolio}\n\
+                 Mode: {mode}\n\n\
+                 /quant enable|disable|symbol|portfolio|paper|live"
+            )
+        }
+        "enable" => {
+            let symbol = store
+                .get_fact(sender_id, "quant_symbol")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "AAPL".to_string());
+            let portfolio = store
+                .get_fact(sender_id, "quant_portfolio")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "10000".to_string());
+            let mode = store
+                .get_fact(sender_id, "quant_mode")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "paper".to_string());
+            let _ = store.store_fact(sender_id, "quant_enabled", "true").await;
+            format!("QUANT_ENABLE:{symbol}:{portfolio}:{mode}")
+        }
+        "disable" => {
+            let _ = store.store_fact(sender_id, "quant_enabled", "false").await;
+            "QUANT_DISABLE".to_string()
+        }
+        "symbol" => {
+            let sym = args.get(1).unwrap_or(&"");
+            if sym.is_empty() {
+                return "Usage: /quant symbol AAPL".to_string();
+            }
+            let sym_upper = sym.to_uppercase();
+            let _ = store
+                .store_fact(sender_id, "quant_symbol", &sym_upper)
+                .await;
+            format!("Quant symbol set to: {sym_upper}")
+        }
+        "portfolio" => {
+            let val = args.get(1).unwrap_or(&"");
+            if val.parse::<f64>().is_err() {
+                return "Usage: /quant portfolio 50000".to_string();
+            }
+            let _ = store.store_fact(sender_id, "quant_portfolio", val).await;
+            format!("Portfolio value set to: ${val}")
+        }
+        "paper" => {
+            let _ = store.store_fact(sender_id, "quant_mode", "paper").await;
+            "Quant mode set to: paper (port 4002)".to_string()
+        }
+        "live" => {
+            let _ = store.store_fact(sender_id, "quant_mode", "live").await;
+            "Quant mode set to: live (port 4001) — real money!".to_string()
+        }
+        _ => {
+            "Unknown subcommand. Use: /quant enable|disable|symbol|portfolio|paper|live".to_string()
+        }
+    }
+}
+
 /// Handle /whatsapp — returns a marker that the gateway intercepts.
 fn handle_whatsapp() -> String {
     "WHATSAPP_QR".to_string()
@@ -424,6 +538,7 @@ fn handle_help() -> String {
 /language — Show or set your language\n\
 /personality — Show or set how I behave\n\
 /purge    — Delete all learned facts (clean slate)\n\
+/quant    — IBKR quant engine (enable/disable/symbol/portfolio)\n\
 /skills   — List available skills\n\
 /projects — List available projects\n\
 /project  — Show, activate, or deactivate a project\n\
@@ -514,6 +629,7 @@ mod tests {
         ));
         assert!(matches!(Command::parse("/project"), Some(Command::Project)));
         assert!(matches!(Command::parse("/purge"), Some(Command::Purge)));
+        assert!(matches!(Command::parse("/quant"), Some(Command::Quant)));
         assert!(matches!(
             Command::parse("/whatsapp"),
             Some(Command::WhatsApp)
@@ -549,6 +665,23 @@ mod tests {
         assert!(matches!(
             Command::parse("/purge@omega_bot"),
             Some(Command::Purge)
+        ));
+    }
+
+    #[test]
+    fn test_parse_quant_command() {
+        assert!(matches!(Command::parse("/quant"), Some(Command::Quant)));
+        assert!(matches!(
+            Command::parse("/quant enable"),
+            Some(Command::Quant)
+        ));
+        assert!(matches!(
+            Command::parse("/quant@omega_bot"),
+            Some(Command::Quant)
+        ));
+        assert!(matches!(
+            Command::parse("/quant symbol AAPL"),
+            Some(Command::Quant)
         ));
     }
 
@@ -651,5 +784,78 @@ mod tests {
         assert!(!keys.contains(&"target"));
         // Non-system personal facts also removed.
         assert!(!keys.contains(&"name"));
+    }
+
+    #[tokio::test]
+    async fn test_quant_status_default() {
+        let store = test_store().await;
+        let result = handle_quant(&store, "user1", "/quant").await;
+        assert!(result.contains("disabled"), "should be disabled by default");
+        assert!(result.contains("AAPL"), "should show default symbol");
+    }
+
+    #[tokio::test]
+    async fn test_quant_enable() {
+        let store = test_store().await;
+        let result = handle_quant(&store, "user1", "/quant enable").await;
+        assert!(
+            result.starts_with("QUANT_ENABLE:"),
+            "should return enable marker"
+        );
+        assert!(result.contains("AAPL"), "should include default symbol");
+    }
+
+    #[tokio::test]
+    async fn test_quant_disable() {
+        let store = test_store().await;
+        let _ = handle_quant(&store, "user1", "/quant enable").await;
+        let result = handle_quant(&store, "user1", "/quant disable").await;
+        assert_eq!(result, "QUANT_DISABLE");
+    }
+
+    #[tokio::test]
+    async fn test_quant_symbol() {
+        let store = test_store().await;
+        let result = handle_quant(&store, "user1", "/quant symbol MSFT").await;
+        assert!(result.contains("MSFT"), "should confirm symbol set");
+
+        // Verify it's stored.
+        let fact = store.get_fact("user1", "quant_symbol").await.unwrap();
+        assert_eq!(fact.as_deref(), Some("MSFT"));
+    }
+
+    #[tokio::test]
+    async fn test_quant_portfolio() {
+        let store = test_store().await;
+        let result = handle_quant(&store, "user1", "/quant portfolio 50000").await;
+        assert!(result.contains("50000"), "should confirm portfolio set");
+    }
+
+    #[tokio::test]
+    async fn test_quant_mode_paper() {
+        let store = test_store().await;
+        let result = handle_quant(&store, "user1", "/quant paper").await;
+        assert!(result.contains("paper"), "should confirm paper mode");
+    }
+
+    #[tokio::test]
+    async fn test_quant_mode_live() {
+        let store = test_store().await;
+        let result = handle_quant(&store, "user1", "/quant live").await;
+        assert!(result.contains("live"), "should confirm live mode");
+        assert!(
+            result.contains("real money"),
+            "should warn about real money"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_quant_unknown_subcommand() {
+        let store = test_store().await;
+        let result = handle_quant(&store, "user1", "/quant foobar").await;
+        assert!(
+            result.contains("Unknown subcommand"),
+            "should reject unknown subcommands"
+        );
     }
 }

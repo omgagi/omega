@@ -57,7 +57,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [skills-cargo-toml.md](skills-cargo-toml.md) — omega-skills crate Cargo.toml
 
 ### Milestone 8: omega-quant
-- [quant.md](quant.md) — Quantitative trading engine (Kalman filter, HMM regime detection, Kelly sizing, Binance connectivity, execution planning)
+- [quant.md](quant.md) — Quantitative trading engine (Kalman filter, HMM regime detection, Kelly sizing, IBKR connectivity, execution planning)
 
 ### Milestone 9: omega-sandbox
 - [sandbox-lib.md](sandbox-lib.md) — 3-level workspace sandbox (sandbox/rx/rwx modes)

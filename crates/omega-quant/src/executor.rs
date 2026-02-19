@@ -1,7 +1,10 @@
 //! Live order executor with circuit breaker, daily limits, and crash recovery.
+//!
+//! Uses IBKR TWS API via `ibapi` for order placement. Authentication is handled
+//! by IB Gateway — no API keys needed in code.
 
-use crate::binance_auth::{self, BinanceCredentials};
 use crate::execution::{ExecutionPlan, ImmediatePlan, Side, TwapPlan};
+use crate::market_data::IbkrConfig;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -148,24 +151,22 @@ impl ExecutionState {
     }
 }
 
-/// Live executor with safety guardrails.
+/// Live executor with safety guardrails, using IBKR TWS API.
 pub struct Executor {
-    creds: BinanceCredentials,
-    client: reqwest::Client,
+    config: IbkrConfig,
     circuit_breaker: CircuitBreaker,
     daily_limits: DailyLimits,
 }
 
 impl Executor {
-    /// Create a new executor.
+    /// Create a new executor with IBKR config.
     pub fn new(
-        creds: BinanceCredentials,
+        config: IbkrConfig,
         circuit_breaker: CircuitBreaker,
         daily_limits: DailyLimits,
     ) -> Self {
         Self {
-            creds,
-            client: reqwest::Client::new(),
+            config,
             circuit_breaker,
             daily_limits,
         }
@@ -182,7 +183,6 @@ impl Executor {
                 return state;
             }
             ExecutionPlan::Immediate(p) => {
-                // Check daily limits
                 if let Err(e) = self.daily_limits.check(p.estimated_usd) {
                     state.status = ExecutionStatus::Aborted;
                     state.abort_reason = Some(e.to_string());
@@ -206,36 +206,19 @@ impl Executor {
         state
     }
 
-    /// Execute a single immediate order.
+    /// Execute a single immediate order via IBKR.
     async fn execute_immediate(&mut self, plan: &ImmediatePlan, state: &mut ExecutionState) {
-        let side = match plan.side {
-            Side::Buy => "BUY",
-            Side::Sell => "SELL",
-        };
-
-        match binance_auth::place_order(
-            &self.creds,
-            &self.client,
-            &plan.symbol,
-            side,
-            &format!("{:.6}", plan.quantity),
-            "MARKET",
-            None,
-        )
-        .await
-        {
-            Ok(resp) => {
-                state.order_ids.push(resp.order_id);
-                let filled_qty: f64 = resp.executed_qty.parse().unwrap_or(0.0);
-                let filled_usd: f64 = resp.cumulative_quote_qty.parse().unwrap_or(0.0);
-                state.total_filled_qty += filled_qty;
-                state.total_filled_usd += filled_usd;
+        match place_ibkr_order(&self.config, &plan.symbol, plan.side, plan.quantity).await {
+            Ok(fill) => {
+                state.order_ids.push(fill.order_id as i64);
+                state.total_filled_qty += fill.filled_qty;
+                state.total_filled_usd += fill.filled_usd;
                 state.slices_completed = 1;
                 state.status = ExecutionStatus::Completed;
-                self.daily_limits.record_trade(filled_usd);
+                self.daily_limits.record_trade(fill.filled_usd);
                 info!(
                     "quant: immediate order filled: {:.6} {} (${:.2})",
-                    filled_qty, plan.symbol, filled_usd
+                    fill.filled_qty, plan.symbol, fill.filled_usd
                 );
             }
             Err(e) => {
@@ -246,20 +229,15 @@ impl Executor {
         }
     }
 
-    /// Execute a TWAP plan slice by slice.
+    /// Execute a TWAP plan slice by slice via IBKR.
     async fn execute_twap(&mut self, plan: &TwapPlan, state: &mut ExecutionState) {
-        let side = match plan.side {
-            Side::Buy => "BUY",
-            Side::Sell => "SELL",
-        };
         let entry_price = plan.estimated_price;
         let mut consecutive_failures: u32 = 0;
 
         for (i, slice) in plan.slices.iter().enumerate() {
-            // Check circuit breaker: price deviation
-            match binance_auth::get_ticker(&self.creds, &self.client, &plan.symbol).await {
-                Ok(ticker) => {
-                    let current_price = ticker.price_f64();
+            // Circuit breaker: check price deviation.
+            match get_ibkr_price(&self.config, &plan.symbol).await {
+                Ok(current_price) => {
                     if entry_price > 0.0 {
                         let deviation = (current_price - entry_price).abs() / entry_price;
                         if deviation > self.circuit_breaker.max_deviation_pct {
@@ -275,36 +253,24 @@ impl Executor {
                     }
                 }
                 Err(e) => {
-                    warn!("quant: failed to check ticker for circuit breaker: {e}");
+                    warn!("quant: failed to check price for circuit breaker: {e}");
                 }
             }
 
-            // Execute slice
-            match binance_auth::place_order(
-                &self.creds,
-                &self.client,
-                &plan.symbol,
-                side,
-                &format!("{:.6}", slice.quantity),
-                "MARKET",
-                None,
-            )
-            .await
-            {
-                Ok(resp) => {
-                    state.order_ids.push(resp.order_id);
-                    let filled_qty: f64 = resp.executed_qty.parse().unwrap_or(0.0);
-                    let filled_usd: f64 = resp.cumulative_quote_qty.parse().unwrap_or(0.0);
-                    state.total_filled_qty += filled_qty;
-                    state.total_filled_usd += filled_usd;
+            // Execute slice.
+            match place_ibkr_order(&self.config, &plan.symbol, plan.side, slice.quantity).await {
+                Ok(fill) => {
+                    state.order_ids.push(fill.order_id as i64);
+                    state.total_filled_qty += fill.filled_qty;
+                    state.total_filled_usd += fill.filled_usd;
                     state.slices_completed += 1;
                     consecutive_failures = 0;
                     info!(
                         "quant: TWAP slice {}/{}: {:.6} filled (${:.2})",
                         i + 1,
                         plan.slices.len(),
-                        filled_qty,
-                        filled_usd
+                        fill.filled_qty,
+                        fill.filled_usd
                     );
                 }
                 Err(e) => {
@@ -323,7 +289,7 @@ impl Executor {
                 }
             }
 
-            // Progress update every 5 slices
+            // Progress update every 5 slices.
             if (i + 1) % 5 == 0 {
                 info!(
                     "quant: TWAP progress: {}/{} slices, {:.6} filled",
@@ -333,13 +299,13 @@ impl Executor {
                 );
             }
 
-            // Wait between slices (except last)
+            // Wait between slices (except last).
             if i + 1 < plan.slices.len() {
                 tokio::time::sleep(std::time::Duration::from_secs(plan.interval_secs)).await;
             }
         }
 
-        // Determine final status
+        // Determine final status.
         if state.slices_completed == plan.slices.len() as u32 {
             state.status = ExecutionStatus::Completed;
             self.daily_limits.record_trade(state.total_filled_usd);
@@ -349,6 +315,113 @@ impl Executor {
         } else {
             state.status = ExecutionStatus::Failed;
         }
+    }
+}
+
+/// Fill result from an IBKR order.
+struct OrderFill {
+    order_id: i32,
+    filled_qty: f64,
+    filled_usd: f64,
+}
+
+/// Place a market order via IBKR TWS API.
+async fn place_ibkr_order(
+    config: &IbkrConfig,
+    symbol: &str,
+    side: Side,
+    quantity: f64,
+) -> Result<OrderFill> {
+    use ibapi::contracts::Contract;
+    use ibapi::orders::{order_builder, Action, PlaceOrder};
+    use ibapi::Client;
+
+    let client = Client::connect(&config.connection_url(), config.client_id + 100)
+        .await
+        .map_err(|e| anyhow::anyhow!("IBKR connection failed: {e}"))?;
+
+    let contract = Contract::stock(symbol).build();
+    let action = match side {
+        Side::Buy => Action::Buy,
+        Side::Sell => Action::Sell,
+    };
+    let order = order_builder::market_order(action, quantity);
+
+    let order_id = client
+        .next_valid_order_id()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to get order ID: {e}"))?;
+
+    let mut notifications = client
+        .place_order(order_id, &contract, &order)
+        .await
+        .map_err(|e| anyhow::anyhow!("IBKR order placement failed: {e}"))?;
+
+    // Read execution results.
+    let mut filled_qty = 0.0;
+    let mut avg_price = 0.0;
+
+    while let Some(result) = notifications.next().await {
+        match result {
+            Ok(PlaceOrder::ExecutionData(exec)) => {
+                filled_qty = exec.execution.cumulative_quantity;
+                avg_price = exec.execution.average_price;
+            }
+            Ok(PlaceOrder::CommissionReport(_)) => {
+                break; // Commission report signals order completion.
+            }
+            Ok(_) => {} // Ignore other notifications (OrderStatus, OpenOrder, etc.)
+            Err(e) => {
+                warn!("quant: order notification error: {e}");
+                break;
+            }
+        }
+    }
+
+    let filled_usd = filled_qty * avg_price;
+
+    info!(
+        "quant: IBKR order filled: {side:?} {filled_qty:.6} {symbol} @ ${avg_price:.2} = ${filled_usd:.2}"
+    );
+
+    Ok(OrderFill {
+        order_id,
+        filled_qty,
+        filled_usd,
+    })
+}
+
+/// Get current price for a symbol via IBKR snapshot.
+async fn get_ibkr_price(config: &IbkrConfig, symbol: &str) -> Result<f64> {
+    use ibapi::contracts::Contract;
+    use ibapi::market_data::realtime::{BarSize, WhatToShow};
+    use ibapi::market_data::TradingHours;
+    use ibapi::Client;
+
+    let client = Client::connect(&config.connection_url(), config.client_id + 200)
+        .await
+        .map_err(|e| anyhow::anyhow!("IBKR connection failed for price check: {e}"))?;
+
+    let contract = Contract::stock(symbol).build();
+
+    let mut subscription = client
+        .realtime_bars(
+            &contract,
+            BarSize::Sec5,
+            WhatToShow::Trades,
+            TradingHours::Extended,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("IBKR price request failed: {e}"))?;
+
+    // Take just the first bar for a price snapshot.
+    if let Some(result) = subscription.next().await {
+        match result {
+            Ok(bar) => Ok(bar.close),
+            Err(e) => anyhow::bail!("IBKR price error: {e}"),
+        }
+    } else {
+        anyhow::bail!("No price data received from IBKR for {symbol}")
     }
 }
 
@@ -405,11 +478,11 @@ mod tests {
     #[test]
     fn test_state_persistence_roundtrip() {
         let plan = ExecutionPlan::Immediate(crate::execution::ImmediatePlan {
-            symbol: "BTCUSDT".into(),
+            symbol: "AAPL".into(),
             side: Side::Buy,
-            quantity: 0.01,
-            estimated_price: 50_000.0,
-            estimated_usd: 500.0,
+            quantity: 10.0,
+            estimated_price: 150.0,
+            estimated_usd: 1500.0,
         });
         let state = ExecutionState::new(&plan);
         let json = persist_state(&state).unwrap();

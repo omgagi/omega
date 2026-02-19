@@ -1,151 +1,87 @@
-//! Binance market data — WebSocket kline feed and REST historical data.
+//! IBKR market data — real-time price feed via TWS API.
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
-use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
-/// Binance network selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinanceNetwork {
-    Testnet,
-    Mainnet,
-}
-
-impl BinanceNetwork {
-    /// WebSocket base URL.
-    pub fn ws_base(&self) -> &str {
-        match self {
-            Self::Testnet => "wss://testnet.binance.vision/ws",
-            Self::Mainnet => "wss://stream.binance.com:9443/ws",
-        }
-    }
-
-    /// REST API base URL.
-    pub fn rest_base(&self) -> &str {
-        match self {
-            Self::Testnet => "https://testnet.binance.vision/api/v3",
-            Self::Mainnet => "https://api.binance.com/api/v3",
-        }
-    }
-}
-
-/// A single kline (candlestick) bar.
+/// IBKR connection configuration.
 #[derive(Debug, Clone)]
-pub struct Kline {
-    pub symbol: String,
-    pub open: f64,
-    pub high: f64,
-    pub low: f64,
-    pub close: f64,
-    pub volume: f64,
-    pub close_time: i64,
-    pub is_closed: bool,
+pub struct IbkrConfig {
+    /// TWS/Gateway host (default: "127.0.0.1").
+    pub host: String,
+    /// TWS/Gateway port (paper: 4002, live: 4001).
+    pub port: u16,
+    /// Unique client ID per connection.
+    pub client_id: i32,
 }
 
-/// Raw WebSocket kline event from Binance.
-#[derive(Debug, Deserialize)]
-struct WsKlineEvent {
-    #[serde(rename = "k")]
-    kline: WsKlineData,
-}
-
-#[derive(Debug, Deserialize)]
-struct WsKlineData {
-    #[serde(rename = "s")]
-    symbol: String,
-    #[serde(rename = "o")]
-    open: String,
-    #[serde(rename = "h")]
-    high: String,
-    #[serde(rename = "l")]
-    low: String,
-    #[serde(rename = "c")]
-    close: String,
-    #[serde(rename = "v")]
-    volume: String,
-    #[serde(rename = "T")]
-    close_time: i64,
-    #[serde(rename = "x")]
-    is_closed: bool,
-}
-
-impl WsKlineData {
-    fn to_kline(&self) -> Kline {
-        Kline {
-            symbol: self.symbol.clone(),
-            open: self.open.parse().unwrap_or(0.0),
-            high: self.high.parse().unwrap_or(0.0),
-            low: self.low.parse().unwrap_or(0.0),
-            close: self.close.parse().unwrap_or(0.0),
-            volume: self.volume.parse().unwrap_or(0.0),
-            close_time: self.close_time,
-            is_closed: self.is_closed,
+impl IbkrConfig {
+    /// Paper trading configuration (port 4002).
+    pub fn paper() -> Self {
+        Self {
+            host: "127.0.0.1".into(),
+            port: 4002,
+            client_id: 1,
         }
+    }
+
+    /// Live trading configuration (port 4001).
+    pub fn live() -> Self {
+        Self {
+            host: "127.0.0.1".into(),
+            port: 4001,
+            client_id: 1,
+        }
+    }
+
+    /// Connection URL in `host:port` format.
+    pub fn connection_url(&self) -> String {
+        format!("{}:{}", self.host, self.port)
     }
 }
 
-/// Start a WebSocket kline feed with auto-reconnect.
+/// A single price tick from IBKR.
+#[derive(Debug, Clone)]
+pub struct PriceTick {
+    /// Symbol (e.g. "AAPL").
+    pub symbol: String,
+    /// Last/close price.
+    pub price: f64,
+    /// Tick timestamp (epoch millis).
+    pub timestamp: i64,
+}
+
+/// Start a real-time price feed for a symbol via TWS API.
 ///
-/// Returns a broadcast receiver that emits `Kline` events. The feed runs in
+/// Returns a broadcast receiver that emits `PriceTick` events. The feed runs in
 /// a background task and reconnects automatically on disconnection.
-pub fn start_kline_feed(
-    symbol: &str,
-    interval: &str,
-    network: BinanceNetwork,
-) -> broadcast::Receiver<Kline> {
+pub fn start_price_feed(symbol: &str, config: &IbkrConfig) -> broadcast::Receiver<PriceTick> {
     let (tx, rx) = broadcast::channel(256);
-    let url = format!(
-        "{}/{}@kline_{}",
-        network.ws_base(),
-        symbol.to_lowercase(),
-        interval
-    );
+    let symbol = symbol.to_string();
+    let config = config.clone();
 
     tokio::spawn(async move {
         loop {
-            info!("quant: connecting to Binance WebSocket: {url}");
-            match tokio_tungstenite::connect_async(&url).await {
-                Ok((ws_stream, _)) => {
-                    info!("quant: WebSocket connected");
-                    let (_, mut read) = ws_stream.split();
+            info!(
+                "quant: connecting to IB Gateway at {}",
+                config.connection_url()
+            );
 
-                    while let Some(msg) = read.next().await {
-                        match msg {
-                            Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                                match serde_json::from_str::<WsKlineEvent>(&text) {
-                                    Ok(event) => {
-                                        let kline = event.kline.to_kline();
-                                        if tx.send(kline).is_err() {
-                                            info!("quant: all receivers dropped, stopping feed");
-                                            return;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!("quant: failed to parse kline: {e}");
-                                    }
-                                }
-                            }
-                            Ok(tokio_tungstenite::tungstenite::Message::Ping(data)) => {
-                                // Ping is handled at protocol level by tungstenite
-                                tracing::trace!("quant: ping received ({} bytes)", data.len());
-                            }
-                            Err(e) => {
-                                warn!("quant: WebSocket error: {e}");
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
+            match connect_and_stream(&symbol, &config, &tx).await {
+                Ok(()) => {
+                    info!("quant: IBKR feed ended normally for {symbol}");
                 }
                 Err(e) => {
-                    error!("quant: WebSocket connection failed: {e}");
+                    error!("quant: IBKR connection failed: {e}");
                 }
             }
 
-            // Reconnect after 5 seconds
-            warn!("quant: WebSocket disconnected, reconnecting in 5s...");
+            if tx.receiver_count() == 0 {
+                info!("quant: all receivers dropped, stopping feed");
+                return;
+            }
+
+            warn!("quant: IBKR disconnected, reconnecting in 5s...");
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });
@@ -153,63 +89,71 @@ pub fn start_kline_feed(
     rx
 }
 
-/// Raw REST kline response from Binance (array of arrays).
-type RestKlineRow = Vec<serde_json::Value>;
-
-/// Fetch historical klines via REST API.
-pub async fn fetch_historical_klines(
+/// Connect to IBKR and stream real-time bars, sending ticks on the broadcast channel.
+async fn connect_and_stream(
     symbol: &str,
-    interval: &str,
-    limit: u32,
-    network: BinanceNetwork,
-) -> Result<Vec<Kline>> {
-    let url = format!(
-        "{}/klines?symbol={}&interval={}&limit={}",
-        network.rest_base(),
-        symbol,
-        interval,
-        limit
-    );
+    config: &IbkrConfig,
+    tx: &broadcast::Sender<PriceTick>,
+) -> Result<()> {
+    use ibapi::contracts::Contract;
+    use ibapi::market_data::realtime::{BarSize, WhatToShow};
+    use ibapi::market_data::TradingHours;
+    use ibapi::Client;
 
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .send()
+    let client = Client::connect(&config.connection_url(), config.client_id)
         .await
-        .context("failed to fetch historical klines")?;
+        .context("failed to connect to IB Gateway")?;
 
-    let rows: Vec<RestKlineRow> = resp
-        .json()
+    info!("quant: connected to IB Gateway, subscribing to {symbol}");
+
+    let contract = Contract::stock(symbol).build();
+
+    let mut subscription = client
+        .realtime_bars(
+            &contract,
+            BarSize::Sec5,
+            WhatToShow::Trades,
+            TradingHours::Extended,
+        )
         .await
-        .context("failed to parse kline response")?;
+        .context("failed to subscribe to realtime bars")?;
 
-    let mut klines = Vec::with_capacity(rows.len());
-    for row in &rows {
-        if row.len() < 12 {
-            continue;
+    while let Some(result) = subscription.next().await {
+        match result {
+            Ok(bar) => {
+                let tick = PriceTick {
+                    symbol: symbol.to_string(),
+                    price: bar.close,
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                };
+
+                if tx.send(tick).is_err() {
+                    info!("quant: all receivers dropped, stopping feed");
+                    return Ok(());
+                }
+            }
+            Err(e) => {
+                warn!("quant: error receiving bar: {e}");
+                break;
+            }
         }
-        klines.push(Kline {
-            symbol: symbol.to_string(),
-            open: parse_json_f64(&row[1]),
-            high: parse_json_f64(&row[2]),
-            low: parse_json_f64(&row[3]),
-            close: parse_json_f64(&row[4]),
-            volume: parse_json_f64(&row[5]),
-            close_time: row[6].as_i64().unwrap_or(0),
-            is_closed: true,
-        });
     }
 
-    Ok(klines)
+    Ok(())
 }
 
-/// Parse a JSON value (string or number) as f64.
-fn parse_json_f64(val: &serde_json::Value) -> f64 {
-    match val {
-        serde_json::Value::String(s) => s.parse().unwrap_or(0.0),
-        serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0),
-        _ => 0.0,
-    }
+/// Check if IB Gateway is reachable at the given config.
+pub async fn check_connection(config: &IbkrConfig) -> bool {
+    use tokio::net::TcpStream;
+
+    matches!(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            TcpStream::connect(config.connection_url()),
+        )
+        .await,
+        Ok(Ok(_))
+    )
 }
 
 #[cfg(test)]
@@ -217,48 +161,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_url_construction() {
-        let testnet = BinanceNetwork::Testnet;
-        assert!(testnet.ws_base().contains("testnet"));
-        assert!(testnet.rest_base().contains("testnet"));
-
-        let mainnet = BinanceNetwork::Mainnet;
-        assert!(mainnet.ws_base().contains("binance.com"));
-        assert!(mainnet.rest_base().contains("binance.com"));
+    fn test_paper_config() {
+        let cfg = IbkrConfig::paper();
+        assert_eq!(cfg.host, "127.0.0.1");
+        assert_eq!(cfg.port, 4002);
+        assert_eq!(cfg.client_id, 1);
+        assert_eq!(cfg.connection_url(), "127.0.0.1:4002");
     }
 
     #[test]
-    fn test_kline_parsing() {
-        let json = r#"{"e":"kline","E":1234567890,"s":"BTCUSDT","k":{"t":1234567800,"T":1234567899,"s":"BTCUSDT","i":"1m","f":0,"L":0,"o":"50000.00","c":"50100.00","h":"50200.00","l":"49900.00","v":"10.5","n":100,"x":true,"q":"525000.00","V":"5.0","Q":"250000.00","B":"0"}}"#;
-        let event: WsKlineEvent = serde_json::from_str(json).unwrap();
-        let kline = event.kline.to_kline();
-        assert_eq!(kline.symbol, "BTCUSDT");
-        assert_eq!(kline.open, 50_000.0);
-        assert_eq!(kline.close, 50_100.0);
-        assert_eq!(kline.high, 50_200.0);
-        assert_eq!(kline.low, 49_900.0);
-        assert!(kline.is_closed);
+    fn test_live_config() {
+        let cfg = IbkrConfig::live();
+        assert_eq!(cfg.host, "127.0.0.1");
+        assert_eq!(cfg.port, 4001);
+        assert_eq!(cfg.client_id, 1);
+        assert_eq!(cfg.connection_url(), "127.0.0.1:4001");
     }
 
     #[test]
-    fn test_network_urls_differ() {
-        assert_ne!(
-            BinanceNetwork::Testnet.ws_base(),
-            BinanceNetwork::Mainnet.ws_base()
-        );
-        assert_ne!(
-            BinanceNetwork::Testnet.rest_base(),
-            BinanceNetwork::Mainnet.rest_base()
-        );
+    fn test_configs_differ() {
+        assert_ne!(IbkrConfig::paper().port, IbkrConfig::live().port);
     }
 
     #[test]
-    fn test_parse_json_f64() {
-        assert_eq!(
-            parse_json_f64(&serde_json::Value::String("42.5".into())),
-            42.5
-        );
-        assert_eq!(parse_json_f64(&serde_json::json!(42.5)), 42.5);
-        assert_eq!(parse_json_f64(&serde_json::Value::Null), 0.0);
+    fn test_price_tick_clone() {
+        let tick = PriceTick {
+            symbol: "AAPL".into(),
+            price: 150.25,
+            timestamp: 1234567890,
+        };
+        let cloned = tick.clone();
+        assert_eq!(cloned.symbol, "AAPL");
+        assert!((cloned.price - 150.25).abs() < f64::EPSILON);
+        assert_eq!(cloned.timestamp, 1234567890);
+    }
+
+    #[tokio::test]
+    async fn test_check_connection_unreachable() {
+        // Port 19999 should not have IB Gateway running.
+        let cfg = IbkrConfig {
+            host: "127.0.0.1".into(),
+            port: 19999,
+            client_id: 99,
+        };
+        assert!(!check_connection(&cfg).await);
     }
 }

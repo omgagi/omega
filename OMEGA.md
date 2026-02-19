@@ -44,7 +44,7 @@ This document explains how every piece fits together.
 │          ▼           ▼           ▼                                  │
 │     Summarizer    Scheduler   Heartbeat                             │
 │          │                       │                                  │
-│          │     Quant WS Feed     │                                  │
+│          │    Quant IBKR Feed    │                                  │
 │          │     (if enabled)      │                                  │
 │          └───────────────────────┘                                  │
 │            (background loops)                                       │
@@ -76,7 +76,7 @@ Before diving into the architecture, here's the key distinction: Omega is **not*
 | **Summarizer** | Polls every 60s for idle conversations (30+ min). Auto-generates summaries + extracts facts as key:value pairs. This is how Omega builds long-term memory. |
 | **Scheduler** | Polls every 60s for due tasks. **Reminder** tasks deliver text to the user. **Action** tasks invoke the provider autonomously with full system prompt + MCP tools. |
 | **Heartbeat** | Periodic self-check (default 30 min, dynamic interval). Reads `~/.omega/HEARTBEAT.md` checklist, enriches with user facts + open limitations + self-audit instruction. Suppresses "HEARTBEAT_OK". Respects active hours. |
-| **Quant WebSocket feed** | When enabled, streams Binance klines via WebSocket, processes each through the quant engine, stores latest signal for injection into user message context. |
+| **Quant price feed** | When enabled via `/quant enable`, connects to IB Gateway via TWS API, streams real-time bars, processes each through the quant engine, stores latest signal for injection into user message context. |
 | **Graceful shutdown** | On SIGINT, summarizes all active conversations then stops channels cleanly. |
 
 ### Marker-Driven Actions
@@ -404,7 +404,7 @@ Skills are markdown files with TOML or YAML frontmatter that teach Omega new cap
 ~/.omega/skills/custom-tool/SKILL.md
 ```
 
-**5 bundled skills** auto-deployed on first run: claude-code, google-workspace, playwright-mcp, skill-creator, binance-quant.
+**5 bundled skills** auto-deployed on first run: claude-code, google-workspace, playwright-mcp, skill-creator, ibkr-quant.
 
 **Skill features:**
 - **Availability check** — verifies required CLI tools are installed (e.g., `npx`, `gog`)
@@ -446,7 +446,7 @@ The provider subprocess is always started with `current_dir` set to `~/.omega/wo
 A fully native trading pipeline — no external AI involved. Pure Rust math:
 
 ```
-Binance WebSocket kline
+IBKR TWS real-time bar
          │
          ▼
     Kalman Filter ──── 2D state [price, trend], process/measurement noise
@@ -474,8 +474,7 @@ Binance WebSocket kline
 | **Kelly criterion** | `kelly.rs` | Fractional sizing (25%), max 10% allocation, min 55% confidence threshold |
 | **Execution planning** | `execution.rs` | Immediate (<0.1% daily volume) vs TWAP (3-20 slices) vs NoTrade (>1%) |
 | **Live executor** | `executor.rs` | Circuit breaker (2% deviation, 3 consecutive failures), daily limits, crash recovery |
-| **Market data** | `market_data.rs` | Binance WebSocket kline feed with auto-reconnect + REST historical klines |
-| **Binance auth** | `binance_auth.rs` | HMAC-SHA256 signing, order placement, ticker queries, testnet + mainnet |
+| **Market data** | `market_data.rs` | IBKR TWS real-time price feed via `ibapi` crate with auto-reconnect |
 | **Signal types** | `signal.rs` | `QuantSignal` with regime, direction, confidence, Kelly sizing, Merton allocation |
 
 The quant engine outputs advisory signals that are injected into the system prompt — the AI sees "ADVISORY (NOT FINANCIAL ADVICE): regime=Bull, direction=Long, confidence=72%..." as context, not as a command.
@@ -553,11 +552,11 @@ Every N minutes (default 30, adjustable via `HEARTBEAT_INTERVAL:` marker + `Arc<
 
 The checklist is managed conversationally — say "keep an eye on my water intake" and Omega adds it via `HEARTBEAT_ADD:`. Say "stop monitoring water" and it's removed via `HEARTBEAT_REMOVE:`.
 
-### 4. Quant WebSocket Feed (Optional)
+### 4. Quant Price Feed (Optional)
 
-**Location:** `gateway.rs :: run()` (when quant engine enabled)
+**Location:** `gateway.rs` (lazy init via `/quant enable` command)
 
-Spawns a Binance WebSocket connection that streams kline (candlestick) data. A consumer loop processes each closed kline through the full `QuantEngine` pipeline (Kalman → HMM → Merton → Kelly), storing the latest signal in an `Arc<Mutex<Option<QuantSignal>>>` for injection into the next user message's context.
+When enabled via the `/quant` bot command, connects to IB Gateway via TWS API (ibapi crate) and streams 5-second real-time bars. A consumer loop processes each bar through the full `QuantEngine` pipeline (Kalman → HMM → Merton → Kelly), storing the latest signal for injection into the next user message's context. Configuration (symbol, portfolio value, paper/live mode) stored in SQLite facts table — no config.toml needed.
 
 ---
 
@@ -633,6 +632,7 @@ Commands are handled locally by `commands.rs :: handle()` — they never reach t
 | `/projects` | List all projects, marks the active one |
 | `/project [name\|off]` | Activate, deactivate, or show current project (clears conversation on change) |
 | `/whatsapp` | Start WhatsApp QR pairing |
+| `/quant` | Manage IBKR quant engine (enable/disable/symbol/portfolio/paper/live) |
 
 Commands use the `CommandContext` struct which bundles the store, channel info, sender, text, uptime, provider name, skills, projects, and sandbox mode into a single parameter.
 
@@ -696,7 +696,7 @@ The **self-check** (`src/selfcheck.rs`) runs at startup: verifies database acces
 │   │   └── SKILL.md
 │   ├── skill-creator/
 │   │   └── SKILL.md
-│   └── binance-quant/
+│   └── ibkr-quant/
 │       └── SKILL.md
 ├── projects/
 │   └── my-app/
@@ -722,7 +722,7 @@ omega/                     ← Repository root
 │   ├── omega-memory/      ← SQLite storage, audit logging, context building
 │   ├── omega-skills/      ← Skills loader, project loader, MCP trigger matching
 │   ├── omega-sandbox/     ← OS-level filesystem enforcement (Seatbelt, Landlock)
-│   └── omega-quant/       ← Quantitative trading engine (Kalman, HMM, Kelly, Binance)
+│   └── omega-quant/       ← Quantitative trading engine (Kalman, HMM, Kelly, IBKR)
 ├── prompts/
 │   ├── SYSTEM_PROMPT.md   ← Bundled AI personality (source of truth)
 │   └── WELCOME.toml       ← Bundled welcome messages
@@ -735,7 +735,7 @@ omega/                     ← Repository root
 │   │   └── SKILL.md
 │   ├── skill-creator/
 │   │   └── SKILL.md
-│   └── binance-quant/
+│   └── ibkr-quant/
 │       └── SKILL.md
 ├── specs/                 ← Technical specifications (mirror of implementation)
 ├── docs/                  ← Developer-facing guides

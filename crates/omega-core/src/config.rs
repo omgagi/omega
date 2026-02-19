@@ -23,8 +23,6 @@ pub struct Config {
     pub heartbeat: HeartbeatConfig,
     #[serde(default)]
     pub scheduler: SchedulerConfig,
-    #[serde(default)]
-    pub quant: Option<QuantConfig>,
 }
 
 /// Authentication configuration.
@@ -330,70 +328,6 @@ impl Default for SchedulerConfig {
     }
 }
 
-/// Quantitative trading engine configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuantConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_quant_symbol")]
-    pub default_symbol: String,
-    #[serde(default = "default_quant_network")]
-    pub network: String,
-    #[serde(default = "default_quant_interval")]
-    pub kline_interval: String,
-    #[serde(default = "default_quant_risk_aversion")]
-    pub risk_aversion: f64,
-    #[serde(default = "default_quant_kelly_fraction")]
-    pub kelly_fraction: f64,
-    #[serde(default = "default_quant_max_position_pct")]
-    pub max_position_pct: f64,
-    #[serde(default = "default_quant_portfolio_value")]
-    pub portfolio_value: f64,
-    #[serde(default)]
-    pub safety: QuantSafetyConfig,
-}
-
-impl Default for QuantConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            default_symbol: default_quant_symbol(),
-            network: default_quant_network(),
-            kline_interval: default_quant_interval(),
-            risk_aversion: default_quant_risk_aversion(),
-            kelly_fraction: default_quant_kelly_fraction(),
-            max_position_pct: default_quant_max_position_pct(),
-            portfolio_value: default_quant_portfolio_value(),
-            safety: QuantSafetyConfig::default(),
-        }
-    }
-}
-
-/// Safety guardrails for the quantitative trading engine.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuantSafetyConfig {
-    #[serde(default = "default_quant_max_daily_trades")]
-    pub max_daily_trades: u32,
-    #[serde(default = "default_quant_max_daily_usd")]
-    pub max_daily_usd: f64,
-    /// Always true — human must confirm every trade.
-    #[serde(default = "default_true")]
-    pub require_confirmation: bool,
-    #[serde(default = "default_quant_cooldown_minutes")]
-    pub cooldown_minutes: u32,
-}
-
-impl Default for QuantSafetyConfig {
-    fn default() -> Self {
-        Self {
-            max_daily_trades: default_quant_max_daily_trades(),
-            max_daily_usd: default_quant_max_daily_usd(),
-            require_confirmation: true,
-            cooldown_minutes: default_quant_cooldown_minutes(),
-        }
-    }
-}
-
 // --- Default value functions ---
 
 fn default_name() -> String {
@@ -457,36 +391,6 @@ fn default_timeout_secs() -> u64 {
     3600
 }
 fn default_max_resume_attempts() -> u32 {
-    5
-}
-fn default_quant_symbol() -> String {
-    "BTCUSDT".to_string()
-}
-fn default_quant_network() -> String {
-    "testnet".to_string()
-}
-fn default_quant_interval() -> String {
-    "1m".to_string()
-}
-fn default_quant_risk_aversion() -> f64 {
-    2.0
-}
-fn default_quant_kelly_fraction() -> f64 {
-    0.25
-}
-fn default_quant_max_position_pct() -> f64 {
-    0.10
-}
-fn default_quant_portfolio_value() -> f64 {
-    10_000.0
-}
-fn default_quant_max_daily_trades() -> u32 {
-    10
-}
-fn default_quant_max_daily_usd() -> f64 {
-    5_000.0
-}
-fn default_quant_cooldown_minutes() -> u32 {
     5
 }
 fn default_model() -> String {
@@ -730,7 +634,6 @@ pub fn load(path: &str) -> Result<Config, OmegaError> {
             sandbox: SandboxConfig::default(),
             heartbeat: HeartbeatConfig::default(),
             scheduler: SchedulerConfig::default(),
-            quant: None,
         });
     }
 
@@ -955,48 +858,6 @@ mod tests {
         "#;
         let cfg: TelegramConfig = toml::from_str(toml_str).unwrap();
         assert!(cfg.whisper_api_key.is_none());
-    }
-
-    #[test]
-    fn test_quant_config_defaults() {
-        let cfg = QuantConfig::default();
-        assert!(!cfg.enabled);
-        assert_eq!(cfg.default_symbol, "BTCUSDT");
-        assert_eq!(cfg.network, "testnet");
-        assert_eq!(cfg.kline_interval, "1m");
-        assert!((cfg.risk_aversion - 2.0).abs() < f64::EPSILON);
-        assert!((cfg.kelly_fraction - 0.25).abs() < f64::EPSILON);
-        assert!((cfg.max_position_pct - 0.10).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_quant_safety_defaults() {
-        let safety = QuantSafetyConfig::default();
-        assert_eq!(safety.max_daily_trades, 10);
-        assert!((safety.max_daily_usd - 5000.0).abs() < f64::EPSILON);
-        assert!(safety.require_confirmation);
-        assert_eq!(safety.cooldown_minutes, 5);
-    }
-
-    #[test]
-    fn test_quant_config_from_toml() {
-        let toml_str = r#"
-            enabled = true
-            default_symbol = "ETHUSDT"
-            network = "mainnet"
-            portfolio_value = 50000.0
-        "#;
-        let cfg: QuantConfig = toml::from_str(toml_str).unwrap();
-        assert!(cfg.enabled);
-        assert_eq!(cfg.default_symbol, "ETHUSDT");
-        assert_eq!(cfg.network, "mainnet");
-        assert!((cfg.portfolio_value - 50000.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_quant_testnet_default() {
-        // Safety invariant #1: testnet by default
-        assert_eq!(default_quant_network(), "testnet");
     }
 
     #[test]

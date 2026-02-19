@@ -2,27 +2,26 @@
 
 ## Overview
 
-The omega-quant crate provides real-time quantitative trading analysis and advisory signals. It connects to Binance market data and runs a pipeline of mathematical models to produce actionable signals.
+The omega-quant crate provides real-time quantitative trading analysis and advisory signals. It connects to Interactive Brokers (IBKR) via the TWS API and runs a pipeline of mathematical models to produce actionable signals.
 
 ## Enabling
 
-Add to your `config.toml`:
+Quant is configured via the `/quant` Telegram bot command — no config.toml section needed.
 
-```toml
-[quant]
-enabled = true
-default_symbol = "BTCUSDT"
-network = "testnet"
-portfolio_value = 10000.0
+```
+/quant enable         — Start the quant engine (connects to IB Gateway)
+/quant disable        — Stop the quant engine
+/quant symbol AAPL    — Change tracked symbol (default: AAPL)
+/quant portfolio 50000 — Set portfolio value (default: 10000)
+/quant paper          — Use paper trading, port 4002 (default)
+/quant live           — Use live trading, port 4001
 ```
 
-Set API keys via environment variables:
-- **Testnet**: `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_SECRET_KEY`
-- **Mainnet**: `BINANCE_API_KEY`, `BINANCE_SECRET_KEY`
+**Prerequisite**: IB Gateway or TWS must be running locally. Paper trading uses port 4002, live uses port 4001. Auth is handled by the IB Gateway app — no API keys in code.
 
 ## How It Works
 
-1. **WebSocket Feed**: Connects to Binance kline stream for the configured symbol
+1. **IBKR Price Feed**: Connects to IB Gateway via TWS API, streams 5-second real-time bars
 2. **Kalman Filter**: Smooths raw prices and estimates trend
 3. **HMM Regime Detection**: Classifies market as Bull, Bear, or Lateral
 4. **Merton Allocation**: Computes risk-adjusted optimal position fraction
@@ -35,8 +34,8 @@ When you ask about trading or markets, the AI sees something like:
 
 ```
 [QUANT ADVISORY — NOT FINANCIAL ADVICE]
-Symbol: BTCUSDT | Price: $50123.45 (filtered: $50120.00)
-Regime: 📈 Bull (Bull: 72% | Bear: 8% | Lateral: 20%)
+Symbol: AAPL | Price: $185.50 (filtered: $185.45)
+Regime: Bull (Bull: 72% | Bear: 8% | Lateral: 20%)
 Hurst: 0.50 (Random Walk)
 Merton allocation: +0.65 | Kelly: 8.2% ($820)
 Direction: Long | Action: LONG (urgency: 72%) | Execution: Immediate
@@ -48,7 +47,7 @@ Confidence: 40%
 
 | Guardrail | Default | Purpose |
 |-----------|---------|---------|
-| Network | testnet | No real money by default |
+| Mode | paper | Paper trading by default (port 4002) |
 | Confirmation | always on | Human approves every trade |
 | Kelly fraction | 0.25 | Only 25% of theoretical optimal |
 | Max position | 10% | Never risk more than 10% of portfolio |
@@ -56,27 +55,3 @@ Confidence: 40%
 | Daily USD | $5,000 | Cap on total USD traded per day |
 | Cooldown | 5 min | Minimum wait between trades |
 | Circuit breaker | 2% | Abort TWAP if price deviates >2% |
-
-## Configuration Reference
-
-### `[quant]`
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `enabled` | bool | false | Enable the quant engine |
-| `default_symbol` | string | "BTCUSDT" | Trading pair to track |
-| `network` | string | "testnet" | "testnet" or "mainnet" |
-| `kline_interval` | string | "1m" | Candlestick interval |
-| `risk_aversion` | float | 2.0 | Merton risk parameter (higher = conservative) |
-| `kelly_fraction` | float | 0.25 | Fraction of full Kelly |
-| `max_position_pct` | float | 0.10 | Max position as % of portfolio |
-| `portfolio_value` | float | 10000.0 | Portfolio value in USD |
-
-### `[quant.safety]`
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `max_daily_trades` | int | 10 | Max trades per day |
-| `max_daily_usd` | float | 5000.0 | Max USD per day |
-| `require_confirmation` | bool | true | Human confirms trades (always true) |
-| `cooldown_minutes` | int | 5 | Min wait between trades |

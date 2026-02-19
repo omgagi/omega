@@ -3,9 +3,9 @@
 //! Quantitative trading engine for Omega. Provides Kalman-filtered prices,
 //! HMM regime detection, fractional Kelly sizing, Merton optimal allocation,
 //! and safe execution (TWAP + Immediate) with circuit breaker, daily limits,
-//! human confirmation, and crash recovery.
+//! human confirmation, and crash recovery. Uses IBKR (Interactive Brokers)
+//! via TWS API for market data and order execution.
 
-pub mod binance_auth;
 pub mod execution;
 pub mod executor;
 pub mod hmm;

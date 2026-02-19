@@ -203,7 +203,7 @@ Developers can build from source via Cargo. The repository includes a `flake.nix
 | Prompt injection filter | ✓ | ✗ | ✗ |
 | Persistent memory | ✓ (SQLite) | ✓ (SQLite) | △ |
 | Multi-provider | ✓ (5 backends) | ✗ (Claude only) | varies |
-| Algo trading | ✓ (Binance TWAP) | LLM-based (vibes) | ✗ |
+| Algo trading | ✓ (IBKR TWAP) | LLM-based (vibes) | ✗ |
 | Self-hosted | ✓ | ✓ | ✗ (usually cloud) |
 
 The comparison is not about feature count. OpenClaw offers more integrations (13+ messaging platforms, dozens of community skills). Omega's thesis is that for a personal AI agent — one that manages your messages, files, and potentially your finances — security properties are more important than integration breadth. A smaller, auditable codebase with OS-level isolation is a fundamentally different product than a large, extensible platform with known vulnerabilities.
@@ -212,14 +212,14 @@ The comparison is not about feature count. OpenClaw offers more integrations (13
 
 ## 11. Trading Integration
 
-Omega includes an experimental algorithmic trading skill built as a standalone Rust CLI (`binance-algo-rs`) that interfaces with Binance Futures via HMAC-SHA256 signed REST API calls. The trading system supports TWAP (Time-Weighted Average Price) and VP (Volume Participation) execution algorithms — institutional-grade order types designed to minimize market impact.
+Omega includes an experimental algorithmic trading module (`omega-quant`) that interfaces with Interactive Brokers via the TWS API (`ibapi` crate). The trading system supports TWAP (Time-Weighted Average Price) and Immediate execution algorithms — institutional-grade order types designed to minimize market impact.
 
 The design philosophy explicitly rejects the "vibes trading" approach prevalent in the AI agent space, where users give LLMs direct access to funded wallets and ask them to make buy/sell decisions based on sentiment analysis. This approach has been shown to produce poor risk-adjusted returns (Sortino ratios below 0.05 in controlled benchmarks).
 
 Instead, Omega's trading integration follows three principles:
 
 - **Human-in-the-loop** — Every trade requires explicit user confirmation via the messaging interface. The LLM translates intent into structured orders; the user approves.
-- **Testnet by default** — New installations start on Binance's futures testnet with simulated funds. Switching to live trading requires an explicit, confirmed action.
+- **Paper trading by default** — New installations connect to IB Gateway's paper trading port (4002) with simulated funds. Switching to live trading requires an explicit, confirmed action.
 - **Hardcoded risk limits** — Maximum position size (2% of equity), daily loss limit (3%), and circuit breaker (5% drawdown) are enforced at the CLI level, not the LLM level. The AI cannot override these limits.
 
 ---

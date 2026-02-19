@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Quantitative trading engine for Omega — Kalman filter, HMM regime detection, Kelly sizing, Binance execution"
+description = "Quantitative trading engine for Omega — Kalman filter, HMM regime detection, Kelly sizing, IBKR execution"
 
 [dependencies]
 tokio = { workspace = true }
@@ -13,12 +13,8 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
-reqwest = { workspace = true }
 uuid = { workspace = true }
 
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
-futures-util = "0.3"
-hmac = "0.12"
-sha2 = "0.10"
-hex = "0.4"
+ibapi = "2.7"
 rand = "0.8"
+futures = "0.3"
