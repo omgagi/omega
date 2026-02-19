@@ -285,6 +285,10 @@ Not all messages need the most powerful (and expensive) model. Simple questions,
 - If the classification call fails for any reason, it falls back to direct execution with the fast model.
 - Single-step plans are treated as direct — there is no benefit to wrapping one step in the autonomous execution machinery.
 
+### Important: Markers Are Language-Invariant
+
+All system markers (`SCHEDULE:`, `HEARTBEAT_ADD:`, `HEARTBEAT_INTERVAL:`, `LIMITATION:`, `SELF_HEAL:`, `LANG_SWITCH:`, `PROJECT_ACTIVATE:`, etc.) must always use their exact English prefix, regardless of the conversation language. The gateway parses them as literal string prefixes — if the AI translates or paraphrases a marker (e.g., `INTERVALO_HEARTBEAT: 15` instead of `HEARTBEAT_INTERVAL: 15`), the gateway silently ignores it. The system prompt enforces this: "Speak to the user in their language; speak to the system in markers."
+
 ### Stage 6: Provider Call
 
 **What happens:** The gateway sends the enriched context to the AI provider and gets a response, while keeping the user informed about progress.
