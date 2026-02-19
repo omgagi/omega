@@ -14,7 +14,7 @@ use omega_core::{
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use wacore::types::events::Event;
 use wacore_binary::jid::Jid;
@@ -91,10 +91,7 @@ impl WhatsAppChannel {
             ..Default::default()
         };
 
-        let msg_id = client
-            .send_message(jid, msg)
-            .await
-            .map_err(|e| OmegaError::Channel(format!("whatsapp send photo failed: {e}")))?;
+        let msg_id = retry_send(client, &jid, msg).await?;
         self.sent_ids.lock().await.insert(msg_id);
 
         Ok(())
@@ -118,10 +115,7 @@ impl WhatsAppChannel {
                 conversation: Some(chunk.to_string()),
                 ..Default::default()
             };
-            let msg_id = client
-                .send_message(jid.clone(), msg)
-                .await
-                .map_err(|e| OmegaError::Channel(format!("whatsapp send failed: {e}")))?;
+            let msg_id = retry_send(client, &jid, msg).await?;
             // Track sent message ID to ignore our own echo.
             self.sent_ids.lock().await.insert(msg_id);
         }
@@ -577,6 +571,49 @@ pub async fn start_pairing(
     Ok((qr_rx, done_rx))
 }
 
+/// Retry delays for exponential backoff: 500ms, 1s, 2s.
+const RETRY_DELAYS_MS: [u64; 3] = [500, 1000, 2000];
+
+/// Send a WhatsApp message with retry and exponential backoff.
+///
+/// Attempts up to 3 times with delays of 500ms, 1s, 2s between retries.
+/// Clones the message for each retry attempt.
+async fn retry_send(
+    client: &Client,
+    jid: &Jid,
+    msg: waproto::whatsapp::Message,
+) -> Result<String, OmegaError> {
+    let mut last_err = None;
+
+    for (attempt, delay_ms) in RETRY_DELAYS_MS.iter().enumerate() {
+        match client.send_message(jid.clone(), msg.clone()).await {
+            Ok(msg_id) => return Ok(msg_id),
+            Err(e) => {
+                let attempt_num = attempt + 1;
+                if attempt_num < RETRY_DELAYS_MS.len() {
+                    warn!(
+                        "whatsapp send attempt {attempt_num}/{} failed: {e}, retrying in {delay_ms}ms",
+                        RETRY_DELAYS_MS.len()
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(*delay_ms)).await;
+                } else {
+                    error!(
+                        "whatsapp send attempt {attempt_num}/{} failed: {e}, giving up",
+                        RETRY_DELAYS_MS.len()
+                    );
+                }
+                last_err = Some(e);
+            }
+        }
+    }
+
+    Err(OmegaError::Channel(format!(
+        "whatsapp send failed after {} attempts: {}",
+        RETRY_DELAYS_MS.len(),
+        last_err.map(|e| e.to_string()).unwrap_or_default()
+    )))
+}
+
 /// Convert Markdown formatting to WhatsApp-native formatting.
 ///
 /// - `## Header` → `*HEADER*` (bold uppercase)
@@ -802,5 +839,16 @@ mod tests {
     fn test_sanitize_preserves_plain_text() {
         let plain = "Hello, how are you doing today?";
         assert_eq!(sanitize_for_whatsapp(plain), plain);
+    }
+
+    #[test]
+    fn test_retry_delays_exponential() {
+        assert_eq!(RETRY_DELAYS_MS.len(), 3, "should have 3 retry attempts");
+        assert_eq!(RETRY_DELAYS_MS[0], 500, "first delay 500ms");
+        assert_eq!(RETRY_DELAYS_MS[1], 1000, "second delay 1s");
+        assert_eq!(RETRY_DELAYS_MS[2], 2000, "third delay 2s");
+        // Verify exponential pattern: each delay is 2x the previous.
+        assert_eq!(RETRY_DELAYS_MS[1], RETRY_DELAYS_MS[0] * 2);
+        assert_eq!(RETRY_DELAYS_MS[2], RETRY_DELAYS_MS[1] * 2);
     }
 }
