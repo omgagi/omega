@@ -256,10 +256,10 @@ The Claude Code provider reads `context.mcp_servers` and, if non-empty, writes a
 
 ### Stage 5c: Autonomous Model Routing (Classify & Route)
 
-**What happens:** Before calling the provider, the gateway always runs a fast context-enriched classification call to determine complexity. The classifier receives the user's message along with lightweight context (active project, last 3 messages, available skills) and decides whether the message should be handled directly by the fast model (Sonnet) or decomposed into steps for the complex model (Opus).
+**What happens:** Before calling the provider, the gateway always runs a fast complexity-aware classification call. The classifier receives the user's message along with lightweight context (active project, last 3 messages, available skills) and decides whether the message should be handled directly by the fast model (Sonnet) or decomposed into steps for the complex model (Opus). The key distinction is **task complexity, not task count** — multiple routine actions (reminders, scheduling, lookups) are routed to DIRECT, while genuinely complex work (multi-file code changes, deep research, building something new) gets decomposed into steps.
 
 **Implementation:**
-1. `classify_and_route()` always runs a fast Sonnet classification call — a lightweight provider call with a strict, tiny prompt enriched with ~90 tokens of context (active project name, last 3 conversation messages truncated to 80 chars, available skill names). No system prompt, no MCP servers, no tool access (`allowed_tools = Some(vec![])` passes `--allowedTools ""` to the CLI), and `max_turns = 1` (single-shot, no agentic loops). The context helps Sonnet make informed routing decisions even on vague messages like "proceed as you see fit" when the user is in a specific project.
+1. `classify_and_route()` always runs a fast Sonnet classification call — a lightweight provider call with a complexity-aware prompt enriched with ~90 tokens of context (active project name, last 3 conversation messages truncated to 80 chars, available skill names). No system prompt, no MCP servers, no tool access (`allowed_tools = Some(vec![])` passes `--allowedTools ""` to the CLI), and `max_turns = 1` (single-shot, no agentic loops). The prompt explicitly defines DIRECT as covering simple questions, conversations, and routine actions regardless of quantity. Step lists are reserved for genuinely complex work where decomposition adds value (sequential dependencies, multi-file changes, research synthesis). When in doubt, the prompt biases toward DIRECT for faster, cheaper execution.
 2. The classification result is parsed:
    - **"DIRECT"** (case-insensitive) → Sonnet handles the response. The context's `model` field is set to the fast model, and the message falls through to the normal provider call (Stage 6).
    - **Single-step list** → Treated as DIRECT. No benefit to decomposition.
@@ -276,10 +276,11 @@ The Claude Code provider reads `context.mcp_servers` and, if non-empty, writes a
    - **Returns immediately** — the normal provider call (Stage 6) is skipped entirely.
 
 **Why This Exists:**
-Not all messages need the most powerful (and expensive) model. Simple questions, greetings, and direct requests are handled quickly and cheaply by Sonnet. Complex multi-step tasks are routed to Opus, which excels at deep reasoning. The classification call itself is fast and cheap — it uses Sonnet with ~90 tokens of context but no system prompt and no MCP overhead. The injected context (active project, recent messages, skills) prevents misclassification of vague messages that depend on conversational state.
+Not all messages need the most powerful (and expensive) model. Simple questions, greetings, routine actions (even batches of 12 reminders), and direct requests are handled quickly and cheaply by Sonnet. Only genuinely complex work — multi-file code changes, deep research requiring synthesis, building something new, or tasks with sequential dependencies — is routed to Opus. The classification considers **task complexity, not task count**, preventing over-escalation of simple multi-item requests. The classification call itself is fast and cheap — it uses Sonnet with ~90 tokens of context but no system prompt and no MCP overhead. The injected context (active project, recent messages, skills) prevents misclassification of vague messages that depend on conversational state.
 
 **Design Characteristics:**
 - The classification call always runs (the old `needs_planning()` word-count threshold is removed).
+- The classification prompt biases toward DIRECT ("when in doubt, prefer DIRECT") — cheaper and faster is the default.
 - The gateway stores two model identifiers: `model_fast` (default: `claude-sonnet-4-6`) and `model_complex` (default: `claude-opus-4-6`).
 - Model routing is transparent to the provider — the gateway sets `context.model` before each `complete()` call, and the provider resolves the effective model via `context.model.as_deref().unwrap_or(&self.model)`.
 - If the classification call fails for any reason, it falls back to direct execution with the fast model.

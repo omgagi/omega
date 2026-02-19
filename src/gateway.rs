@@ -1685,10 +1685,15 @@ impl Gateway {
 
         let planning_prompt = format!(
             "You are a task classifier. Do NOT use any tools — respond with text only.\n\n\
-             If this request is a simple question, greeting, or single-action task, respond \
-             with exactly: DIRECT\n\
-             If it requires multiple independent steps, respond with ONLY a numbered list of \
-             small self-contained steps. Nothing else.\n\n\
+             Respond DIRECT if the request is:\n\
+             - A simple question, greeting, or conversation\n\
+             - One or more routine actions (reminders, scheduling, sending messages, storing \
+             information, short lookups)\n\n\
+             Respond with a numbered step list ONLY if the request requires genuinely complex \
+             work that benefits from decomposition — such as multi-file code changes, deep \
+             research and synthesis, building something new, or tasks where each step produces \
+             context the next step needs.\n\n\
+             When in doubt, prefer DIRECT.\n\n\
              {context_section}\
              Request: {message}"
         );

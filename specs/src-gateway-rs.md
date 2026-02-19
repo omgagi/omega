@@ -444,7 +444,7 @@ pub struct Gateway {
 
 **Stage 5: Classify and Route (Model Selection)**
 - After SILENT suppression check:
-- Call `self.classify_and_route()` unconditionally (no word-count gate). This sends a classification prompt enriched with lightweight context (active project name, last 3 history messages truncated to 80 chars, available skill names) to the provider (no system prompt, no MCP servers) with `ctx.max_turns = Some(1)`, `ctx.allowed_tools = Some(vec![])` (disables all tool use), and `ctx.model = Some(self.model_fast.clone())` (classification always uses the fast model).
+- Call `self.classify_and_route()` unconditionally (no word-count gate). This sends a complexity-aware classification prompt enriched with lightweight context (active project name, last 3 history messages truncated to 80 chars, available skill names) to the provider (no system prompt, no MCP servers) with `ctx.max_turns = Some(1)`, `ctx.allowed_tools = Some(vec![])` (disables all tool use), and `ctx.model = Some(self.model_fast.clone())` (classification always uses the fast model). The prompt routes DIRECT for simple questions, conversations, and routine actions (reminders, scheduling, lookups) regardless of quantity, and only produces a step list for genuinely complex work (multi-file code changes, deep research, building, sequential dependencies). When in doubt, prefers DIRECT.
   - The classification response is parsed by `parse_plan_response()`:
     - If the response contains "DIRECT" (any case) → returns `None`.
     - If the response contains only a single step → returns `None`.
@@ -561,7 +561,7 @@ pub struct Gateway {
 
 **Logic:**
 1. Call `build_classification_context()` to produce a lightweight context block (~90 tokens) from the active project, last 3 history messages (truncated to 80 chars each), and skill names. Empty inputs produce an empty block (identical to previous behavior).
-2. Build the classification prompt with the context block injected between the instructions and the user's request.
+2. Build the complexity-aware classification prompt: routes DIRECT for simple questions, conversations, and routine actions (reminders, scheduling, lookups) regardless of quantity; produces a step list only for genuinely complex work (multi-file code changes, deep research, building, sequential dependencies); defaults to DIRECT when in doubt. The context block is injected between the instructions and the user's request.
 3. Set `ctx.max_turns = Some(1)` (single-shot, no agentic loops), `ctx.allowed_tools = Some(vec![])` (disables all tool use via `--allowedTools ""`), and `ctx.model = Some(self.model_fast.clone())` so classification uses the fast model with no tool access.
 4. Call `provider.complete()` with this minimal context (no system prompt, no MCP servers, no tools).
 5. On success, pass the response text to `parse_plan_response()`.
@@ -1142,7 +1142,7 @@ All interactions are logged to SQLite with:
 26. Incoming image attachments are saved to `{data_dir}/workspace/inbox/` before the provider call (Stage 2a) and cleaned up after the response is sent (Stage 9).
 27. Messages for different senders are dispatched concurrently via `tokio::spawn()`. Messages for the same sender are serialized: only one provider call per sender at a time, with additional messages buffered and processed in order.
 28. When a message arrives for a busy sender, a "Got it, I'll get to this next." acknowledgment is sent immediately.
-29. Classify-and-route: every message triggers a context-enriched classification call (using the fast model with active project, last 3 messages, and skill names); DIRECT messages use `model_fast`, multi-step plans use `model_complex`. Multi-step plans are executed autonomously with per-step progress, retry (up to 3 attempts), and a final summary.
+29. Classify-and-route: every message triggers a complexity-aware classification call (using the fast model with active project, last 3 messages, and skill names); routine actions (reminders, scheduling, lookups) are always DIRECT regardless of quantity, step lists only for genuinely complex work (code changes, research, building). DIRECT messages use `model_fast`, multi-step plans use `model_complex`. Multi-step plans are executed autonomously with per-step progress, retry (up to 3 attempts), and a final summary.
 30. Planning steps are tracked in-memory (ephemeral) and are not persisted to the database.
 31. Model routing: `context.model` is set by classify-and-route before the provider call. The provider resolves the effective model via `context.model.as_deref().unwrap_or(&self.model)`.
 32. SELF_HEAL: markers (format: `SELF_HEAL: description | verification test`) are processed after LIMITATION markers. The gateway parses both description and verification test, creates or updates `~/.omega/self-healing.json` (including the `verification` field), enforces max 10 iterations in code, schedules follow-up action tasks (2 min delay) with the verification test embedded in the prompt, and sends owner notifications via heartbeat channel. At max iterations, sends escalation alert and preserves state file. Processed in `handle_message` (direct), `execute_steps` (multi-step), and `scheduler_loop` — all via `process_markers()`.
