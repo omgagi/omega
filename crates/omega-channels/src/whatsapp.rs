@@ -192,12 +192,21 @@ impl Channel for WhatsAppChannel {
                             *client_store.lock().await = None;
                         }
                         Event::Message(msg, info) => {
-                            // Only process self-chat (personal channel).
-                            if !info.source.is_from_me {
-                                return;
-                            }
-                            if info.source.sender.user != info.source.chat.user {
-                                return;
+                            let is_group = info.source.is_group;
+
+                            if is_group {
+                                // In groups: skip our own messages.
+                                if info.source.is_from_me {
+                                    return;
+                                }
+                            } else {
+                                // Personal: only process self-chat (messages we send to ourselves).
+                                if !info.source.is_from_me {
+                                    return;
+                                }
+                                if info.source.sender.user != info.source.chat.user {
+                                    return;
+                                }
                             }
 
                             let msg_id = info.id.clone();
@@ -346,18 +355,23 @@ impl Channel for WhatsAppChannel {
                             };
 
                             let chat_jid = info.source.chat.to_string();
+                            let sender_name = if info.push_name.is_empty() {
+                                phone.clone()
+                            } else {
+                                info.push_name.clone()
+                            };
 
                             let incoming = IncomingMessage {
                                 id: Uuid::new_v4(),
                                 channel: "whatsapp".to_string(),
                                 sender_id: phone.clone(),
-                                sender_name: Some(phone.clone()),
+                                sender_name: Some(sender_name),
                                 text,
                                 timestamp: chrono::Utc::now(),
                                 reply_to: None,
                                 attachments,
                                 reply_target: Some(chat_jid),
-                                is_group: false,
+                                is_group,
                             };
 
                             if tx.send(incoming).await.is_err() {
@@ -591,6 +605,7 @@ fn split_message(text: &str, max_len: usize) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wacore_binary::jid::JidExt;
 
     #[test]
     fn test_split_short_message() {
@@ -606,6 +621,20 @@ mod tests {
         for chunk in &chunks {
             assert!(chunk.len() <= 4096);
         }
+    }
+
+    #[test]
+    fn test_jid_group_detection() {
+        // Group JIDs use @g.us server.
+        let group_jid: Jid = "120363001234567890@g.us".parse().unwrap();
+        assert!(group_jid.is_group(), "g.us JID should be detected as group");
+
+        // Personal JIDs use @s.whatsapp.net server.
+        let personal_jid: Jid = "5511999887766@s.whatsapp.net".parse().unwrap();
+        assert!(
+            !personal_jid.is_group(),
+            "s.whatsapp.net JID should not be group"
+        );
     }
 
     #[test]
