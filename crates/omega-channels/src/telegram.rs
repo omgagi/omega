@@ -203,6 +203,7 @@ impl TelegramChannel {
                 { "command": "skills", "description": "List available skills" },
                 { "command": "projects", "description": "List available projects" },
                 { "command": "project", "description": "Show, activate, or deactivate a project" },
+                { "command": "purge", "description": "Delete all learned facts (clean slate)" },
                 { "command": "whatsapp", "description": "Connect WhatsApp via QR code" },
             ]
         });

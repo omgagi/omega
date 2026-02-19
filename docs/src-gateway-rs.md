@@ -617,7 +617,7 @@ Every 60 seconds, the background summarizer runs:
 1. **Find idle conversations** — Find all conversations inactive for N minutes.
 2. **Summarize each** — Call the provider to generate a 1-2 sentence summary.
 3. **Extract facts** — Call the provider to extract user facts (name, preferences, etc.).
-4. **Store facts** — Save extracted facts to the user profile.
+4. **Validate & store facts** — Each extracted fact is validated by `is_valid_fact()` before storing. Rejects numeric keys, price values, pipe-delimited rows, and oversized entries.
 5. **Close conversation** — Mark the conversation as closed and store the summary.
 
 **Why Summarization?**

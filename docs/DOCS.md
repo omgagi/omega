@@ -45,7 +45,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [introspection.md](introspection.md) — Autonomous limitation detection, self-audit (anomaly flagging + audit DB access), self-healing protocol (SELF_HEAL/SELF_HEAL_RESOLVED gateway markers, code-enforced iteration limits, auto-scheduling, escalation)
 
 ### Commands
-- [commands.md](commands.md) — Bot command reference (/status, /memory, /history, /facts, /forget, /tasks, /cancel, /skills, /projects, /project, /help)
+- [commands.md](commands.md) — Bot command reference (/status, /memory, /history, /facts, /forget, /tasks, /cancel, /skills, /purge, /projects, /project, /help)
 
 ### Skills & MCP
 - [skills-lib.md](skills-lib.md) — Skill loader, trigger matching, MCP server definitions

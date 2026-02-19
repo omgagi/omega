@@ -252,7 +252,8 @@ pub struct Gateway {
    - Create prompt by concatenating `facts_prompt_template` + "\n\n" + transcript.
    - Call `provider.complete(Context::new(prompt))`.
    - Parse response line by line as "key: value" pairs.
-   - For each valid pair (non-empty key and value), call `store.store_fact(sender_id, key, value)`.
+   - For each valid pair (non-empty key and value), validate via `is_valid_fact(key, value)` before storing.
+   - `is_valid_fact()` rejects: keys >50 chars, values >200 chars, numeric-only keys, values starting with `$`, pipe-delimited table rows (2+ pipes), and pure numeric values (price patterns).
    - If response is "none", skip fact storage.
 6. Query the database directly via `sqlx::query_as()` to get the `sender_id` from the conversations table.
 7. Call `store.close_conversation(conversation_id, summary)` to mark conversation as closed and store summary.

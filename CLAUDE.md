@@ -78,6 +78,8 @@ System prompt composition: The `Prompts` struct splits prompts into three fields
 
 User profile: `format_user_profile()` in `omega-memory` replaces the flat "Known facts" dump with a structured "User profile:" block that filters system keys (`welcomed`, `preferred_language`, `active_project`) and groups identity keys first, context keys second, rest last.
 
+Fact validation: `is_valid_fact()` in `gateway.rs` validates every extracted fact before storing. Rejects: keys >50 chars or starting with digit, values >200 chars or starting with `$`, pipe-delimited table rows, and pure numeric values. The facts prompt in `SYSTEM_PROMPT.md` has strict acceptance criteria (personal facts only, no trading data/prices/instructions).
+
 Conversational onboarding: No separate welcome message — the AI handles introduction and onboarding naturally. On first contact (0 real facts), a strong onboarding hint tells OMEGA to introduce itself and prioritize getting to know the person. With 1-2 real facts, a lighter "naturally weave in a question" hint. At 3+ real facts, no hint. The `welcomed` fact and language detection are still stored on first contact for tracking.
 
 Background loops (spawned in `gateway::run()`):
@@ -88,7 +90,7 @@ Proactive self-scheduling: After every action it takes, the AI evaluates: "Does 
 
 Self-introspection: OMEGA autonomously detects its own capability gaps. When encountering something it cannot do but should (missing tools, unavailable services), it emits a `LIMITATION: title | description | plan` marker. The gateway extracts it, stores in the `limitations` table (deduped by title, case-insensitive), sends an immediate Telegram alert to the owner, and auto-adds it to `~/.omega/HEARTBEAT.md` as a critical item. The heartbeat loop is also enriched with open limitations and a self-audit instruction, making every heartbeat a self-reflection opportunity.
 
-Bot commands (`src/commands.rs`): `/help`, `/forget`, `/tasks`, `/cancel <id>`, `/language`, `/personality`, `/skills`, `/projects`, `/project` — dispatched via `commands::handle(cmd, &CommandContext)` where `CommandContext` groups store, channel, sender, text, uptime, provider name, skills, projects, and sandbox mode into a single struct. `Command::parse()` strips `@botname` suffixes (e.g., `/help@omega_bot` → `/help`) to support Telegram group chat command format. The Telegram channel registers all commands via `setMyCommands` at startup for autocomplete discoverability.
+Bot commands (`src/commands.rs`): `/help`, `/forget`, `/tasks`, `/cancel <id>`, `/language`, `/personality`, `/purge`, `/skills`, `/projects`, `/project` — dispatched via `commands::handle(cmd, &CommandContext)` where `CommandContext` groups store, channel, sender, text, uptime, provider name, skills, projects, and sandbox mode into a single struct. `Command::parse()` strips `@botname` suffixes (e.g., `/help@omega_bot` → `/help`) to support Telegram group chat command format. The Telegram channel registers all commands via `setMyCommands` at startup for autocomplete discoverability. `/purge` deletes all non-system facts (preserves `welcomed`, `preferred_language`, `active_project`, `personality`), giving the user a clean slate.
 
 Init wizard Google Workspace: auto-detects installed browsers with incognito/private mode (Chrome, Brave, Firefox, Edge), offers to open OAuth URL in incognito via `BROWSER` env var on the `gog auth add` subprocess, cleans up temp script after.
 

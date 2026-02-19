@@ -22,7 +22,41 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, Mutex};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
+
+/// Validate a fact key/value before storing. Rejects junk patterns.
+fn is_valid_fact(key: &str, value: &str) -> bool {
+    // Length limits.
+    if key.len() > 50 || value.len() > 200 {
+        return false;
+    }
+
+    // Key must not be numeric-only or start with a digit.
+    if key.chars().next().is_none_or(|c| c.is_ascii_digit()) {
+        return false;
+    }
+
+    // Value must not start with '$' (price patterns).
+    if value.starts_with('$') {
+        return false;
+    }
+
+    // Reject pipe-delimited table rows.
+    if value.contains('|') && value.matches('|').count() >= 2 {
+        return false;
+    }
+
+    // Reject values that look like prices (e.g., "0.00123", "45,678.90").
+    let price_like = value
+        .trim()
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == '-');
+    if price_like && !value.trim().is_empty() {
+        return false;
+    }
+
+    true
+}
 
 /// The central gateway that routes messages between channels and providers.
 pub struct Gateway {
@@ -905,7 +939,11 @@ impl Gateway {
                             let key = key.trim().trim_start_matches("- ").to_lowercase();
                             let value = value.trim().to_string();
                             if !key.is_empty() && !value.is_empty() {
-                                let _ = store.store_fact(&sender_id, &key, &value).await;
+                                if is_valid_fact(&key, &value) {
+                                    let _ = store.store_fact(&sender_id, &key, &value).await;
+                                } else {
+                                    debug!("rejected invalid fact: {key}: {value}");
+                                }
                             }
                         }
                     }
@@ -2927,9 +2965,48 @@ mod tests {
             "bundled facts section should list pronouns"
         );
         assert!(
-            content.contains("dossier"),
-            "bundled facts section should include privacy framing"
+            content.contains("PERSON"),
+            "bundled facts section should emphasize personal facts"
         );
+    }
+
+    // --- Fact validation tests ---
+
+    #[test]
+    fn test_is_valid_fact_accepts_good_facts() {
+        assert!(is_valid_fact("name", "Juan"));
+        assert!(is_valid_fact("occupation", "software engineer"));
+        assert!(is_valid_fact("timezone", "Europe/Madrid"));
+        assert!(is_valid_fact("interests", "trading, hiking, Rust"));
+        assert!(is_valid_fact("communication_style", "direct and concise"));
+    }
+
+    #[test]
+    fn test_is_valid_fact_rejects_numeric_keys() {
+        assert!(!is_valid_fact("1", "some value"));
+        assert!(!is_valid_fact("42", "another value"));
+        assert!(!is_valid_fact("3. step three", "do something"));
+    }
+
+    #[test]
+    fn test_is_valid_fact_rejects_price_values() {
+        assert!(!is_valid_fact("target", "$150.00"));
+        assert!(!is_valid_fact("price", "0.00123"));
+        assert!(!is_valid_fact("level", "45,678.90"));
+    }
+
+    #[test]
+    fn test_is_valid_fact_rejects_pipe_delimited() {
+        assert!(!is_valid_fact("data", "BTC | 45000 | bullish"));
+        assert!(!is_valid_fact("row", "col1 | col2 | col3"));
+    }
+
+    #[test]
+    fn test_is_valid_fact_rejects_oversized() {
+        let long_key = "a".repeat(51);
+        assert!(!is_valid_fact(&long_key, "value"));
+        let long_value = "b".repeat(201);
+        assert!(!is_valid_fact("key", &long_value));
     }
 
     // --- Heartbeat marker tests ---

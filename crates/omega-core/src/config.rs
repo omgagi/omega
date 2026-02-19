@@ -558,10 +558,14 @@ impl Default for Prompts {
                      - When the user asks to connect, set up, or configure WhatsApp, respond with exactly WHATSAPP_QR on its own line. Do not explain the process — the system will handle QR generation automatically.".into(),
             summarize: "Summarize this conversation in 1-2 sentences. Be factual and concise. \
                         Do not add commentary.".into(),
-            facts: "Extract key facts about the user from this conversation. \
-                    Return each fact as 'key: value' on its own line. \
-                    Only include concrete, personal facts (name, preferences, location, etc.). \
-                    If no facts are apparent, respond with 'none'.".into(),
+            facts: "Extract ONLY personal facts about the user — things that describe WHO they are, not what was discussed.\n\
+                    Allowed keys: name, preferred_name, pronouns, timezone, location, occupation, interests, personality, communication_style, technical_level, autonomy_preference.\n\
+                    Rules: A fact must be about the PERSON, not about a topic, market, project, algorithm, or conversation. \
+                    Do NOT extract trading data, prices, market analysis, technical instructions, code snippets, recommendations, numbered steps, timestamps, or anything the AI said. \
+                    Do NOT extract facts that only make sense in the context of a single conversation.\n\
+                    IMPORTANT: Always use English keys regardless of conversation language. Values may be in any language.\n\
+                    Format: one 'key: value' per line. Keys: 1-3 words, lowercase. Values: under 100 chars.\n\
+                    If no personal facts are apparent, respond with 'none'.".into(),
             heartbeat: "You are OMEGA Ω performing a periodic heartbeat check. \
                         If everything is fine, respond with exactly HEARTBEAT_OK. \
                         Otherwise, respond with a brief alert.".into(),

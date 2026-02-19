@@ -40,6 +40,7 @@ pub enum Command {
 | `Tasks` | List pending scheduled tasks for the user |
 | `Cancel` | Cancel a scheduled task by ID prefix |
 | `Language` | Show or set the user's preferred response language |
+| `Purge` | Delete all non-system facts (clean slate) |
 | `Projects` | List available projects, marking the active one |
 | `Project` | Show, activate, or deactivate a project |
 | `Help` | Display all available commands |
@@ -69,6 +70,7 @@ pub enum Command {
 - `/cancel` → `Command::Cancel`
 - `/language` or `/lang` → `Command::Language`
 - `/personality` → `Command::Personality`
+- `/purge` → `Command::Purge`
 - `/projects` → `Command::Projects`
 - `/project` → `Command::Project`
 - `/help` → `Command::Help`
@@ -402,6 +404,24 @@ Error: [error description]
 
 ---
 
+### /purge — `handle_purge(store, sender_id)`
+
+**Behavior:**
+- Fetches all facts for the user.
+- Saves system facts (`welcomed`, `preferred_language`, `active_project`, `personality`) to a temporary list.
+- Deletes ALL facts for the user via `store.delete_facts(sender_id, None)`.
+- Restores the saved system facts.
+- Reports how many non-system facts were purged.
+
+**System Fact Keys (preserved):** `welcomed`, `preferred_language`, `active_project`, `personality`
+
+**Response Format (Success):**
+```
+Purged 12 facts. System keys preserved (welcomed, preferred_language, active_project, personality).
+```
+
+---
+
 ### /projects — `handle_projects(store, sender_id, projects)`
 
 **Behavior:**
@@ -480,6 +500,7 @@ Project 'xyz' not found. Use /projects to see available projects.
 /cancel   — Cancel a task by ID
 /language — Show or set your language
 /personality — Show or set how I behave
+/purge    — Delete all learned facts (clean slate)
 /projects — List available projects
 /project  — Show, activate, or deactivate a project
 /help     — This message
@@ -525,6 +546,9 @@ All command handlers interact with the `omega_memory::Store` trait/type:
 | `handle_personality()` | `store.get_fact(sender_id, "personality")` | `Result<Option<String>>` | Get current personality preference |
 | `handle_personality()` | `store.store_fact(sender_id, "personality", value)` | `Result<()>` | Set personality preference |
 | `handle_personality()` | `store.delete_fact(sender_id, "personality")` | `Result<bool>` | Reset personality to defaults |
+| `handle_purge()` | `store.get_facts(sender_id)` | `Result<Vec<(String, String)>>` | Fetch all facts to identify system keys |
+| `handle_purge()` | `store.delete_facts(sender_id, None)` | `Result<u64>` | Delete all facts for user |
+| `handle_purge()` | `store.store_fact(sender_id, key, value)` | `Result<()>` | Re-store preserved system facts |
 | `handle_projects()` | `store.get_fact(sender_id, "active_project")` | `Result<Option<String>>` | Get current active project |
 | `handle_project()` | `store.get_fact(sender_id, "active_project")` | `Result<Option<String>>` | Get current active project |
 | `handle_project()` | `store.store_fact(sender_id, "active_project", name)` | `Result<()>` | Set active project |

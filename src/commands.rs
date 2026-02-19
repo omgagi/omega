@@ -30,6 +30,7 @@ pub enum Command {
     Skills,
     Projects,
     Project,
+    Purge,
     WhatsApp,
     Help,
 }
@@ -54,6 +55,7 @@ impl Command {
             "/skills" => Some(Self::Skills),
             "/projects" => Some(Self::Projects),
             "/project" => Some(Self::Project),
+            "/purge" => Some(Self::Purge),
             "/whatsapp" => Some(Self::WhatsApp),
             "/help" => Some(Self::Help),
             _ => None,
@@ -87,6 +89,7 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
             )
             .await
         }
+        Command::Purge => handle_purge(ctx.store, ctx.sender_id).await,
         Command::WhatsApp => handle_whatsapp(),
         Command::Help => handle_help(),
     }
@@ -365,6 +368,43 @@ async fn handle_project(
     }
 }
 
+/// System fact keys preserved by /purge.
+const SYSTEM_FACT_KEYS: &[&str] = &[
+    "welcomed",
+    "preferred_language",
+    "active_project",
+    "personality",
+];
+
+/// Handle /purge — delete all non-system facts, giving the user a clean slate.
+async fn handle_purge(store: &Store, sender_id: &str) -> String {
+    // Save system facts first.
+    let preserved: Vec<(String, String)> = match store.get_facts(sender_id).await {
+        Ok(facts) => facts
+            .into_iter()
+            .filter(|(k, _)| SYSTEM_FACT_KEYS.contains(&k.as_str()))
+            .collect(),
+        Err(e) => return format!("Error: {e}"),
+    };
+
+    // Delete all facts.
+    let deleted = match store.delete_facts(sender_id, None).await {
+        Ok(n) => n,
+        Err(e) => return format!("Error: {e}"),
+    };
+
+    // Restore system facts.
+    for (key, value) in &preserved {
+        let _ = store.store_fact(sender_id, key, value).await;
+    }
+
+    let purged = deleted as usize - preserved.len();
+    format!(
+        "Purged {purged} facts. System keys preserved ({}).",
+        SYSTEM_FACT_KEYS.join(", ")
+    )
+}
+
 /// Handle /whatsapp — returns a marker that the gateway intercepts.
 fn handle_whatsapp() -> String {
     "WHATSAPP_QR".to_string()
@@ -382,6 +422,7 @@ fn handle_help() -> String {
 /cancel   — Cancel a task by ID\n\
 /language — Show or set your language\n\
 /personality — Show or set how I behave\n\
+/purge    — Delete all learned facts (clean slate)\n\
 /skills   — List available skills\n\
 /projects — List available projects\n\
 /project  — Show, activate, or deactivate a project\n\
@@ -466,6 +507,7 @@ mod tests {
             Some(Command::Projects)
         ));
         assert!(matches!(Command::parse("/project"), Some(Command::Project)));
+        assert!(matches!(Command::parse("/purge"), Some(Command::Purge)));
         assert!(matches!(
             Command::parse("/whatsapp"),
             Some(Command::WhatsApp)
@@ -493,6 +535,15 @@ mod tests {
         ));
         // Unknown command with @botname should still return None.
         assert!(Command::parse("/unknown@omega_bot").is_none());
+    }
+
+    #[test]
+    fn test_parse_purge_command() {
+        assert!(matches!(Command::parse("/purge"), Some(Command::Purge)));
+        assert!(matches!(
+            Command::parse("/purge@omega_bot"),
+            Some(Command::Purge)
+        ));
     }
 
     #[test]
@@ -551,5 +602,48 @@ mod tests {
             result.contains("Already using default"),
             "should indicate already default"
         );
+    }
+
+    #[tokio::test]
+    async fn test_purge_preserves_system_facts() {
+        let store = test_store().await;
+        // Store system facts.
+        store.store_fact("user1", "welcomed", "true").await.unwrap();
+        store
+            .store_fact("user1", "preferred_language", "Spanish")
+            .await
+            .unwrap();
+        store
+            .store_fact("user1", "personality", "casual")
+            .await
+            .unwrap();
+        // Store junk facts.
+        store
+            .store_fact("user1", "btc_price", "45000")
+            .await
+            .unwrap();
+        store
+            .store_fact("user1", "target", "0.5 BTC")
+            .await
+            .unwrap();
+        store.store_fact("user1", "name", "Juan").await.unwrap();
+
+        let result = handle_purge(&store, "user1").await;
+        assert!(
+            result.contains("Purged 3 facts"),
+            "should report 3 purged: {result}"
+        );
+
+        // System facts preserved.
+        let facts = store.get_facts("user1").await.unwrap();
+        let keys: Vec<&str> = facts.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"welcomed"));
+        assert!(keys.contains(&"preferred_language"));
+        assert!(keys.contains(&"personality"));
+        // Junk facts removed.
+        assert!(!keys.contains(&"btc_price"));
+        assert!(!keys.contains(&"target"));
+        // Non-system personal facts also removed.
+        assert!(!keys.contains(&"name"));
     }
 }

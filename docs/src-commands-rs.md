@@ -231,6 +231,24 @@ Language set to: French
 
 ---
 
+### `/purge` — Delete All Learned Facts
+
+**What It Does:** Deletes all non-system facts about you, giving you a clean slate. The AI will re-learn facts about you from future conversations.
+
+**System facts preserved:** `welcomed`, `preferred_language`, `active_project`, `personality`.
+
+**Response Example:**
+```
+Purged 12 facts. System keys preserved (welcomed, preferred_language, active_project, personality).
+```
+
+**Use Cases:**
+- Clean up junk or inaccurate facts that accumulated over time
+- Start fresh without losing your language/project/personality preferences
+- Privacy reset — remove all personal facts while keeping system settings
+
+---
+
 ### `/projects` — List Projects
 
 **What It Does:** Lists all available projects in `~/.omega/projects/`, marking which one is currently active.
@@ -312,6 +330,7 @@ Project deactivated. Conversation cleared.
 /tasks    — List your scheduled tasks
 /cancel   — Cancel a task by ID
 /language — Show or set your language
+/purge    — Delete all learned facts (clean slate)
 /projects — List available projects
 /project  — Show, activate, or deactivate a project
 /help     — This message
