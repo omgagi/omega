@@ -161,6 +161,7 @@ impl Provider for ClaudeCodeProvider {
 
         // Resolve effective max_turns, allowed_tools, and model from context overrides.
         let effective_max_turns = context.max_turns.unwrap_or(self.max_turns);
+        let tools_disabled = matches!(&context.allowed_tools, Some(t) if t.is_empty());
         let effective_tools: Vec<String> = context
             .allowed_tools
             .clone()
@@ -175,6 +176,7 @@ impl Provider for ClaudeCodeProvider {
                 effective_max_turns,
                 &effective_tools,
                 effective_model,
+                tools_disabled,
             )
             .await;
 
@@ -286,6 +288,7 @@ impl ClaudeCodeProvider {
         max_turns: u32,
         allowed_tools: &[String],
         model: &str,
+        context_disabled_tools: bool,
     ) -> Result<std::process::Output, OmegaError> {
         let mut cmd = match self.working_dir {
             Some(ref dir) => {
@@ -318,12 +321,20 @@ impl ClaudeCodeProvider {
             cmd.arg("--session-id").arg(session);
         }
 
-        // Allowed tools — only pass the flag when there are explicit entries.
-        for tool in allowed_tools {
-            cmd.arg("--allowedTools").arg(tool);
-        }
-        for tool in extra_allowed_tools {
-            cmd.arg("--allowedTools").arg(tool);
+        // Allowed tools — pass explicit entries, or disable all tools with an
+        // empty string when the caller explicitly set an empty list (e.g.,
+        // classification calls that need no tool access).
+        if allowed_tools.is_empty() && extra_allowed_tools.is_empty() {
+            if context_disabled_tools {
+                cmd.arg("--allowedTools").arg("");
+            }
+        } else {
+            for tool in allowed_tools {
+                cmd.arg("--allowedTools").arg(tool);
+            }
+            for tool in extra_allowed_tools {
+                cmd.arg("--allowedTools").arg(tool);
+            }
         }
 
         debug!("executing: claude -p <prompt> --output-format json");

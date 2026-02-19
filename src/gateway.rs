@@ -1694,7 +1694,8 @@ impl Gateway {
         );
 
         let mut ctx = Context::new(&planning_prompt);
-        ctx.max_turns = Some(5);
+        ctx.max_turns = Some(1);
+        ctx.allowed_tools = Some(vec![]);
         ctx.model = Some(self.model_fast.clone());
         match self.provider.complete(&ctx).await {
             Ok(resp) => parse_plan_response(&resp.text),

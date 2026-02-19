@@ -444,7 +444,7 @@ pub struct Gateway {
 
 **Stage 5: Classify and Route (Model Selection)**
 - After SILENT suppression check:
-- Call `self.classify_and_route()` unconditionally (no word-count gate). This sends a classification prompt enriched with lightweight context (active project name, last 3 history messages truncated to 80 chars, available skill names) to the provider (no system prompt, no MCP servers) with `ctx.model = Some(self.model_fast.clone())` (classification always uses the fast model).
+- Call `self.classify_and_route()` unconditionally (no word-count gate). This sends a classification prompt enriched with lightweight context (active project name, last 3 history messages truncated to 80 chars, available skill names) to the provider (no system prompt, no MCP servers) with `ctx.max_turns = Some(1)`, `ctx.allowed_tools = Some(vec![])` (disables all tool use), and `ctx.model = Some(self.model_fast.clone())` (classification always uses the fast model).
   - The classification response is parsed by `parse_plan_response()`:
     - If the response contains "DIRECT" (any case) → returns `None`.
     - If the response contains only a single step → returns `None`.
@@ -562,8 +562,8 @@ pub struct Gateway {
 **Logic:**
 1. Call `build_classification_context()` to produce a lightweight context block (~90 tokens) from the active project, last 3 history messages (truncated to 80 chars each), and skill names. Empty inputs produce an empty block (identical to previous behavior).
 2. Build the classification prompt with the context block injected between the instructions and the user's request.
-3. Set `ctx.model = Some(self.model_fast.clone())` so classification uses the fast model.
-4. Call `provider.complete()` with this minimal context (no system prompt, no MCP servers).
+3. Set `ctx.max_turns = Some(1)` (single-shot, no agentic loops), `ctx.allowed_tools = Some(vec![])` (disables all tool use via `--allowedTools ""`), and `ctx.model = Some(self.model_fast.clone())` so classification uses the fast model with no tool access.
+4. Call `provider.complete()` with this minimal context (no system prompt, no MCP servers, no tools).
 5. On success, pass the response text to `parse_plan_response()`.
 6. On error, log the error and return `None` (falls through to normal single provider call).
 

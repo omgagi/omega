@@ -243,9 +243,9 @@ Delegates to `Self::check_cli()`. Returns `true` if the `claude` binary is insta
 
 ## CLI Invocation Detail
 
-### `run_cli(prompt, extra_allowed_tools, model)` (private, async)
+### `run_cli(prompt, extra_allowed_tools, model, context_disabled_tools)` (private, async)
 
-Private helper that assembles and executes the `claude` CLI subprocess. Called by `complete()`. Takes an additional `model: &str` parameter; when non-empty, passes `--model <value>` to the CLI.
+Private helper that assembles and executes the `claude` CLI subprocess. Called by `complete()`. Takes an additional `model: &str` parameter; when non-empty, passes `--model <value>` to the CLI. The `context_disabled_tools: bool` parameter is `true` when the caller explicitly set `context.allowed_tools = Some(vec![])` — in that case, if both `allowed_tools` and `extra_allowed_tools` are empty, `run_cli` passes `--allowedTools ""` to disable all tool use in the CLI (used by classification calls).
 
 ### `run_cli_with_session(prompt, extra_allowed_tools, session_id, model)` (private, async)
 
