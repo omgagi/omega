@@ -13,7 +13,10 @@ use omega_core::{
     traits::Provider,
 };
 use omega_memory::Store;
-use omega_providers::claude_code::ClaudeCodeProvider;
+use omega_providers::{
+    anthropic::AnthropicProvider, claude_code::ClaudeCodeProvider, gemini::GeminiProvider,
+    ollama::OllamaProvider, openai::OpenAiProvider, openrouter::OpenRouterProvider,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -363,6 +366,64 @@ fn build_provider(
                 cfg.sandbox.mode,
                 cc.max_resume_attempts,
                 cc.model,
+            )))
+        }
+        "ollama" => {
+            let oc = cfg
+                .provider
+                .ollama
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("provider.ollama section missing in config"))?;
+            Ok(Box::new(OllamaProvider::from_config(
+                oc.base_url.clone(),
+                oc.model.clone(),
+            )))
+        }
+        "openai" => {
+            let oc = cfg
+                .provider
+                .openai
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("provider.openai section missing in config"))?;
+            Ok(Box::new(OpenAiProvider::from_config(
+                oc.base_url.clone(),
+                oc.api_key.clone(),
+                oc.model.clone(),
+            )))
+        }
+        "anthropic" => {
+            let ac = cfg
+                .provider
+                .anthropic
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("provider.anthropic section missing in config"))?;
+            Ok(Box::new(AnthropicProvider::from_config(
+                ac.api_key.clone(),
+                ac.model.clone(),
+            )))
+        }
+        "openrouter" => {
+            let oc = cfg
+                .provider
+                .openrouter
+                .as_ref()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("provider.openrouter section missing in config")
+                })?;
+            Ok(Box::new(OpenRouterProvider::from_config(
+                oc.api_key.clone(),
+                oc.model.clone(),
+            )))
+        }
+        "gemini" => {
+            let gc = cfg
+                .provider
+                .gemini
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("provider.gemini section missing in config"))?;
+            Ok(Box::new(GeminiProvider::from_config(
+                gc.api_key.clone(),
+                gc.model.clone(),
             )))
         }
         other => anyhow::bail!("unsupported provider: {other}"),

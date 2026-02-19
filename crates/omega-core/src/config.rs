@@ -71,6 +71,7 @@ pub struct ProviderConfig {
     pub openai: Option<OpenAiConfig>,
     pub ollama: Option<OllamaConfig>,
     pub openrouter: Option<OpenRouterConfig>,
+    pub gemini: Option<GeminiConfig>,
 }
 
 /// Claude Code CLI provider config.
@@ -153,6 +154,17 @@ pub struct OpenRouterConfig {
     #[serde(default)]
     pub api_key: String,
     #[serde(default)]
+    pub model: String,
+}
+
+/// Google Gemini API provider config.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeminiConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_gemini_model")]
     pub model: String,
 }
 
@@ -419,6 +431,9 @@ fn default_ollama_base_url() -> String {
 }
 fn default_ollama_model() -> String {
     "llama3".to_string()
+}
+fn default_gemini_model() -> String {
+    "gemini-2.0-flash".to_string()
 }
 fn default_memory_backend() -> String {
     "sqlite".to_string()
@@ -977,5 +992,17 @@ mod tests {
     fn test_quant_testnet_default() {
         // Safety invariant #1: testnet by default
         assert_eq!(default_quant_network(), "testnet");
+    }
+
+    #[test]
+    fn test_gemini_config_defaults() {
+        let toml_str = r#"
+            enabled = true
+            api_key = "AIza-test"
+        "#;
+        let cfg: GeminiConfig = toml::from_str(toml_str).unwrap();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.api_key, "AIza-test");
+        assert_eq!(cfg.model, "gemini-2.0-flash");
     }
 }

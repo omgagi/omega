@@ -47,6 +47,12 @@ enabled = false
 api_key = ""  # Or env: OPENROUTER_API_KEY
 model = "anthropic/claude-sonnet-4-20250514"
 
+# Google Gemini (requires key)
+[provider.gemini]
+enabled = false
+api_key = ""  # Or env: GEMINI_API_KEY
+model = "gemini-2.0-flash"
+
 # --- Channels ---
 
 [channel.telegram]

@@ -29,12 +29,13 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [core-traits.md](core-traits.md) — Provider and Channel trait definitions
 
 ### Milestone 4: omega-providers
-- [providers-lib.md](providers-lib.md) — Providers crate overview
-- [providers-claude-code.md](providers-claude-code.md) — Claude Code CLI provider (primary)
-- [providers-anthropic.md](providers-anthropic.md) — Anthropic API provider (placeholder)
-- [providers-openai.md](providers-openai.md) — OpenAI-compatible provider (placeholder)
-- [providers-ollama.md](providers-ollama.md) — Ollama local provider (placeholder)
-- [providers-openrouter.md](providers-openrouter.md) — OpenRouter proxy provider (placeholder)
+- [providers-lib.md](providers-lib.md) — Providers crate overview (all 6 modules public)
+- [providers-claude-code.md](providers-claude-code.md) — Claude Code CLI provider (primary, subprocess-based)
+- [providers-ollama.md](providers-ollama.md) — Ollama local provider (HTTP, no auth)
+- [providers-openai.md](providers-openai.md) — OpenAI-compatible provider (HTTP, Bearer auth, exports shared types)
+- [providers-openrouter.md](providers-openrouter.md) — OpenRouter proxy provider (reuses OpenAI types)
+- [providers-anthropic.md](providers-anthropic.md) — Anthropic Messages API provider (HTTP, x-api-key header)
+- [providers-gemini.md](providers-gemini.md) — Google Gemini API provider (HTTP, URL query param auth)
 
 ### Milestone 5: omega-channels
 - [channels-lib.md](channels-lib.md) — Channels crate overview

@@ -32,6 +32,7 @@ Config
   |     +-- openai: Option<OpenAiConfig>
   |     +-- ollama: Option<OllamaConfig>
   |     +-- openrouter: Option<OpenRouterConfig>
+  |     +-- gemini: Option<GeminiConfig>
   +-- channel: ChannelConfig
   |     +-- telegram: Option<TelegramConfig>
   |     +-- whatsapp: Option<WhatsAppConfig>
@@ -94,6 +95,7 @@ Note: The `Default` derive sets `enabled` to `false` and `deny_message` to `""` 
 | `openai` | `Option<OpenAiConfig>` | -- | `None` |
 | `ollama` | `Option<OllamaConfig>` | -- | `None` |
 | `openrouter` | `Option<OpenRouterConfig>` | -- | `None` |
+| `gemini` | `Option<GeminiConfig>` | -- | `None` |
 
 Derives: `Debug, Clone, Serialize, Deserialize, Default`
 
@@ -154,6 +156,16 @@ Derives: `Debug, Clone, Serialize, Deserialize`
 | `enabled` | `bool` | serde default | `false` |
 | `api_key` | `String` | serde default | `""` |
 | `model` | `String` | serde default | `""` |
+
+Derives: `Debug, Clone, Serialize, Deserialize`
+
+### `GeminiConfig`
+
+| Field | Type | Default Function | Default Value |
+|-------|------|-----------------|---------------|
+| `enabled` | `bool` | serde default | `false` |
+| `api_key` | `String` | serde default | `""` |
+| `model` | `String` | `default_gemini_model()` | `"gemini-2.0-flash"` |
 
 Derives: `Debug, Clone, Serialize, Deserialize`
 
@@ -292,6 +304,7 @@ All private functions in the module that supply serde defaults:
 | `default_openai_base_url()` | `String` | `"https://api.openai.com/v1"` |
 | `default_ollama_base_url()` | `String` | `"http://localhost:11434"` |
 | `default_ollama_model()` | `String` | `"llama3"` |
+| `default_gemini_model()` | `String` | `"gemini-2.0-flash"` |
 | `default_memory_backend()` | `String` | `"sqlite"` |
 | `default_db_path()` | `String` | `"~/.omega/memory.db"` |
 | `default_max_context()` | `usize` | `50` |
@@ -405,6 +418,7 @@ Channel and provider sub-configs use `Option<T>` rather than `#[serde(default)]`
 | `[provider.openai]` | `Config.provider.openai` |
 | `[provider.ollama]` | `Config.provider.ollama` |
 | `[provider.openrouter]` | `Config.provider.openrouter` |
+| `[provider.gemini]` | `Config.provider.gemini` |
 | `[channel.telegram]` | `Config.channel.telegram` |
 | `[channel.whatsapp]` | `Config.channel.whatsapp` |
 | `[memory]` | `Config.memory` |

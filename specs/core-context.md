@@ -153,6 +153,37 @@ pub fn to_prompt_string(&self) -> String
 **Usage sites:**
 - `crates/omega-providers/src/claude_code.rs` -- the Claude Code provider calls `context.to_prompt_string()` to produce the single prompt string passed to the `claude -p` CLI command.
 
+### `Context::to_api_messages(&self) -> (String, Vec<ApiMessage>)`
+
+**Signature:**
+```rust
+pub fn to_api_messages(&self) -> (String, Vec<ApiMessage>)
+```
+
+**Purpose:** Convert context to structured API messages for HTTP-based providers (OpenAI, Anthropic, Gemini, etc.). The system prompt is returned separately because Anthropic and Gemini require it outside the messages array.
+
+**Returns:** A tuple of `(system_prompt, messages)` where:
+- `system_prompt` is a clone of `self.system_prompt`
+- `messages` contains history entries + current message as `ApiMessage` structs
+
+**Usage sites:**
+- All HTTP-based providers: `ollama.rs`, `openai.rs`, `anthropic.rs`, `openrouter.rs`, `gemini.rs`
+
+---
+
+### `ApiMessage`
+
+A structured message for API-based providers.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `role` | `String` | `"user"` or `"assistant"` |
+| `content` | `String` | Message text |
+
+**Traits derived:** `Debug`, `Clone`, `Serialize`, `Deserialize`.
+
+---
+
 ## Private Functions
 
 ### `default_system_prompt() -> String`
@@ -222,8 +253,11 @@ The `Provider::complete(&self, context: &Context)` method receives the context. 
 | Provider | Consumption Method |
 |----------|-------------------|
 | Claude Code CLI | Calls `context.to_prompt_string()` to produce a single flat string, passed as the `-p` argument to the `claude` subprocess. |
-| (Future) Anthropic API | Would use `system_prompt` as the system message and `history` + `current_message` as the structured messages array. |
-| (Future) OpenAI API | Same structured approach as Anthropic. |
+| Ollama | Calls `context.to_api_messages()`, system prompt injected as a `"system"` role message. |
+| OpenAI | Calls `context.to_api_messages()` via `build_openai_messages()`, system prompt as `"system"` role message. |
+| Anthropic | Calls `context.to_api_messages()`, system prompt as top-level `system` field (not a message role). |
+| OpenRouter | Same as OpenAI (reuses `build_openai_messages()`). |
+| Gemini | Calls `context.to_api_messages()`, system prompt as `systemInstruction` field, `"assistant"` role mapped to `"model"`. |
 
 ## Position in the Message Pipeline
 
@@ -264,6 +298,8 @@ Currently, serialization is not explicitly used in the codebase but is available
 - `test_context_new_has_empty_mcp_servers`: `Context::new()` initializes `mcp_servers` to an empty `Vec`.
 - `test_context_with_mcp_servers_serde`: Context with populated `mcp_servers` serializes and deserializes correctly.
 - `test_context_deserialize_without_mcp_servers`: Deserializing a Context JSON without the `mcp_servers` field succeeds with an empty default (backwards compatibility).
+- `test_to_api_messages_basic`: `to_api_messages()` returns system prompt and single user message.
+- `test_to_api_messages_with_history`: `to_api_messages()` includes history entries + current message in order.
 
 ## Invariants
 

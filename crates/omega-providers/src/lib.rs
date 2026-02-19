@@ -2,8 +2,9 @@
 //!
 //! AI provider implementations for Omega.
 
-mod anthropic;
+pub mod anthropic;
 pub mod claude_code;
-mod ollama;
-mod openai;
-mod openrouter;
+pub mod gemini;
+pub mod ollama;
+pub mod openai;
+pub mod openrouter;

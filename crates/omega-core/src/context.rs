@@ -46,6 +46,15 @@ pub struct Context {
     pub model: Option<String>,
 }
 
+/// A structured message for API-based providers (OpenAI, Anthropic, etc.).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiMessage {
+    /// "user" or "assistant".
+    pub role: String,
+    /// The message content.
+    pub content: String,
+}
+
 impl Context {
     /// Create a new context with just a current message and default system prompt.
     pub fn new(message: &str) -> Self {
@@ -81,6 +90,28 @@ impl Context {
         parts.push(format!("[User]\n{}", self.current_message));
 
         parts.join("\n\n")
+    }
+
+    /// Convert context to structured API messages.
+    ///
+    /// Returns `(system_prompt, messages)` — the system prompt is separated
+    /// because Anthropic and Gemini require it outside the messages array.
+    pub fn to_api_messages(&self) -> (String, Vec<ApiMessage>) {
+        let mut messages = Vec::with_capacity(self.history.len() + 1);
+
+        for entry in &self.history {
+            messages.push(ApiMessage {
+                role: entry.role.clone(),
+                content: entry.content.clone(),
+            });
+        }
+
+        messages.push(ApiMessage {
+            role: "user".to_string(),
+            content: self.current_message.clone(),
+        });
+
+        (self.system_prompt.clone(), messages)
     }
 }
 
@@ -142,5 +173,46 @@ mod tests {
         let json = r#"{"system_prompt":"test","history":[],"current_message":"hi"}"#;
         let ctx: Context = serde_json::from_str(json).unwrap();
         assert!(ctx.mcp_servers.is_empty());
+    }
+
+    #[test]
+    fn test_to_api_messages_basic() {
+        let ctx = Context::new("hello");
+        let (system, messages) = ctx.to_api_messages();
+        assert!(!system.is_empty());
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "hello");
+    }
+
+    #[test]
+    fn test_to_api_messages_with_history() {
+        let ctx = Context {
+            system_prompt: "Be helpful.".into(),
+            history: vec![
+                ContextEntry {
+                    role: "user".into(),
+                    content: "Hi".into(),
+                },
+                ContextEntry {
+                    role: "assistant".into(),
+                    content: "Hello!".into(),
+                },
+            ],
+            current_message: "How are you?".into(),
+            mcp_servers: Vec::new(),
+            max_turns: None,
+            allowed_tools: None,
+            model: None,
+        };
+        let (system, messages) = ctx.to_api_messages();
+        assert_eq!(system, "Be helpful.");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "Hi");
+        assert_eq!(messages[1].role, "assistant");
+        assert_eq!(messages[1].content, "Hello!");
+        assert_eq!(messages[2].role, "user");
+        assert_eq!(messages[2].content, "How are you?");
     }
 }
