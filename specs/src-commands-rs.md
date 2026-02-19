@@ -248,9 +248,10 @@ No facts stored yet.
 **Location:** Lines 114–120
 
 **Behavior:**
-- Calls `store.close_current_conversation(channel, sender_id)` (async)
-- Closes and clears the active conversation for the user in the specified channel
-- Returns boolean: `true` if a conversation was closed, `false` if none was active
+- **Intercepted by the gateway** — not handled directly in `commands.rs`.
+- The gateway finds the active conversation, triggers `summarize_conversation()` (which extracts facts and closes the conversation), then responds.
+- If summarization fails, falls back to a direct close without fact extraction.
+- This ensures facts learned during the conversation are preserved before clearing.
 
 **Response Format (Success - Conversation Cleared):**
 ```
@@ -538,7 +539,7 @@ All command handlers interact with the `omega_memory::Store` trait/type:
 | `handle_memory()` | `store.get_memory_stats(sender_id)` | `Result<(i64, i64, i64)>` | Count conversations, messages, facts |
 | `handle_history()` | `store.get_history(channel, sender_id, 5)` | `Result<Vec<(String, String)>>` | Fetch last 5 conversation summaries |
 | `handle_facts()` | `store.get_facts(sender_id)` | `Result<Vec<(String, String)>>` | Fetch all facts for user |
-| `handle_forget()` | `store.close_current_conversation(channel, sender_id)` | `Result<bool>` | Close active conversation |
+| `handle_forget()` | *(intercepted by gateway — triggers `summarize_conversation()`)* | — | Summarize + extract facts + close |
 | `handle_tasks()` | `store.get_tasks_for_sender(sender_id)` | `Result<Vec<(String, String, String, Option<String>)>>` | Fetch pending tasks for user |
 | `handle_cancel()` | `store.cancel_task(id_prefix, sender_id)` | `Result<bool>` | Cancel a task by ID prefix |
 | `handle_language()` | `store.get_facts(sender_id)` | `Result<Vec<(String, String)>>` | Look up current preferred_language fact |

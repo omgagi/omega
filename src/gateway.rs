@@ -956,6 +956,46 @@ impl Gateway {
         Ok(())
     }
 
+    /// Handle /forget: find active conversation, summarize + extract facts, close.
+    /// Falls back to a plain close if no active conversation or summarization fails.
+    async fn handle_forget(&self, channel: &str, sender_id: &str) -> String {
+        // Find the active conversation for this sender.
+        let conv: Option<(String,)> = sqlx::query_as(
+            "SELECT id FROM conversations \
+             WHERE channel = ? AND sender_id = ? AND status = 'active' \
+             ORDER BY last_activity DESC LIMIT 1",
+        )
+        .bind(channel)
+        .bind(sender_id)
+        .fetch_optional(self.memory.pool())
+        .await
+        .ok()
+        .flatten();
+
+        match conv {
+            Some((conversation_id,)) => {
+                // Summarize (extracts facts + closes the conversation).
+                if let Err(e) = Self::summarize_conversation(
+                    &self.memory,
+                    &self.provider,
+                    &conversation_id,
+                    &self.prompts.summarize,
+                    &self.prompts.facts,
+                )
+                .await
+                {
+                    warn!("summarization during /forget failed: {e}, closing directly");
+                    let _ = self
+                        .memory
+                        .close_current_conversation(channel, sender_id)
+                        .await;
+                }
+                "Conversation saved and cleared. Starting fresh.".to_string()
+            }
+            None => "No active conversation to clear.".to_string(),
+        }
+    }
+
     /// Graceful shutdown: summarize active conversations, stop channels.
     async fn shutdown(
         &self,
@@ -1102,6 +1142,15 @@ impl Gateway {
         // Hot-reload projects from disk so newly created ones are available immediately.
         let projects = omega_skills::load_projects(&self.data_dir);
         if let Some(cmd) = commands::Command::parse(&clean_incoming.text) {
+            // Intercept /forget: summarize + extract facts before closing.
+            if matches!(cmd, commands::Command::Forget) {
+                let response = self
+                    .handle_forget(&incoming.channel, &incoming.sender_id)
+                    .await;
+                self.send_text(&incoming, &response).await;
+                return;
+            }
+
             let ctx = commands::CommandContext {
                 store: &self.memory,
                 channel: &incoming.channel,

@@ -110,11 +110,11 @@ Known Facts
 
 ### `/forget` — Clear Current Conversation
 
-**What It Does:** Clears the current active conversation, allowing you to start fresh without the previous context. This is useful when you want to begin a completely new topic or restart Omega's memory for the conversation.
+**What It Does:** Summarizes the current conversation, extracts any personal facts learned about you, and then clears it — allowing you to start fresh. This ensures nothing you shared is lost before clearing.
 
 **Response Example (Success):**
 ```
-Conversation cleared. Starting fresh.
+Conversation saved and cleared. Starting fresh.
 ```
 
 **Response Example (No Active Conversation):**
@@ -124,8 +124,8 @@ No active conversation to clear.
 
 **Important Notes:**
 - `/forget` only affects the current conversation, not your entire memory
+- Before clearing, Omega summarizes the conversation and extracts any facts you shared
 - Previous conversations remain in your history
-- Facts learned about you are preserved
 - The next message you send will start a new conversation
 
 **Use Cases:**
