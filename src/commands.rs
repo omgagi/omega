@@ -1,5 +1,6 @@
 //! Built-in bot commands — instant responses, no provider call.
 
+use crate::i18n;
 use omega_memory::Store;
 use std::time::Instant;
 
@@ -63,22 +64,44 @@ impl Command {
     }
 }
 
+/// Resolve the user's preferred language, defaulting to English.
+async fn resolve_lang(store: &Store, sender_id: &str) -> String {
+    store
+        .get_fact(sender_id, "preferred_language")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "English".to_string())
+}
+
 /// Handle a command and return the response text.
 pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
+    let lang = resolve_lang(ctx.store, ctx.sender_id).await;
     match cmd {
         Command::Status => {
-            handle_status(ctx.store, ctx.uptime, ctx.provider_name, ctx.sandbox_mode).await
+            handle_status(
+                ctx.store,
+                ctx.uptime,
+                ctx.provider_name,
+                ctx.sandbox_mode,
+                &lang,
+            )
+            .await
         }
-        Command::Memory => handle_memory(ctx.store, ctx.sender_id).await,
-        Command::History => handle_history(ctx.store, ctx.channel, ctx.sender_id).await,
-        Command::Facts => handle_facts(ctx.store, ctx.sender_id).await,
-        Command::Forget => handle_forget(ctx.store, ctx.channel, ctx.sender_id).await,
-        Command::Tasks => handle_tasks(ctx.store, ctx.sender_id).await,
-        Command::Cancel => handle_cancel(ctx.store, ctx.sender_id, ctx.text).await,
-        Command::Language => handle_language(ctx.store, ctx.sender_id, ctx.text).await,
-        Command::Personality => handle_personality(ctx.store, ctx.sender_id, ctx.text).await,
-        Command::Skills => handle_skills(ctx.skills),
-        Command::Projects => handle_projects(ctx.store, ctx.sender_id, ctx.projects).await,
+        Command::Memory => handle_memory(ctx.store, ctx.sender_id, &lang).await,
+        Command::History => handle_history(ctx.store, ctx.channel, ctx.sender_id, &lang).await,
+        Command::Facts => handle_facts(ctx.store, ctx.sender_id, &lang).await,
+        Command::Forget => handle_forget(ctx.store, ctx.channel, ctx.sender_id, &lang).await,
+        Command::Tasks => handle_tasks(ctx.store, ctx.sender_id, &lang).await,
+        Command::Cancel => handle_cancel(ctx.store, ctx.sender_id, ctx.text, &lang).await,
+        Command::Language => handle_language(ctx.store, ctx.sender_id, ctx.text, &lang).await,
+        Command::Personality => {
+            handle_personality(ctx.store, ctx.sender_id, ctx.text, &lang).await
+        }
+        Command::Skills => handle_skills(ctx.skills, &lang),
+        Command::Projects => {
+            handle_projects(ctx.store, ctx.sender_id, ctx.projects, &lang).await
+        }
         Command::Project => {
             handle_project(
                 ctx.store,
@@ -86,12 +109,13 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
                 ctx.sender_id,
                 ctx.text,
                 ctx.projects,
+                &lang,
             )
             .await
         }
-        Command::Purge => handle_purge(ctx.store, ctx.sender_id).await,
+        Command::Purge => handle_purge(ctx.store, ctx.sender_id, &lang).await,
         Command::WhatsApp => handle_whatsapp(),
-        Command::Help => handle_help(),
+        Command::Help => handle_help(&lang),
     }
 }
 
@@ -100,6 +124,7 @@ async fn handle_status(
     uptime: &Instant,
     provider_name: &str,
     sandbox_mode: &str,
+    lang: &str,
 ) -> String {
     let elapsed = uptime.elapsed();
     let hours = elapsed.as_secs() / 3600;
@@ -113,33 +138,42 @@ async fn handle_status(
         .unwrap_or_else(|_| "unknown".to_string());
 
     format!(
-        "*OMEGA Ω* Status\n\
-         Uptime: {hours}h {minutes}m {secs}s\n\
-         Provider: {provider_name}\n\
-         Sandbox: {sandbox_mode}\n\
-         Database: {db_size}"
+        "{}\n\
+         {} {hours}h {minutes}m {secs}s\n\
+         {} {provider_name}\n\
+         {} {sandbox_mode}\n\
+         {} {db_size}",
+        i18n::t("status_header", lang),
+        i18n::t("uptime", lang),
+        i18n::t("provider", lang),
+        i18n::t("sandbox", lang),
+        i18n::t("database", lang),
     )
 }
 
-async fn handle_memory(store: &Store, sender_id: &str) -> String {
+async fn handle_memory(store: &Store, sender_id: &str, lang: &str) -> String {
     match store.get_memory_stats(sender_id).await {
         Ok((convos, msgs, facts)) => {
             format!(
-                "Your Memory\n\
-                 Conversations: {convos}\n\
-                 Messages: {msgs}\n\
-                 Facts: {facts}"
+                "{}\n\
+                 {} {convos}\n\
+                 {} {msgs}\n\
+                 {} {facts}",
+                i18n::t("your_memory", lang),
+                i18n::t("conversations", lang),
+                i18n::t("messages", lang),
+                i18n::t("facts_label", lang),
             )
         }
         Err(e) => format!("Error: {e}"),
     }
 }
 
-async fn handle_history(store: &Store, channel: &str, sender_id: &str) -> String {
+async fn handle_history(store: &Store, channel: &str, sender_id: &str, lang: &str) -> String {
     match store.get_history(channel, sender_id, 5).await {
-        Ok(entries) if entries.is_empty() => "No conversation history yet.".to_string(),
+        Ok(entries) if entries.is_empty() => i18n::t("no_history", lang).to_string(),
         Ok(entries) => {
-            let mut out = String::from("Recent Conversations\n");
+            let mut out = format!("{}\n", i18n::t("recent_conversations", lang));
             for (summary, timestamp) in &entries {
                 out.push_str(&format!("\n[{timestamp}]\n{summary}\n"));
             }
@@ -149,11 +183,11 @@ async fn handle_history(store: &Store, channel: &str, sender_id: &str) -> String
     }
 }
 
-async fn handle_facts(store: &Store, sender_id: &str) -> String {
+async fn handle_facts(store: &Store, sender_id: &str, lang: &str) -> String {
     match store.get_facts(sender_id).await {
-        Ok(facts) if facts.is_empty() => "No facts stored yet.".to_string(),
+        Ok(facts) if facts.is_empty() => i18n::t("no_facts", lang).to_string(),
         Ok(facts) => {
-            let mut out = String::from("Known Facts\n");
+            let mut out = format!("{}\n", i18n::t("known_facts", lang));
             for (key, value) in &facts {
                 out.push_str(&format!("\n- {}: {}", escape_md(key), escape_md(value)));
             }
@@ -163,29 +197,32 @@ async fn handle_facts(store: &Store, sender_id: &str) -> String {
     }
 }
 
-async fn handle_forget(store: &Store, channel: &str, sender_id: &str) -> String {
+async fn handle_forget(store: &Store, channel: &str, sender_id: &str, lang: &str) -> String {
     match store.close_current_conversation(channel, sender_id).await {
-        Ok(true) => "Conversation cleared. Starting fresh.".to_string(),
-        Ok(false) => "No active conversation to clear.".to_string(),
+        Ok(true) => i18n::t("conversation_cleared", lang).to_string(),
+        Ok(false) => i18n::t("no_active_conversation", lang).to_string(),
         Err(e) => format!("Error: {e}"),
     }
 }
 
-async fn handle_tasks(store: &Store, sender_id: &str) -> String {
+async fn handle_tasks(store: &Store, sender_id: &str, lang: &str) -> String {
     match store.get_tasks_for_sender(sender_id).await {
-        Ok(tasks) if tasks.is_empty() => "No pending tasks.".to_string(),
+        Ok(tasks) if tasks.is_empty() => i18n::t("no_pending_tasks", lang).to_string(),
         Ok(tasks) => {
-            let mut out = String::from("Scheduled Tasks\n");
+            let mut out = format!("{}\n", i18n::t("scheduled_tasks", lang));
             for (id, description, due_at, repeat, task_type) in &tasks {
                 let short_id = &id[..8.min(id.len())];
-                let repeat_label = repeat.as_deref().unwrap_or("once");
+                let repeat_label = repeat
+                    .as_deref()
+                    .unwrap_or_else(|| i18n::t("once", lang));
                 let type_badge = if task_type == "action" {
                     " [action]"
                 } else {
                     ""
                 };
                 out.push_str(&format!(
-                    "\n[{short_id}] {description}{type_badge}\n  Due: {due_at} ({repeat_label})"
+                    "\n[{short_id}] {description}{type_badge}\n  {} {due_at} ({repeat_label})",
+                    i18n::t("due", lang),
                 ));
             }
             out
@@ -194,19 +231,19 @@ async fn handle_tasks(store: &Store, sender_id: &str) -> String {
     }
 }
 
-async fn handle_cancel(store: &Store, sender_id: &str, text: &str) -> String {
+async fn handle_cancel(store: &Store, sender_id: &str, text: &str, lang: &str) -> String {
     let id_prefix = text.split_whitespace().nth(1).unwrap_or("").trim();
     if id_prefix.is_empty() {
-        return "Usage: /cancel <task-id>".to_string();
+        return i18n::t("cancel_usage", lang).to_string();
     }
     match store.cancel_task(id_prefix, sender_id).await {
-        Ok(true) => "Task cancelled.".to_string(),
-        Ok(false) => "No matching task found.".to_string(),
+        Ok(true) => i18n::t("task_cancelled", lang).to_string(),
+        Ok(false) => i18n::t("no_matching_task", lang).to_string(),
         Err(e) => format!("Error: {e}"),
     }
 }
 
-async fn handle_language(store: &Store, sender_id: &str, text: &str) -> String {
+async fn handle_language(store: &Store, sender_id: &str, text: &str, lang: &str) -> String {
     let arg = text
         .split_whitespace()
         .skip(1)
@@ -216,12 +253,12 @@ async fn handle_language(store: &Store, sender_id: &str, text: &str) -> String {
         // Show current preference.
         match store.get_facts(sender_id).await {
             Ok(facts) => {
-                let lang = facts
+                let current = facts
                     .iter()
                     .find(|(k, _)| k == "preferred_language")
                     .map(|(_, v)| v.as_str())
-                    .unwrap_or("not set");
-                format!("Language: {lang}\nUsage: /language <language>")
+                    .unwrap_or_else(|| i18n::t("not_set", lang));
+                i18n::language_show(lang, current)
             }
             Err(e) => format!("Error: {e}"),
         }
@@ -230,14 +267,14 @@ async fn handle_language(store: &Store, sender_id: &str, text: &str) -> String {
             .store_fact(sender_id, "preferred_language", &arg)
             .await
         {
-            Ok(()) => format!("Language set to: {arg}"),
+            Ok(()) => i18n::language_set(lang, &arg),
             Err(e) => format!("Error: {e}"),
         }
     }
 }
 
 /// Handle /personality — show, set, or reset personality preferences.
-async fn handle_personality(store: &Store, sender_id: &str, text: &str) -> String {
+async fn handle_personality(store: &Store, sender_id: &str, text: &str, lang: &str) -> String {
     let arg = text
         .split_whitespace()
         .skip(1)
@@ -247,44 +284,37 @@ async fn handle_personality(store: &Store, sender_id: &str, text: &str) -> Strin
     if arg.is_empty() {
         // Show current personality preference.
         return match store.get_fact(sender_id, "personality").await {
-            Ok(Some(p)) => format!(
-                "Your personality preference:\n_{p}_\n\n\
-                 Use /personality reset to go back to defaults.\n\
-                 Or just tell me how you'd like me to be."
-            ),
-            Ok(None) => "Using default personality. Just tell me how you'd like me to be — \
-                         more formal, more casual, funnier, straight to the point — anything."
-                .to_string(),
+            Ok(Some(p)) => i18n::personality_show(lang, &p),
+            Ok(None) => i18n::t("personality_default_prompt", lang).to_string(),
             Err(e) => format!("Error: {e}"),
         };
     }
 
     if arg == "reset" {
         return match store.delete_fact(sender_id, "personality").await {
-            Ok(true) => "Personality reset to defaults.".to_string(),
-            Ok(false) => "Already using default personality.".to_string(),
+            Ok(true) => i18n::t("personality_reset", lang).to_string(),
+            Ok(false) => i18n::t("personality_already_default", lang).to_string(),
             Err(e) => format!("Error: {e}"),
         };
     }
 
     // Store the personality preference as a fact.
     match store.store_fact(sender_id, "personality", &arg).await {
-        Ok(()) => format!("Personality updated: _{arg}_"),
+        Ok(()) => i18n::personality_updated(lang, &arg),
         Err(e) => format!("Error: {e}"),
     }
 }
 
-fn handle_skills(skills: &[omega_skills::Skill]) -> String {
+fn handle_skills(skills: &[omega_skills::Skill], lang: &str) -> String {
     if skills.is_empty() {
-        return "No skills installed. Create a directory in ~/.omega/skills/ with a SKILL.md file."
-            .to_string();
+        return i18n::t("no_skills", lang).to_string();
     }
-    let mut out = String::from("Installed Skills\n");
+    let mut out = format!("{}\n", i18n::t("installed_skills", lang));
     for s in skills {
         let status = if s.available {
-            "available"
+            i18n::t("available", lang)
         } else {
-            "missing deps"
+            i18n::t("missing_deps", lang)
         };
         out.push_str(&format!("\n- {} [{}]: {}", s.name, status, s.description));
     }
@@ -296,16 +326,17 @@ async fn handle_projects(
     store: &Store,
     sender_id: &str,
     projects: &[omega_skills::Project],
+    lang: &str,
 ) -> String {
     if projects.is_empty() {
-        return "No projects found. Create folders in ~/.omega/projects/ with ROLE.md".to_string();
+        return i18n::t("no_projects", lang).to_string();
     }
     let active = store
         .get_fact(sender_id, "active_project")
         .await
         .ok()
         .flatten();
-    let mut out = String::from("Projects\n");
+    let mut out = format!("{}\n", i18n::t("projects_header", lang));
     for p in projects {
         let marker = if active.as_deref() == Some(&p.name) {
             " (active)"
@@ -314,7 +345,7 @@ async fn handle_projects(
         };
         out.push_str(&format!("\n- {}{marker}", p.name));
     }
-    out.push_str("\n\nUse /project <name> to activate, /project off to deactivate.");
+    out.push_str(&format!("\n\n{}", i18n::t("projects_footer", lang)));
     out
 }
 
@@ -325,6 +356,7 @@ async fn handle_project(
     sender_id: &str,
     text: &str,
     projects: &[omega_skills::Project],
+    lang: &str,
 ) -> String {
     let arg = text
         .split_whitespace()
@@ -335,8 +367,8 @@ async fn handle_project(
     if arg.is_empty() {
         // Show current project.
         return match store.get_fact(sender_id, "active_project").await {
-            Ok(Some(name)) => format!("Active project: {name}\nUse /project off to deactivate."),
-            Ok(None) => "No active project. Use /project <name> to activate.".to_string(),
+            Ok(Some(name)) => i18n::active_project(lang, &name),
+            Ok(None) => i18n::t("no_active_project_hint", lang).to_string(),
             Err(e) => format!("Error: {e}"),
         };
     }
@@ -347,21 +379,21 @@ async fn handle_project(
             Ok(true) => {
                 // Close conversation for a clean context.
                 let _ = store.close_current_conversation(channel, sender_id).await;
-                "Project deactivated. Conversation cleared.".to_string()
+                i18n::t("project_deactivated", lang).to_string()
             }
-            Ok(false) => "No active project.".to_string(),
+            Ok(false) => i18n::t("no_active_project", lang).to_string(),
             Err(e) => format!("Error: {e}"),
         }
     } else {
         // Activate a project.
         if omega_skills::get_project_instructions(projects, &arg).is_none() {
-            return format!("Project '{arg}' not found. Use /projects to see available projects.");
+            return i18n::project_not_found(lang, &arg);
         }
         match store.store_fact(sender_id, "active_project", &arg).await {
             Ok(()) => {
                 // Close conversation for a clean context.
                 let _ = store.close_current_conversation(channel, sender_id).await;
-                format!("Project '{arg}' activated. Conversation cleared.")
+                i18n::project_activated(lang, &arg)
             }
             Err(e) => format!("Error: {e}"),
         }
@@ -378,7 +410,7 @@ const SYSTEM_FACT_KEYS: &[&str] = &[
 ];
 
 /// Handle /purge — delete all non-system facts, giving the user a clean slate.
-async fn handle_purge(store: &Store, sender_id: &str) -> String {
+async fn handle_purge(store: &Store, sender_id: &str, lang: &str) -> String {
     // Save system facts first.
     let preserved: Vec<(String, String)> = match store.get_facts(sender_id).await {
         Ok(facts) => facts
@@ -401,10 +433,7 @@ async fn handle_purge(store: &Store, sender_id: &str) -> String {
 
     let purged = deleted as usize - preserved.len();
     let keys_display: Vec<String> = SYSTEM_FACT_KEYS.iter().map(|k| escape_md(k)).collect();
-    format!(
-        "Purged {purged} facts. System keys preserved ({}).",
-        keys_display.join(", ")
-    )
+    i18n::purge_result(lang, purged, &keys_display.join(", "))
 }
 
 /// Handle /whatsapp — returns a marker that the gateway intercepts.
@@ -412,25 +441,41 @@ fn handle_whatsapp() -> String {
     "WHATSAPP_QR".to_string()
 }
 
-fn handle_help() -> String {
-    "\
-*OMEGA Ω* Commands\n\n\
-/status   — Uptime, provider, database info\n\
-/memory   — Your conversation and facts stats\n\
-/history  — Last 5 conversation summaries\n\
-/facts    — List known facts about you\n\
-/forget   — Clear current conversation\n\
-/tasks    — List your scheduled tasks\n\
-/cancel   — Cancel a task by ID\n\
-/language — Show or set your language\n\
-/personality — Show or set how I behave\n\
-/purge    — Delete all learned facts (clean slate)\n\
-/skills   — List available skills\n\
-/projects — List available projects\n\
-/project  — Show, activate, or deactivate a project\n\
-/whatsapp — Connect WhatsApp via QR code\n\
-/help     — This message"
-        .to_string()
+fn handle_help(lang: &str) -> String {
+    format!(
+        "{}\n\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}\n\
+         {}",
+        i18n::t("commands_header", lang),
+        i18n::t("help_status", lang),
+        i18n::t("help_memory", lang),
+        i18n::t("help_history", lang),
+        i18n::t("help_facts", lang),
+        i18n::t("help_forget", lang),
+        i18n::t("help_tasks", lang),
+        i18n::t("help_cancel", lang),
+        i18n::t("help_language", lang),
+        i18n::t("help_personality", lang),
+        i18n::t("help_purge", lang),
+        i18n::t("help_skills", lang),
+        i18n::t("help_projects", lang),
+        i18n::t("help_project", lang),
+        i18n::t("help_whatsapp", lang),
+        i18n::t("help_help", lang),
+    )
 }
 
 /// Escape underscores for Telegram Markdown rendering.
@@ -563,7 +608,7 @@ mod tests {
     #[tokio::test]
     async fn test_personality_show_default() {
         let store = test_store().await;
-        let result = handle_personality(&store, "user1", "/personality").await;
+        let result = handle_personality(&store, "user1", "/personality", "English").await;
         assert!(
             result.contains("default personality"),
             "should show default when no preference set"
@@ -573,14 +618,19 @@ mod tests {
     #[tokio::test]
     async fn test_personality_set_and_show() {
         let store = test_store().await;
-        let result =
-            handle_personality(&store, "user1", "/personality be more casual and funny").await;
+        let result = handle_personality(
+            &store,
+            "user1",
+            "/personality be more casual and funny",
+            "English",
+        )
+        .await;
         assert!(
             result.contains("be more casual and funny"),
             "should confirm the personality was set"
         );
 
-        let result = handle_personality(&store, "user1", "/personality").await;
+        let result = handle_personality(&store, "user1", "/personality", "English").await;
         assert!(
             result.contains("be more casual and funny"),
             "should show the stored personality"
@@ -590,11 +640,11 @@ mod tests {
     #[tokio::test]
     async fn test_personality_reset() {
         let store = test_store().await;
-        let _ = handle_personality(&store, "user1", "/personality be formal").await;
-        let result = handle_personality(&store, "user1", "/personality reset").await;
+        let _ = handle_personality(&store, "user1", "/personality be formal", "English").await;
+        let result = handle_personality(&store, "user1", "/personality reset", "English").await;
         assert!(result.contains("reset to defaults"), "should confirm reset");
 
-        let result = handle_personality(&store, "user1", "/personality").await;
+        let result = handle_personality(&store, "user1", "/personality", "English").await;
         assert!(
             result.contains("default personality"),
             "should show default after reset"
@@ -604,7 +654,7 @@ mod tests {
     #[tokio::test]
     async fn test_personality_reset_when_already_default() {
         let store = test_store().await;
-        let result = handle_personality(&store, "user1", "/personality reset").await;
+        let result = handle_personality(&store, "user1", "/personality reset", "English").await;
         assert!(
             result.contains("Already using default"),
             "should indicate already default"
@@ -635,7 +685,7 @@ mod tests {
             .unwrap();
         store.store_fact("user1", "name", "Juan").await.unwrap();
 
-        let result = handle_purge(&store, "user1").await;
+        let result = handle_purge(&store, "user1", "English").await;
         assert!(
             result.contains("Purged 3 facts"),
             "should report 3 purged: {result}"
@@ -652,5 +702,28 @@ mod tests {
         assert!(!keys.contains(&"target"));
         // Non-system personal facts also removed.
         assert!(!keys.contains(&"name"));
+    }
+
+    #[tokio::test]
+    async fn test_help_spanish() {
+        let result = handle_help("Spanish");
+        assert!(
+            result.contains("Comandos de *OMEGA Ω*"),
+            "should have Spanish header: {result}"
+        );
+        assert!(
+            result.contains("/status"),
+            "should still contain command names"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_forget_localized() {
+        let store = test_store().await;
+        let result = handle_forget(&store, "telegram", "user1", "Spanish").await;
+        assert!(
+            result.contains("No hay conversación activa"),
+            "should show Spanish empty state: {result}"
+        );
     }
 }

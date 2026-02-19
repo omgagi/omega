@@ -1,5 +1,6 @@
 mod commands;
 mod gateway;
+mod i18n;
 mod init;
 mod selfcheck;
 mod service;

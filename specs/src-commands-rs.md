@@ -135,13 +135,26 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String
 
 **Return:** Formatted response text to send back to the user
 
-**Dispatch:** Routes each command variant to its handler function, passing only the fields each handler needs from `ctx`
+**Dispatch:**
+1. Resolves the user's preferred language once at the top via `resolve_lang(ctx.store, ctx.sender_id)`, which looks up the `preferred_language` fact and defaults to `"English"` if not set.
+2. Routes each command variant to its handler function, passing only the fields each handler needs from `ctx` plus `lang: &str`.
+
+### Function: `resolve_lang(store, sender_id) -> String`
+
+**Signature:**
+```rust
+async fn resolve_lang(store: &Store, sender_id: &str) -> String
+```
+
+**Purpose:** Resolve the user's preferred language for command responses. Looks up the `preferred_language` fact via `store.get_fact(sender_id, "preferred_language")`. Returns the stored language or `"English"` as the default fallback.
+
+**Called by:** `handle()` — once per command invocation, before dispatching to individual handlers.
 
 ---
 
 ## Individual Command Handlers
 
-### /status — `handle_status(store, uptime, provider_name, sandbox_mode)`
+### /status — `handle_status(store, uptime, provider_name, sandbox_mode, lang)`
 
 **Location:** Lines 52–70
 
@@ -165,7 +178,7 @@ Database: 2.3 MB
 
 ---
 
-### /memory — `handle_memory(store, sender_id)`
+### /memory — `handle_memory(store, sender_id, lang)`
 
 **Location:** Lines 72–84
 
@@ -189,7 +202,7 @@ Error: [error description]
 
 ---
 
-### /history — `handle_history(store, channel, sender_id)`
+### /history — `handle_history(store, channel, sender_id, lang)`
 
 **Location:** Lines 86–98
 
@@ -217,7 +230,7 @@ No conversation history yet.
 
 ---
 
-### /facts — `handle_facts(store, sender_id)`
+### /facts — `handle_facts(store, sender_id, lang)`
 
 **Location:** Lines 100–112
 
@@ -243,7 +256,7 @@ No facts stored yet.
 
 ---
 
-### /forget — `handle_forget(store, channel, sender_id)`
+### /forget — `handle_forget(store, channel, sender_id, lang)`
 
 **Location:** Lines 114–120
 
@@ -270,7 +283,7 @@ Error: [error description]
 
 ---
 
-### /tasks — `handle_tasks(store, sender_id)`
+### /tasks — `handle_tasks(store, sender_id, lang)`
 
 **Location:** Lines 129–145
 
@@ -304,7 +317,7 @@ Error: [error description]
 
 ---
 
-### /cancel — `handle_cancel(store, sender_id, text)`
+### /cancel — `handle_cancel(store, sender_id, text, lang)`
 
 **Location:** Lines 147–157
 
@@ -337,7 +350,7 @@ Error: [error description]
 
 ---
 
-### /language — `handle_language(store, sender_id, text)`
+### /language — `handle_language(store, sender_id, text, lang)`
 
 **Behavior:**
 - Collects all whitespace-delimited tokens after `/language` as the language argument.
@@ -364,7 +377,7 @@ Error: <error message>
 
 ---
 
-### /personality — `handle_personality(store, sender_id, text)`
+### /personality — `handle_personality(store, sender_id, text, lang)`
 
 **Behavior:**
 - Collects all whitespace-delimited tokens after `/personality` as the personality argument.
@@ -405,7 +418,7 @@ Error: [error description]
 
 ---
 
-### /purge — `handle_purge(store, sender_id)`
+### /purge — `handle_purge(store, sender_id, lang)`
 
 **Behavior:**
 - Fetches all facts for the user.
@@ -423,7 +436,7 @@ Purged 12 facts. System keys preserved (welcomed, preferred_language, active_pro
 
 ---
 
-### /projects — `handle_projects(store, sender_id, projects)`
+### /projects — `handle_projects(store, sender_id, projects, lang)`
 
 **Behavior:**
 - If no projects exist, returns instructions to create folders in `~/.omega/projects/`.
@@ -449,7 +462,7 @@ No projects found. Create folders in ~/.omega/projects/ with ROLE.md
 
 ---
 
-### /project — `handle_project(store, channel, sender_id, text, projects)`
+### /project — `handle_project(store, channel, sender_id, text, projects, lang)`
 
 **Behavior:**
 - **No argument** (`/project`): Shows the current active project or instructions.
@@ -479,7 +492,7 @@ Project 'xyz' not found. Use /projects to see available projects.
 
 ---
 
-### /help — `handle_help()`
+### /help — `handle_help(lang)`
 
 **Location:** Lines 159–171
 
@@ -506,6 +519,19 @@ Project 'xyz' not found. Use /projects to see available projects.
 /project  — Show, activate, or deactivate a project
 /help     — This message
 ```
+
+---
+
+## i18n Integration
+
+All user-facing strings in command responses are internationalized via the `i18n` module (`src/i18n.rs`). The module provides:
+
+- **`i18n::t(key, lang)`** — Returns a static translation string for the given key and language code. Falls back to English if the key or language is not found.
+- **`i18n::format_*()`** — Helper functions for interpolated strings (e.g., strings that include dynamic values like counts, names, or durations).
+
+**Supported languages (8):** English (fallback), Spanish, Portuguese, French, German, Italian, Dutch, Russian.
+
+**Flow:** `handle()` resolves the user's language once via `resolve_lang()`, then passes `lang: &str` to every individual handler. Each handler uses `i18n::t()` and `i18n::format_*()` instead of hardcoded English strings to produce localized responses.
 
 ---
 
@@ -581,6 +607,13 @@ All handlers are `async` even though most only interact with local SQLite. This 
 - Parsing (`Command::parse()`) → Dispatch (`handle()`) → Execution (individual handlers)
 - Each handler has single responsibility
 - No business logic in enum definition
+
+### Pattern 4: Centralized i18n
+
+- Language is resolved once in `handle()` via `resolve_lang()`, not in each handler
+- All user-facing strings use `i18n::t(key, lang)` for static translations or `i18n::format_*()` for interpolated strings
+- No hardcoded English strings in handler code
+- English is the fallback language for missing translations
 
 ---
 

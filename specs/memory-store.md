@@ -1197,12 +1197,14 @@ The `shellexpand()` utility is now a public function in `omega_core::config`, re
 
 | Stage | What OMEGA teaches | Key content |
 |-------|-------------------|-------------|
-| 0 | Who OMEGA is | First-contact introduction |
-| 1 | /help exists | "ask me anything or type /help" |
-| 2 | Personality | "tell me how to behave, or /personality" |
-| 3 | Task management | "say 'show my tasks' or /tasks" |
-| 4 | Projects | "organize work into projects — /projects" |
+| 0 | Who OMEGA is | First-contact introduction. Uses "an appropriate greeting in {language}" (no hardcoded greeting). |
+| 1 | /help exists | "ask me anything or type /help". Appends "Respond in {language}." |
+| 2 | Personality | "tell me how to behave, or /personality". Appends "Respond in {language}." |
+| 3 | Task management | "say 'show my tasks' or /tasks". Appends "Respond in {language}." |
+| 4 | Projects | "organize work into projects — /projects". Appends "Respond in {language}." |
 | 5+ | Done | `None` (no more hints) |
+
+**Language awareness:** Stage 0 uses a dynamic greeting instruction instead of a hardcoded '¡Hola!' to respect the user's detected language. Stages 1-4 append "Respond in {language}." so the AI delivers the onboarding hint in the correct language.
 
 ---
 

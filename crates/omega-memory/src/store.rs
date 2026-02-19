@@ -988,37 +988,35 @@ fn onboarding_hint_text(stage: u8, language: &str) -> Option<String> {
         0 => Some(format!(
             "\n\nThis is your first conversation with this person. Respond ONLY with this \
              introduction in {language} (adapt naturally, do NOT translate literally):\n\n\
-             Start with '\u{1f44b} \u{00a1}Hola!' (or the equivalent greeting in {language}, always \u{1f44b} + greeting on the same line).\n\n\
+             Start with '\u{1f44b}' followed by an appropriate greeting in {language} on the same line.\n\n\
              Glad to have them here. You are *OMEGA \u{03a9}* (always bold), their personal agent — \
              but before jumping into action, you'd like to get to know them a bit.\n\n\
              Ask their name and what they do, so you can be more useful from the start.\n\n\
              Do NOT mention infrastructure, Rust, Claude, or any technical details. \
              Do NOT answer their message yet. Just this introduction, nothing else.",
         )),
-        1 => Some(
+        1 => Some(format!(
             "\n\nOnboarding hint: This person is new. At the end of your response, \
              casually mention that they can ask you anything or type /help to see what you can do. \
-             Keep it brief and natural — one sentence max."
-                .to_string(),
-        ),
-        2 => Some(
+             Keep it brief and natural — one sentence max. Respond in {language}."
+        )),
+        2 => Some(format!(
             "\n\nOnboarding hint: This person hasn't customized your personality yet. \
              At the end of your response, casually mention they can tell you how to behave \
-             (e.g. 'be more casual') or use /personality. One sentence max, only if it fits naturally."
-                .to_string(),
-        ),
-        3 => Some(
+             (e.g. 'be more casual') or use /personality. One sentence max, only if it fits naturally. \
+             Respond in {language}."
+        )),
+        3 => Some(format!(
             "\n\nOnboarding hint: This person just created their first task! \
              At the end of your response, briefly mention they can say 'show my tasks' \
-             or type /tasks to see scheduled items. One sentence max."
-                .to_string(),
-        ),
-        4 => Some(
+             or type /tasks to see scheduled items. One sentence max. Respond in {language}."
+        )),
+        4 => Some(format!(
             "\n\nOnboarding hint: This person is getting comfortable. \
              At the end of your response, briefly mention they can organize work into projects — \
-             just say 'create a project' or type /projects to see how. One sentence max."
-                .to_string(),
-        ),
+             just say 'create a project' or type /projects to see how. One sentence max. \
+             Respond in {language}."
+        )),
         _ => None,
     }
 }
@@ -1794,6 +1792,29 @@ mod tests {
         assert!(hint4.contains("/projects"));
         // Stage 5 returns None.
         assert!(onboarding_hint_text(5, "English").is_none());
+    }
+
+    #[test]
+    fn test_onboarding_hint_text_includes_language() {
+        // Stage 0: should contain language name, no hardcoded '¡Hola'.
+        let hint0 = onboarding_hint_text(0, "French").unwrap();
+        assert!(
+            hint0.contains("French"),
+            "stage 0 should reference the language"
+        );
+        assert!(
+            !hint0.contains("¡Hola"),
+            "stage 0 should not have hardcoded Spanish greeting"
+        );
+
+        // Stages 1-4: should contain "Respond in {language}".
+        for stage in 1..=4 {
+            let hint = onboarding_hint_text(stage, "German").unwrap();
+            assert!(
+                hint.contains("Respond in German"),
+                "stage {stage} should contain 'Respond in German'"
+            );
+        }
     }
 
     #[tokio::test]

@@ -224,6 +224,8 @@ New users are guided through features ONE at a time via progressive onboarding h
 
 Each hint fires **exactly once** when its stage transition occurs. Pre-existing users who already have facts get their stage silently bootstrapped without seeing retroactive hints.
 
+Onboarding hints are language-aware: the stage 0 intro uses a dynamic greeting appropriate to the user's detected language (instead of a hardcoded greeting), and stages 1-4 instruct the AI to respond in the user's preferred language.
+
 ### Resilience
 
 If facts, summaries, or recalled messages cannot be loaded (e.g., database error), the context is still built -- it just lacks personalization or recalled context. The store uses `unwrap_or_default()` for these queries, ensuring that a transient database issue does not prevent the user from getting a response.
