@@ -370,6 +370,70 @@ When a user says "speak in French" in a regular message, the AI detects the inte
 **Error Handling:**
 If the store fails to persist the language, the error is logged but the response is still sent.
 
+### Stage 6c-2: Personality Marker Extraction
+
+**What happens:** After language switch, the gateway scans for a `PERSONALITY:` marker — the conversational equivalent of `/personality`. If found, it persists or resets the personality preference and strips the marker.
+
+**Implementation:**
+- Calls `extract_personality(&response.text)` to find a `PERSONALITY:` line.
+- If value is `"reset"` (case-insensitive), deletes the `personality` fact.
+- Otherwise, stores the value as the `personality` fact.
+- Calls `strip_personality()` to remove the marker from the response.
+
+**Marker Format:**
+```
+PERSONALITY: casual and friendly
+PERSONALITY: reset
+```
+
+### Stage 6c-3: Forget Conversation Marker
+
+**What happens:** The gateway scans for a `FORGET_CONVERSATION` marker — the conversational equivalent of `/forget`. If found, it closes the current conversation.
+
+**Implementation:**
+- Calls `has_forget_marker(&response.text)`.
+- If present, calls `memory.close_current_conversation(channel, sender_id)`.
+- Calls `strip_forget_marker()` to remove the marker.
+
+**Marker Format:**
+```
+FORGET_CONVERSATION
+```
+
+### Stage 6c-4: Cancel Task Marker
+
+**What happens:** The gateway scans for a `CANCEL_TASK:` marker — the conversational equivalent of `/cancel`. If found, it cancels the matching task.
+
+**Implementation:**
+- Calls `extract_cancel_task(&response.text)` to find a `CANCEL_TASK:` line.
+- If found, calls `memory.cancel_task(&id_prefix, sender_id)`.
+- Calls `strip_cancel_task()` to remove the marker.
+
+**Marker Format:**
+```
+CANCEL_TASK: a1b2c3d4
+```
+
+### Stage 6c-5: Purge Facts Marker
+
+**What happens:** The gateway scans for a `PURGE_FACTS` marker — the conversational equivalent of `/purge`. If found, it deletes all non-system facts (preserving `welcomed`, `preferred_language`, `active_project`, `personality`).
+
+**Implementation:**
+- Calls `has_purge_marker(&response.text)`.
+- If present:
+  - Reads all facts and saves system keys.
+  - Calls `memory.delete_facts(sender_id, None)` to delete all facts.
+  - Restores system facts.
+- Calls `strip_purge_marker()` to remove the marker.
+
+**Marker Format:**
+```
+PURGE_FACTS
+```
+
+**Why These Exist:**
+Users shouldn't need to memorize slash commands. When a user says "be more casual", "forget this conversation", "cancel that reminder", or "delete everything you know about me", OMEGA acts via these markers — providing a zero-friction conversational UX.
+
 ### Stage 6d: Heartbeat Marker Extraction
 
 **What happens:** After language switch extraction, the gateway scans the response for `HEARTBEAT_ADD:`, `HEARTBEAT_REMOVE:`, and `HEARTBEAT_INTERVAL:` markers. If found, the heartbeat checklist file is updated (add/remove), the runtime interval is changed (interval), and the markers are stripped from the response.
@@ -570,6 +634,26 @@ User sends message on Telegram
 │ Stage 6c: extract_lang_switch()         │
 │  • Scan response for LANG_SWITCH: line  │
 │  ✓ Found? → Store pref, strip marker    │
+│  ✗ Not found? → Continue                │
+│                                          │
+│ Stage 6c-2: extract_personality()       │
+│  • Scan for PERSONALITY: line           │
+│  ✓ Found? → Set/reset pref, strip       │
+│  ✗ Not found? → Continue                │
+│                                          │
+│ Stage 6c-3: has_forget_marker()         │
+│  • Scan for FORGET_CONVERSATION         │
+│  ✓ Found? → Close conversation, strip   │
+│  ✗ Not found? → Continue                │
+│                                          │
+│ Stage 6c-4: extract_cancel_task()       │
+│  • Scan for CANCEL_TASK: line           │
+│  ✓ Found? → Cancel task, strip          │
+│  ✗ Not found? → Continue                │
+│                                          │
+│ Stage 6c-5: has_purge_marker()          │
+│  • Scan for PURGE_FACTS                 │
+│  ✓ Found? → Purge facts, strip          │
 │  ✗ Not found? → Continue                │
 │                                          │
 │ Stage 6d: extract_heartbeat_markers()   │

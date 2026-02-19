@@ -1943,6 +1943,95 @@ impl Gateway {
             *text = strip_lang_switch(text);
         }
 
+        // PERSONALITY
+        if let Some(value) = extract_personality(text) {
+            if value.eq_ignore_ascii_case("reset") {
+                match self
+                    .memory
+                    .delete_fact(&incoming.sender_id, "personality")
+                    .await
+                {
+                    Ok(_) => info!("personality reset for {}", incoming.sender_id),
+                    Err(e) => error!("failed to reset personality: {e}"),
+                }
+            } else {
+                match self
+                    .memory
+                    .store_fact(&incoming.sender_id, "personality", &value)
+                    .await
+                {
+                    Ok(()) => info!("personality set to '{value}' for {}", incoming.sender_id),
+                    Err(e) => error!("failed to store personality: {e}"),
+                }
+            }
+            *text = strip_personality(text);
+        }
+
+        // FORGET_CONVERSATION
+        if has_forget_marker(text) {
+            match self
+                .memory
+                .close_current_conversation(&incoming.channel, &incoming.sender_id)
+                .await
+            {
+                Ok(true) => info!("conversation cleared via marker for {}", incoming.sender_id),
+                Ok(false) => {
+                    info!("no active conversation to clear for {}", incoming.sender_id)
+                }
+                Err(e) => error!("failed to clear conversation via marker: {e}"),
+            }
+            *text = strip_forget_marker(text);
+        }
+
+        // CANCEL_TASK
+        if let Some(id_prefix) = extract_cancel_task(text) {
+            match self
+                .memory
+                .cancel_task(&id_prefix, &incoming.sender_id)
+                .await
+            {
+                Ok(true) => info!("task cancelled via marker: {id_prefix}"),
+                Ok(false) => warn!("no matching task for cancel marker: {id_prefix}"),
+                Err(e) => error!("failed to cancel task via marker: {e}"),
+            }
+            *text = strip_cancel_task(text);
+        }
+
+        // PURGE_FACTS
+        if has_purge_marker(text) {
+            // Save system facts first.
+            let preserved: Vec<(String, String)> =
+                match self.memory.get_facts(&incoming.sender_id).await {
+                    Ok(facts) => facts
+                        .into_iter()
+                        .filter(|(k, _)| SYSTEM_FACT_KEYS.contains(&k.as_str()))
+                        .collect(),
+                    Err(e) => {
+                        error!("purge marker: failed to read facts: {e}");
+                        Vec::new()
+                    }
+                };
+            // Delete all facts.
+            match self.memory.delete_facts(&incoming.sender_id, None).await {
+                Ok(n) => {
+                    // Restore system facts.
+                    for (key, value) in &preserved {
+                        let _ = self
+                            .memory
+                            .store_fact(&incoming.sender_id, key, value)
+                            .await;
+                    }
+                    let purged = n as usize - preserved.len();
+                    info!(
+                        "purged {purged} facts via marker for {}",
+                        incoming.sender_id
+                    );
+                }
+                Err(e) => error!("purge marker: failed to delete facts: {e}"),
+            }
+            *text = strip_purge_marker(text);
+        }
+
         // HEARTBEAT_ADD / HEARTBEAT_REMOVE / HEARTBEAT_INTERVAL
         let heartbeat_actions = extract_heartbeat_markers(text);
         if !heartbeat_actions.is_empty() {
@@ -2311,6 +2400,85 @@ fn extract_lang_switch(text: &str) -> Option<String> {
 fn strip_lang_switch(text: &str) -> String {
     text.lines()
         .filter(|line| !line.trim().starts_with("LANG_SWITCH:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Extract the personality value from a `PERSONALITY:` line in response text.
+fn extract_personality(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| line.trim().starts_with("PERSONALITY:"))
+        .and_then(|line| {
+            let val = line.trim().strip_prefix("PERSONALITY:")?.trim().to_string();
+            if val.is_empty() {
+                None
+            } else {
+                Some(val)
+            }
+        })
+}
+
+/// Strip all `PERSONALITY:` lines from response text.
+fn strip_personality(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim().starts_with("PERSONALITY:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Check if response text contains a `FORGET_CONVERSATION` marker line.
+fn has_forget_marker(text: &str) -> bool {
+    text.lines()
+        .any(|line| line.trim() == "FORGET_CONVERSATION")
+}
+
+/// Strip all `FORGET_CONVERSATION` lines from response text.
+fn strip_forget_marker(text: &str) -> String {
+    text.lines()
+        .filter(|line| line.trim() != "FORGET_CONVERSATION")
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Extract the task ID prefix from a `CANCEL_TASK:` line in response text.
+fn extract_cancel_task(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| line.trim().starts_with("CANCEL_TASK:"))
+        .and_then(|line| {
+            let val = line.trim().strip_prefix("CANCEL_TASK:")?.trim().to_string();
+            if val.is_empty() {
+                None
+            } else {
+                Some(val)
+            }
+        })
+}
+
+/// Strip all `CANCEL_TASK:` lines from response text.
+fn strip_cancel_task(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim().starts_with("CANCEL_TASK:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Check if response text contains a `PURGE_FACTS` marker line.
+fn has_purge_marker(text: &str) -> bool {
+    text.lines().any(|line| line.trim() == "PURGE_FACTS")
+}
+
+/// Strip all `PURGE_FACTS` lines from response text.
+fn strip_purge_marker(text: &str) -> String {
+    text.lines()
+        .filter(|line| line.trim() != "PURGE_FACTS")
         .collect::<Vec<_>>()
         .join("\n")
         .trim()
@@ -3831,5 +3999,110 @@ mod tests {
         let desc = self_heal_follow_up("broken audit", "run cargo test");
         assert!(desc.contains("Run this verification: run cargo test"));
         assert!(desc.contains("SELF_HEAL: broken audit | run cargo test"));
+    }
+
+    // --- PERSONALITY marker tests ---
+
+    #[test]
+    fn test_extract_personality() {
+        let text = "Sure, I'll be more casual.\nPERSONALITY: casual and friendly";
+        assert_eq!(
+            extract_personality(text),
+            Some("casual and friendly".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_personality_none() {
+        assert!(extract_personality("Just a normal response.").is_none());
+    }
+
+    #[test]
+    fn test_extract_personality_empty() {
+        assert!(extract_personality("PERSONALITY: ").is_none());
+    }
+
+    #[test]
+    fn test_extract_personality_reset() {
+        let text = "Back to defaults.\nPERSONALITY: reset";
+        assert_eq!(extract_personality(text), Some("reset".to_string()));
+    }
+
+    #[test]
+    fn test_strip_personality() {
+        let text = "Sure, I'll adjust.\nPERSONALITY: formal and precise\nLet me know.";
+        assert_eq!(strip_personality(text), "Sure, I'll adjust.\nLet me know.");
+    }
+
+    // --- FORGET_CONVERSATION marker tests ---
+
+    #[test]
+    fn test_has_forget_marker() {
+        let text = "Starting fresh.\nFORGET_CONVERSATION\nDone!";
+        assert!(has_forget_marker(text));
+    }
+
+    #[test]
+    fn test_has_forget_marker_false() {
+        assert!(!has_forget_marker("No marker here."));
+    }
+
+    #[test]
+    fn test_has_forget_marker_partial_no_match() {
+        assert!(!has_forget_marker("FORGET_CONVERSATION_EXTRA"));
+    }
+
+    #[test]
+    fn test_strip_forget_marker() {
+        let text = "Clearing now.\nFORGET_CONVERSATION\nAll fresh!";
+        assert_eq!(strip_forget_marker(text), "Clearing now.\nAll fresh!");
+    }
+
+    // --- CANCEL_TASK marker tests ---
+
+    #[test]
+    fn test_extract_cancel_task() {
+        let text = "I'll cancel that.\nCANCEL_TASK: a1b2c3d4";
+        assert_eq!(extract_cancel_task(text), Some("a1b2c3d4".to_string()));
+    }
+
+    #[test]
+    fn test_extract_cancel_task_none() {
+        assert!(extract_cancel_task("Just a normal response.").is_none());
+    }
+
+    #[test]
+    fn test_extract_cancel_task_empty() {
+        assert!(extract_cancel_task("CANCEL_TASK: ").is_none());
+    }
+
+    #[test]
+    fn test_strip_cancel_task() {
+        let text = "Cancelled.\nCANCEL_TASK: abc123\nDone.";
+        assert_eq!(strip_cancel_task(text), "Cancelled.\nDone.");
+    }
+
+    // --- PURGE_FACTS marker tests ---
+
+    #[test]
+    fn test_has_purge_marker() {
+        let text = "Deleting everything.\nPURGE_FACTS\nClean slate.";
+        assert!(has_purge_marker(text));
+    }
+
+    #[test]
+    fn test_has_purge_marker_false() {
+        assert!(!has_purge_marker("No purge here."));
+    }
+
+    #[test]
+    fn test_has_purge_marker_partial_no_match() {
+        assert!(!has_purge_marker("PURGE_FACTS_EXTRA"));
+    }
+
+    #[test]
+    fn test_strip_purge_marker() {
+        let text = "All gone.\nPURGE_FACTS\nStarting over.";
+        assert_eq!(strip_purge_marker(text), "All gone.\nStarting over.");
     }
 }

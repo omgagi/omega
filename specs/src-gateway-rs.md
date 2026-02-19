@@ -615,10 +615,14 @@ pub struct Gateway {
 3. PROJECT_ACTIVATE / PROJECT_DEACTIVATE — activate/deactivate project
 4. WHATSAPP_QR — trigger WhatsApp QR pairing
 5. LANG_SWITCH — persist language preference
-6. HEARTBEAT_ADD / HEARTBEAT_REMOVE / HEARTBEAT_INTERVAL — update heartbeat checklist or interval
-7. LIMITATION — store limitation, alert owner, add to heartbeat
-8. SELF_HEAL — create/update self-healing state, notify owner, schedule verification
-9. SELF_HEAL_RESOLVED — delete self-healing state, notify owner
+6. PERSONALITY — set/reset personality preference (conversational `/personality`)
+7. FORGET_CONVERSATION — close current conversation (conversational `/forget`)
+8. CANCEL_TASK — cancel a scheduled task by ID prefix (conversational `/cancel`)
+9. PURGE_FACTS — delete all non-system facts, preserving system keys (conversational `/purge`)
+10. HEARTBEAT_ADD / HEARTBEAT_REMOVE / HEARTBEAT_INTERVAL — update heartbeat checklist or interval
+11. LIMITATION — store limitation, alert owner, add to heartbeat
+12. SELF_HEAL — create/update self-healing state, notify owner, schedule verification
+13. SELF_HEAL_RESOLVED — delete self-healing state, notify owner
 
 **Logic:** For each marker type: extract from text, process side effects (DB writes, notifications, file updates), strip the marker from text. Mutates `text` in place.
 
@@ -680,6 +684,46 @@ pub struct Gateway {
 **Purpose:** Remove all `LANG_SWITCH:` lines from response text so the marker is not shown to the user.
 
 **Logic:** Filters out any line whose trimmed form starts with `"LANG_SWITCH:"`, then joins remaining lines and trims the result.
+
+### `fn extract_personality(text: &str) -> Option<String>`
+**Purpose:** Extract the personality value from a `PERSONALITY:` line in response text. Conversational equivalent of `/personality`.
+
+**Logic:** Same pattern as `extract_lang_switch` — finds the first line starting with `"PERSONALITY:"`, strips prefix, trims, returns `None` if empty.
+
+### `fn strip_personality(text: &str) -> String`
+**Purpose:** Remove all `PERSONALITY:` lines from response text.
+
+**Logic:** Filters out lines starting with `"PERSONALITY:"`, joins, trims.
+
+### `fn has_forget_marker(text: &str) -> bool`
+**Purpose:** Check if response text contains a `FORGET_CONVERSATION` marker line. Conversational equivalent of `/forget`.
+
+**Logic:** Returns `true` if any line's trimmed form equals exactly `"FORGET_CONVERSATION"`.
+
+### `fn strip_forget_marker(text: &str) -> String`
+**Purpose:** Remove all `FORGET_CONVERSATION` lines from response text.
+
+**Logic:** Filters out lines whose trimmed form equals `"FORGET_CONVERSATION"`, joins, trims.
+
+### `fn extract_cancel_task(text: &str) -> Option<String>`
+**Purpose:** Extract the task ID prefix from a `CANCEL_TASK:` line in response text. Conversational equivalent of `/cancel`.
+
+**Logic:** Same pattern as `extract_lang_switch` — finds the first line starting with `"CANCEL_TASK:"`, strips prefix, trims, returns `None` if empty.
+
+### `fn strip_cancel_task(text: &str) -> String`
+**Purpose:** Remove all `CANCEL_TASK:` lines from response text.
+
+**Logic:** Filters out lines starting with `"CANCEL_TASK:"`, joins, trims.
+
+### `fn has_purge_marker(text: &str) -> bool`
+**Purpose:** Check if response text contains a `PURGE_FACTS` marker line. Conversational equivalent of `/purge`.
+
+**Logic:** Returns `true` if any line's trimmed form equals exactly `"PURGE_FACTS"`.
+
+### `fn strip_purge_marker(text: &str) -> String`
+**Purpose:** Remove all `PURGE_FACTS` lines from response text.
+
+**Logic:** Filters out lines whose trimmed form equals `"PURGE_FACTS"`, joins, trims.
 
 ### `struct SelfHealingState`
 **Purpose:** State tracked in `~/.omega/self-healing.json` during active self-healing. Derives `Debug`, `Clone`, `Serialize`, `Deserialize`.
@@ -1147,8 +1191,10 @@ All interactions are logged to SQLite with:
 31. Model routing: `context.model` is set by classify-and-route before the provider call. The provider resolves the effective model via `context.model.as_deref().unwrap_or(&self.model)`.
 32. SELF_HEAL: markers (format: `SELF_HEAL: description | verification test`) are processed after LIMITATION markers. The gateway parses both description and verification test, creates or updates `~/.omega/self-healing.json` (including the `verification` field), enforces max 10 iterations in code, schedules follow-up action tasks (2 min delay) with the verification test embedded in the prompt, and sends owner notifications via heartbeat channel. At max iterations, sends escalation alert and preserves state file. Processed in `handle_message` (direct), `execute_steps` (multi-step), and `scheduler_loop` — all via `process_markers()`.
 33. SELF_HEAL_RESOLVED markers trigger deletion of `~/.omega/self-healing.json` and send a resolution notification to the owner via heartbeat channel. Processed in `handle_message` (direct), `execute_steps` (multi-step), and `scheduler_loop` — all via `process_markers()`.
-34. All response markers (SCHEDULE, SCHEDULE_ACTION, PROJECT, LANG_SWITCH, HEARTBEAT, LIMITATION, SELF_HEAL, SELF_HEAL_RESOLVED) are processed via the unified `process_markers()` method, ensuring they work in both the direct response path (`handle_message`) and the multi-step execution path (`execute_steps`).
+34. All response markers (SCHEDULE, SCHEDULE_ACTION, PROJECT, LANG_SWITCH, PERSONALITY, FORGET_CONVERSATION, CANCEL_TASK, PURGE_FACTS, HEARTBEAT, LIMITATION, SELF_HEAL, SELF_HEAL_RESOLVED) are processed via the unified `process_markers()` method, ensuring they work in both the direct response path (`handle_message`) and the multi-step execution path (`execute_steps`).
 35. All system markers must use their exact English prefix regardless of conversation language. The gateway parses markers as literal string prefixes — a translated or paraphrased marker is a silent failure. The system prompt explicitly instructs the AI: "Speak to the user in their language; speak to the system in markers."
+36. Conversational command markers (PERSONALITY, FORGET_CONVERSATION, CANCEL_TASK, PURGE_FACTS) provide zero-friction equivalents of slash commands — users can say "be more casual" instead of `/personality casual`. The AI emits the marker; `process_markers()` handles it identically to the slash command.
+37. PURGE_FACTS preserves system fact keys (`welcomed`, `preferred_language`, `active_project`, `personality`) — same logic as `/purge` in `commands.rs`.
 
 ## Tests
 
@@ -1433,3 +1479,71 @@ Verifies that `detect_repo_path()` returns a `Some` value containing "omega" whe
 **Type:** Synchronous unit test (`#[test]`)
 
 Verifies that `self_heal_follow_up()` includes the anomaly, verification test, SELF_HEAL_RESOLVED instruction, and continue-on-failure instruction in its output.
+
+### `test_extract_personality`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `extract_personality()` extracts the value from a `PERSONALITY:` line in multi-line text.
+
+### `test_extract_personality_none`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `extract_personality()` returns `None` when no marker is present.
+
+### `test_extract_personality_empty`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `extract_personality()` returns `None` when the value after `PERSONALITY:` is empty.
+
+### `test_extract_personality_reset`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `extract_personality()` returns `Some("reset")` for the reset case.
+
+### `test_strip_personality`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `strip_personality()` removes `PERSONALITY:` lines while preserving other content.
+
+### `test_has_forget_marker`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `has_forget_marker()` returns `true` when `FORGET_CONVERSATION` is present.
+
+### `test_has_forget_marker_false`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `has_forget_marker()` returns `false` when no marker is present.
+
+### `test_has_forget_marker_partial_no_match`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `has_forget_marker()` rejects partial matches like `FORGET_CONVERSATION_EXTRA`.
+
+### `test_strip_forget_marker`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `strip_forget_marker()` removes `FORGET_CONVERSATION` lines while preserving other content.
+
+### `test_extract_cancel_task`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `extract_cancel_task()` extracts the task ID prefix from a `CANCEL_TASK:` line.
+
+### `test_extract_cancel_task_none`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `extract_cancel_task()` returns `None` when no marker is present.
+
+### `test_extract_cancel_task_empty`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `extract_cancel_task()` returns `None` when the value after `CANCEL_TASK:` is empty.
+
+### `test_strip_cancel_task`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `strip_cancel_task()` removes `CANCEL_TASK:` lines while preserving other content.
+
+### `test_has_purge_marker`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `has_purge_marker()` returns `true` when `PURGE_FACTS` is present.
+
+### `test_has_purge_marker_false`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `has_purge_marker()` returns `false` when no marker is present.
+
+### `test_has_purge_marker_partial_no_match`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `has_purge_marker()` rejects partial matches like `PURGE_FACTS_EXTRA`.
+
+### `test_strip_purge_marker`
+**Type:** Synchronous unit test (`#[test]`)
+Verifies that `strip_purge_marker()` removes `PURGE_FACTS` lines while preserving other content.
