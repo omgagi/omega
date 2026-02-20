@@ -12,12 +12,12 @@ You have `omega-quant`, a standalone CLI for quantitative trading via Interactiv
 
 | Setting | Value |
 |---------|-------|
-| Account | `DU8772409` |
-| Port | `7497` (TWS paper trading) |
-| Portfolio | `$279,713` |
+| Account | `YOUR_ACCOUNT_ID` |
+| Port | `7497` (TWS paper) or `4002` (IB Gateway paper) |
+| Portfolio | `YOUR_PORTFOLIO_VALUE` |
 | Host | `127.0.0.1` |
 
-**IMPORTANT**: Always use `--port 7497` in every command. This account uses TWS (not IB Gateway).
+**IMPORTANT**: Replace the placeholders above with your actual values in `~/.omega/skills/ibkr-quant/SKILL.md`. Always use the correct `--port` in every command.
 
 ## Startup Diagnostic (MANDATORY FIRST STEP)
 
@@ -25,22 +25,22 @@ You have `omega-quant`, a standalone CLI for quantitative trading via Interactiv
 
 ```bash
 # Step 1: Connectivity
-omega-quant check --port 7497
+omega-quant check --port YOUR_PORT
 
 # Step 2: Current positions
-omega-quant positions --port 7497
+omega-quant positions --port YOUR_PORT
 
 # Step 3: Daily P&L
-omega-quant pnl DU8772409 --port 7497
+omega-quant pnl YOUR_ACCOUNT_ID --port YOUR_PORT
 
 # Step 4: Test stock scanner
-omega-quant scan --scan-code MOST_ACTIVE --instrument STK --location STK.US.MAJOR --count 3 --port 7497
+omega-quant scan --scan-code MOST_ACTIVE --instrument STK --location STK.US.MAJOR --count 3 --port YOUR_PORT
 
 # Step 5: Test forex data (24/5)
-timeout 12 omega-quant analyze EUR/USD --asset-class forex --portfolio 279713 --bars 1 --port 7497
+timeout 12 omega-quant analyze EUR/USD --asset-class forex --portfolio YOUR_PORTFOLIO --bars 1 --port YOUR_PORT
 
 # Step 6: Test crypto scanner
-omega-quant scan --scan-code HOT_BY_VOLUME --instrument CRYPTO --location CRYPTO.PAXOS --count 1 --port 7497
+omega-quant scan --scan-code HOT_BY_VOLUME --instrument CRYPTO --location CRYPTO.PAXOS --count 1 --port YOUR_PORT
 ```
 
 **Report to user with this format:**
@@ -48,7 +48,7 @@ omega-quant scan --scan-code HOT_BY_VOLUME --instrument CRYPTO --location CRYPTO
 ```
 IBKR Diagnostic Report
 ──────────────────────
-Connection:  OK / FAILED (if failed: "Open TWS and check API Settings → Enable ActiveX and Socket Clients, port 7497")
+Connection:  OK / FAILED (if failed: "Open TWS and check API Settings → Enable ActiveX and Socket Clients, verify port")
 Positions:   N open (list symbols)
 Daily P&L:   $X (X% of portfolio) — OK / WARNING if > -3% / BLOCKED if > -5%
 Stock data:  OK / UNAVAILABLE
@@ -81,10 +81,10 @@ TWS settings to check:
 ### 1. `check` — Verify connectivity
 
 ```bash
-omega-quant check --port 7497
+omega-quant check --port YOUR_PORT
 ```
 
-Returns: `{"connected": true, "host": "127.0.0.1", "port": 7497}`
+Returns: `{"connected": true, "host": "127.0.0.1", "port": YOUR_PORT}`
 
 **Always check connectivity before any other command.** If not connected, tell the user to open TWS and verify API settings.
 
@@ -92,13 +92,13 @@ Returns: `{"connected": true, "host": "127.0.0.1", "port": 7497}`
 
 ```bash
 # Most active US stocks
-omega-quant scan --scan-code MOST_ACTIVE --instrument STK --location STK.US.MAJOR --count 10 --port 7497
+omega-quant scan --scan-code MOST_ACTIVE --instrument STK --location STK.US.MAJOR --count 10 --port YOUR_PORT
 
 # Stocks above $10 with high volume
-omega-quant scan --scan-code HOT_BY_VOLUME --instrument STK --location STK.US.MAJOR --count 10 --min-price 10 --min-volume 1000000 --port 7497
+omega-quant scan --scan-code HOT_BY_VOLUME --instrument STK --location STK.US.MAJOR --count 10 --min-price 10 --min-volume 1000000 --port YOUR_PORT
 
 # Top gainers
-omega-quant scan --scan-code TOP_PERC_GAIN --instrument STK --location STK.US.MAJOR --count 10 --port 7497
+omega-quant scan --scan-code TOP_PERC_GAIN --instrument STK --location STK.US.MAJOR --count 10 --port YOUR_PORT
 ```
 
 Scan codes: `MOST_ACTIVE`, `HOT_BY_VOLUME`, `TOP_PERC_GAIN`, `TOP_PERC_LOSE`, `HIGH_OPEN_GAP`, `LOW_OPEN_GAP`
@@ -111,13 +111,13 @@ Returns: JSON array of `{rank, symbol, security_type, exchange, currency}`
 
 ```bash
 # Stock (only during market hours 9:30am-4pm ET, or with extended hours subscription)
-omega-quant analyze AAPL --asset-class stock --portfolio 279713 --bars 10 --port 7497
+omega-quant analyze AAPL --asset-class stock --portfolio YOUR_PORTFOLIO --bars 10 --port YOUR_PORT
 
 # Forex (24/5 — Sun 5pm to Fri 5pm ET)
-omega-quant analyze EUR/USD --asset-class forex --portfolio 279713 --bars 10 --port 7497
+omega-quant analyze EUR/USD --asset-class forex --portfolio YOUR_PORTFOLIO --bars 10 --port YOUR_PORT
 
 # Crypto (24/7 — requires crypto data subscription)
-omega-quant analyze BTC --asset-class crypto --portfolio 279713 --bars 10 --port 7497
+omega-quant analyze BTC --asset-class crypto --portfolio YOUR_PORTFOLIO --bars 10 --port YOUR_PORT
 ```
 
 Each signal contains: `regime`, `regime_probabilities`, `filtered_price`, `trend`, `merton_allocation`, `kelly_fraction`, `kelly_position_usd`, `kelly_should_trade`, `direction`, `action`, `execution`, `confidence`, `reasoning`
@@ -139,28 +139,28 @@ If `analyze` hangs or times out, the market for that asset class is likely close
 
 ```bash
 # Bracket order with SL/TP and all safety checks
-omega-quant order AAPL buy 100 --asset-class stock --stop-loss 1.5 --take-profit 3.0 --account DU8772409 --portfolio 279713 --max-positions 3 --port 7497
+omega-quant order AAPL buy 100 --asset-class stock --stop-loss 1.5 --take-profit 3.0 --account YOUR_ACCOUNT_ID --portfolio YOUR_PORTFOLIO --max-positions 3 --port YOUR_PORT
 
 # Forex bracket
-omega-quant order EUR/USD buy 20000 --asset-class forex --stop-loss 0.5 --take-profit 1.0 --account DU8772409 --portfolio 279713 --max-positions 3 --port 7497
+omega-quant order EUR/USD buy 20000 --asset-class forex --stop-loss 0.5 --take-profit 1.0 --account YOUR_ACCOUNT_ID --portfolio YOUR_PORTFOLIO --max-positions 3 --port YOUR_PORT
 
 # Crypto bracket
-omega-quant order BTC buy 0.1 --asset-class crypto --stop-loss 2.0 --take-profit 5.0 --account DU8772409 --portfolio 279713 --max-positions 3 --port 7497
+omega-quant order BTC buy 0.1 --asset-class crypto --stop-loss 2.0 --take-profit 5.0 --account YOUR_ACCOUNT_ID --portfolio YOUR_PORTFOLIO --max-positions 3 --port YOUR_PORT
 
 # Simple market order (no SL/TP — avoid unless closing)
-omega-quant order AAPL buy 100 --asset-class stock --port 7497
+omega-quant order AAPL buy 100 --asset-class stock --port YOUR_PORT
 ```
 
 Safety checks (automatic with flags):
 - `--max-positions 3`: blocks if current positions >= 3
-- `--account DU8772409 --portfolio 279713`: blocks if daily P&L < -5%
+- `--account YOUR_ACCOUNT_ID --portfolio YOUR_PORTFOLIO`: blocks if daily P&L < -5%
 
 Bracket orders create 3 linked orders: MKT entry → LMT take-profit → STP stop-loss.
 
 ### 5. `positions` — List open positions
 
 ```bash
-omega-quant positions --port 7497
+omega-quant positions --port YOUR_PORT
 ```
 
 Returns: JSON array of `{account, symbol, security_type, quantity, avg_cost}`
@@ -170,7 +170,7 @@ Returns: JSON array of `{account, symbol, security_type, quantity, avg_cost}`
 ### 6. `pnl` — Daily P&L
 
 ```bash
-omega-quant pnl DU8772409 --port 7497
+omega-quant pnl YOUR_ACCOUNT_ID --port YOUR_PORT
 ```
 
 Returns: `{daily_pnl, unrealized_pnl, realized_pnl}`
@@ -179,18 +179,18 @@ Returns: `{daily_pnl, unrealized_pnl, realized_pnl}`
 
 ```bash
 # Close entire position (auto-detects side and quantity)
-omega-quant close AAPL --asset-class stock --port 7497
+omega-quant close AAPL --asset-class stock --port YOUR_PORT
 
 # Partial close
-omega-quant close AAPL --asset-class stock --quantity 50 --port 7497
+omega-quant close AAPL --asset-class stock --quantity 50 --port YOUR_PORT
 
 # Close forex
-omega-quant close EUR/USD --asset-class forex --port 7497
+omega-quant close EUR/USD --asset-class forex --port YOUR_PORT
 ```
 
 ## Strategy Rules (YOU MUST FOLLOW)
 
-1. **Always use bracket orders**: Every entry must have `--stop-loss 1.5 --take-profit 3.0` unless the user specifies otherwise. Always include `--account DU8772409 --portfolio 279713 --max-positions 3`.
+1. **Always use bracket orders**: Every entry must have `--stop-loss 1.5 --take-profit 3.0` unless the user specifies otherwise. Always include `--account YOUR_ACCOUNT_ID --portfolio YOUR_PORTFOLIO --max-positions 3`.
 
 2. **Max 3 simultaneous positions**: Always check `positions` before entering. If count >= 3, do NOT enter new trades.
 
@@ -202,10 +202,10 @@ omega-quant close EUR/USD --asset-class forex --port 7497
    - Crypto only if data subscription is active (test with analyze first)
 
 5. **Pre-entry checklist** (every single trade):
-   - `check --port 7497` → connectivity OK
-   - `positions --port 7497` → count < 3
-   - `pnl DU8772409 --port 7497` → daily P&L > -5% of $279,713
-   - `analyze SYMBOL --port 7497` → confidence > 0.5 AND kelly_should_trade = true
+   - `check --port YOUR_PORT` → connectivity OK
+   - `positions --port YOUR_PORT` → count < 3
+   - `pnl YOUR_ACCOUNT_ID --port YOUR_PORT` → daily P&L > -5% of portfolio
+   - `analyze SYMBOL --port YOUR_PORT` → confidence > 0.5 AND kelly_should_trade = true
    - Only then → `order` with bracket
 
 6. **Exit discipline**:
@@ -240,11 +240,11 @@ SCHEDULE_ACTION: 1m | Monitor open positions and P&L, close if regime changed
 
 ## Safety
 
-- **Paper trading**: This account (DU8772409) is paper. Port 7497 = TWS paper.
+- **Paper trading**: Verify your account is paper. TWS paper = port 7497, IB Gateway paper = port 4002.
 - **Not financial advice**: Always include disclaimer that signals are advisory
 - **Circuit breaker**: Auto-aborts if price deviates >2% during execution
 - **Daily limits**: Max 10 trades/day, $50k/day, 5-min cooldown (enforced in Rust)
-- **P&L cutoff**: Halt all trading if daily loss exceeds 5% of portfolio ($13,986)
+- **P&L cutoff**: Halt all trading if daily loss exceeds 5% of portfolio
 
 ## TWS Configuration Requirements
 
@@ -252,7 +252,7 @@ For omega-quant to work correctly, these TWS settings must be configured:
 
 **API Settings** (File → Global Configuration → API → Settings):
 - [x] **Enable ActiveX and Socket Clients** — MUST be checked
-- [x] **Socket port** = `7497`
+- [x] **Socket port** = must match your Port setting above (`7497` for TWS, `4002` for IB Gateway)
 - [ ] **Read-Only API** — MUST be UNCHECKED (otherwise orders will be rejected)
 - [x] **Allow connections from localhost only** — recommended for security
 - [x] **Bypass Order Precautions for API Orders** — recommended for automated bracket orders
