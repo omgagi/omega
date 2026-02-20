@@ -1,7 +1,10 @@
 # Specification: src/gateway.rs
 
 ## File Path
-`/Users/isudoajl/ownCloud/Projects/omega/src/gateway.rs`
+`src/gateway.rs`
+
+## Refactoring Note
+As of 2026-02-20, marker extraction/parsing/stripping functions (40+) and related helpers were extracted into `src/markers.rs`. The gateway now imports these via `use crate::markers::*`. This reduced gateway.rs from ~4,168 to ~2,330 lines. See `specs/src-markers-rs.md` for the extracted module.
 
 ## Purpose
 Gateway is the central event loop orchestrator that connects messaging channels, memory persistence, and AI providers. It implements the complete message processing pipeline with authentication, sanitization, context building, provider delegation, audit logging, and graceful shutdown.

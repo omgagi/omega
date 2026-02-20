@@ -2,6 +2,7 @@ mod commands;
 mod gateway;
 mod i18n;
 mod init;
+mod markers;
 mod selfcheck;
 mod service;
 

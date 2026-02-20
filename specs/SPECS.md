@@ -14,6 +14,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 ### Milestone 2: Binary (`src/`)
 - [binary-main.md](binary-main.md) — Entry point, CLI parsing, root guard, provider/channel bootstrap
 - [binary-gateway.md](binary-gateway.md) — Gateway event loop, message pipeline, auth, summarization, shutdown
+- [src-markers-rs.md](src-markers-rs.md) — Marker extraction, parsing, stripping (40+ functions extracted from gateway)
 - [binary-commands.md](binary-commands.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, purge, help)
 - [binary-init.md](binary-init.md) — Interactive setup wizard
 - [binary-selfcheck.md](binary-selfcheck.md) — Startup health checks
