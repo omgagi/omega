@@ -166,15 +166,16 @@ pub fn start_price_feed(
     rx
 }
 
-/// Connect to IBKR and stream real-time bars, sending ticks on the broadcast channel.
+/// Connect to IBKR and stream price data, sending ticks on the broadcast channel.
+///
+/// For stocks/crypto: uses `realtime_bars` (5-second OHLCV bars).
+/// For forex: uses `tick_by_tick_midpoint` (realtime_bars not supported for CASH contracts).
 async fn connect_and_stream(
     symbol: &str,
     config: &IbkrConfig,
     asset_class: AssetClass,
     tx: &broadcast::Sender<PriceTick>,
 ) -> Result<()> {
-    use ibapi::market_data::realtime::{BarSize, WhatToShow};
-    use ibapi::market_data::TradingHours;
     use ibapi::Client;
 
     let client = Client::connect(&config.connection_url(), config.client_id)
@@ -184,16 +185,28 @@ async fn connect_and_stream(
     info!("quant: connected to IB Gateway, subscribing to {symbol}");
 
     let contract = build_contract(symbol, asset_class)?;
-    let what_to_show = match asset_class {
-        AssetClass::Forex => WhatToShow::MidPoint,
-        _ => WhatToShow::Trades,
-    };
+
+    match asset_class {
+        AssetClass::Forex => stream_tick_by_tick(symbol, &client, &contract, tx).await,
+        _ => stream_realtime_bars(symbol, &client, &contract, tx).await,
+    }
+}
+
+/// Stream using `realtime_bars` (5-second bars) — works for stocks and crypto.
+async fn stream_realtime_bars(
+    symbol: &str,
+    client: &ibapi::Client,
+    contract: &ibapi::contracts::Contract,
+    tx: &broadcast::Sender<PriceTick>,
+) -> Result<()> {
+    use ibapi::market_data::realtime::{BarSize, WhatToShow};
+    use ibapi::market_data::TradingHours;
 
     let mut subscription = client
         .realtime_bars(
-            &contract,
+            contract,
             BarSize::Sec5,
-            what_to_show,
+            WhatToShow::Trades,
             TradingHours::Extended,
         )
         .await
@@ -216,6 +229,43 @@ async fn connect_and_stream(
             }
             Err(e) => {
                 warn!("quant: error receiving bar: {e}");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Stream using `tick_by_tick_midpoint` — works for forex (CASH contracts on IDEALPRO).
+async fn stream_tick_by_tick(
+    symbol: &str,
+    client: &ibapi::Client,
+    contract: &ibapi::contracts::Contract,
+    tx: &broadcast::Sender<PriceTick>,
+) -> Result<()> {
+    let mut subscription = client
+        .tick_by_tick_midpoint(contract, 0, false)
+        .await
+        .context("failed to subscribe to tick-by-tick midpoint")?;
+
+    while let Some(result) = subscription.next().await {
+        match result {
+            Ok(midpoint) => {
+                let tick = PriceTick {
+                    symbol: symbol.to_string(),
+                    price: midpoint.mid_point,
+                    volume: 0.0, // tick-by-tick doesn't include volume
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                };
+
+                if tx.send(tick).is_err() {
+                    info!("quant: all receivers dropped, stopping feed");
+                    return Ok(());
+                }
+            }
+            Err(e) => {
+                warn!("quant: error receiving midpoint tick: {e}");
                 break;
             }
         }

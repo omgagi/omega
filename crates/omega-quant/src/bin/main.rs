@@ -250,12 +250,33 @@ async fn main() -> anyhow::Result<()> {
             let mut rx = omega_quant::market_data::start_price_feed(&symbol, &config, parsed_class);
             let mut count: u32 = 0;
 
-            while let Ok(tick) = rx.recv().await {
-                let signal = engine.process_price(tick.price);
-                println!("{}", serde_json::to_string(&signal)?);
-                count += 1;
-                if count >= bars {
-                    break;
+            // Timeout for first bar — if no data within 15s, the market is likely closed
+            // or the data subscription is missing.
+            let first_bar_timeout = std::time::Duration::from_secs(15);
+            let first = tokio::time::timeout(first_bar_timeout, rx.recv()).await;
+            match first {
+                Ok(Ok(tick)) => {
+                    let signal = engine.process_price(tick.price);
+                    println!("{}", serde_json::to_string(&signal)?);
+                    count += 1;
+                }
+                _ => {
+                    let err = serde_json::json!({
+                        "error": format!("No data received for {symbol} ({parsed_class}) within 15s — market may be closed or data subscription missing"),
+                    });
+                    println!("{}", serde_json::to_string(&err)?);
+                    std::process::exit(1);
+                }
+            }
+
+            while count < bars {
+                match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
+                    Ok(Ok(tick)) => {
+                        let signal = engine.process_price(tick.price);
+                        println!("{}", serde_json::to_string(&signal)?);
+                        count += 1;
+                    }
+                    _ => break,
                 }
             }
         }

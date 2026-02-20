@@ -35,20 +35,20 @@ crates/omega-quant/src/executor.rs     ← order execution, bracket orders, posi
 | `kalman.rs` | Kalman filter (2D state: price + trend, plain f64 math, no nalgebra) |
 | `hmm.rs` | Hidden Markov Model (3-state: Bull/Bear/Lateral, 5 observations, Baum-Welch training) |
 | `kelly.rs` | Fractional Kelly criterion (position sizing with safety clamps) |
-| `market_data.rs` | `AssetClass` enum (Stock/Forex/Crypto), `build_contract()`, IBKR TWS real-time price feed with auto-reconnect, `run_scanner()`, `ScanResult` |
+| `market_data.rs` | `AssetClass` enum (Stock/Forex/Crypto), `build_contract()`, IBKR TWS real-time price feed with auto-reconnect (stocks/crypto: `realtime_bars`, forex: `tick_by_tick_midpoint`), `run_scanner()`, `ScanResult` |
 | `execution.rs` | TWAP + Immediate execution plan types |
-| `executor.rs` | Live order execution with circuit breaker, daily limits, crash recovery, bracket orders (`place_bracket_order`), position queries (`get_positions`), P&L queries (`get_daily_pnl`), close positions (`close_position`), safety checks (`check_max_positions`, `check_daily_pnl_cutoff`) |
+| `executor.rs` | Live order execution with circuit breaker, daily limits, crash recovery, bracket orders (`place_bracket_order`), position queries (`get_positions`), P&L queries via snapshot API (`get_daily_pnl`), price queries via `market_data().snapshot()` (`get_ibkr_price`), close positions (`close_position`), safety checks (`check_max_positions`, `check_daily_pnl_cutoff`) |
 | `lib.rs` | `QuantEngine` orchestrator + inline Merton allocation |
 
 ## Multi-Asset Support
 
 | Asset Class | CLI flag | Symbol format | Contract builder | WhatToShow |
 |-------------|----------|---------------|------------------|------------|
-| Stock | `--asset-class stock` | `AAPL` | `Contract::stock(symbol)` | Trades |
-| Forex | `--asset-class forex` | `EUR/USD` | `Contract::forex(base, quote)` | MidPoint |
-| Crypto | `--asset-class crypto` | `BTC` | `Contract::crypto(symbol)` | Trades |
+| Stock | `--asset-class stock` | `AAPL` | `Contract::stock(symbol)` | `realtime_bars` (Trades) |
+| Forex | `--asset-class forex` | `EUR/USD` | `Contract::forex(base, quote)` | `tick_by_tick_midpoint` (realtime_bars not supported for CASH contracts) |
+| Crypto | `--asset-class crypto` | `BTC` | `Contract::crypto(symbol)` | `realtime_bars` (Trades) |
 
-`build_contract()` in `market_data.rs` handles parsing and construction. Forex symbols are split on `/` (must be `BASE/QUOTE` format).
+`build_contract()` in `market_data.rs` handles parsing and construction. Forex symbols are split on `/` (must be `BASE/QUOTE` format). Price queries (`get_ibkr_price`) use `market_data().snapshot()` for all asset classes.
 
 ## CLI Subcommands
 
@@ -68,12 +68,12 @@ omega-quant scan --scan-code MOST_ACTIVE --instrument STK --location STK.US.MAJO
 Scan codes: `MOST_ACTIVE`, `HOT_BY_VOLUME`, `TOP_PERC_GAIN`, `TOP_PERC_LOSE`, `HIGH_OPEN_GAP`, `LOW_OPEN_GAP`. Optional filters: `--min-price`, `--min-volume`.
 
 ### `omega-quant analyze`
-Stream trading signals as JSONL (one JSON object per 5-second bar).
+Stream trading signals as JSONL (one JSON object per price update).
 ```
 omega-quant analyze AAPL --asset-class stock --portfolio 50000 --port 4002 --bars 30
 → {"timestamp":"...","symbol":"AAPL","raw_price":185.50,"regime":"Bull",...}
 ```
-Uses `QuantEngine.process_price()` for each bar. Stops after `--bars` count. Supports all asset classes.
+Uses `QuantEngine.process_price()` for each price tick. Stops after `--bars` count. Has a 15-second timeout for first data — reports error if no data received (market closed or subscription missing). Supports all asset classes.
 
 ### `omega-quant order`
 Place a market order or bracket order (entry + SL + TP) via IBKR TWS API.

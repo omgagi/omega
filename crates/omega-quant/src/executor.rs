@@ -419,47 +419,74 @@ async fn place_ibkr_order(
     })
 }
 
-/// Get current price for a contract via IBKR snapshot.
+/// Get current price for a contract via IBKR market data snapshot.
 ///
-/// Automatically uses `MidPoint` for forex contracts and `Trades` for everything else.
+/// Uses the snapshot API (reqMktData) which works reliably across all asset classes,
+/// unlike `realtime_bars` which doesn't support forex (CASH) contracts.
 pub async fn get_ibkr_price(
     config: &IbkrConfig,
     contract: &ibapi::contracts::Contract,
 ) -> Result<f64> {
-    use ibapi::contracts::SecurityType;
-    use ibapi::market_data::realtime::{BarSize, WhatToShow};
-    use ibapi::market_data::TradingHours;
+    use ibapi::contracts::tick_types::TickType;
+    use ibapi::market_data::realtime::TickTypes;
     use ibapi::Client;
 
     let client = Client::connect(&config.connection_url(), config.client_id + 200)
         .await
         .map_err(|e| anyhow::anyhow!("IBKR connection failed for price check: {e}"))?;
 
-    let what_to_show = if contract.security_type == SecurityType::ForexPair {
-        WhatToShow::MidPoint
-    } else {
-        WhatToShow::Trades
-    };
-
     let mut subscription = client
-        .realtime_bars(
-            contract,
-            BarSize::Sec5,
-            what_to_show,
-            TradingHours::Extended,
-        )
+        .market_data(contract)
+        .snapshot()
+        .subscribe()
         .await
-        .map_err(|e| anyhow::anyhow!("IBKR price request failed: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("IBKR snapshot request failed: {e}"))?;
 
-    // Take just the first bar for a price snapshot.
-    if let Some(result) = subscription.next().await {
-        match result {
-            Ok(bar) => Ok(bar.close),
-            Err(e) => anyhow::bail!("IBKR price error: {e}"),
+    let timeout_dur = std::time::Duration::from_secs(10);
+    let mut best_price: Option<f64> = None;
+
+    // Read ticks until SnapshotEnd or timeout. Prefer last price, fall back to bid/ask mid.
+    let mut bid: Option<f64> = None;
+    let mut ask: Option<f64> = None;
+
+    while let Ok(Some(Ok(tick))) = tokio::time::timeout(timeout_dur, subscription.next()).await {
+        match tick {
+            TickTypes::Price(p) if p.price > 0.0 => match p.tick_type {
+                TickType::Last
+                | TickType::Close
+                | TickType::DelayedLast
+                | TickType::DelayedClose => {
+                    best_price = Some(p.price);
+                }
+                TickType::Bid | TickType::DelayedBid => bid = Some(p.price),
+                TickType::Ask | TickType::DelayedAsk => ask = Some(p.price),
+                _ => {}
+            },
+            TickTypes::PriceSize(ps) if ps.price > 0.0 => match ps.price_tick_type {
+                TickType::Last
+                | TickType::Close
+                | TickType::DelayedLast
+                | TickType::DelayedClose => {
+                    best_price = Some(ps.price);
+                }
+                TickType::Bid | TickType::DelayedBid => bid = Some(ps.price),
+                TickType::Ask | TickType::DelayedAsk => ask = Some(ps.price),
+                _ => {}
+            },
+            TickTypes::SnapshotEnd => break,
+            _ => {}
         }
-    } else {
-        anyhow::bail!("No price data received from IBKR")
     }
+
+    // Use last/close if available, otherwise midpoint of bid/ask.
+    if let Some(price) = best_price {
+        return Ok(price);
+    }
+    if let (Some(b), Some(a)) = (bid, ask) {
+        return Ok((b + a) / 2.0);
+    }
+
+    anyhow::bail!("No price data received from IBKR snapshot")
 }
 
 /// Get all open positions from IBKR.

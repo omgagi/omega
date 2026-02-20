@@ -125,8 +125,8 @@ omega-quant close AAPL --asset-class stock --quantity 50 --port 4002
 | Asset Class | Flag | Symbol Format | Example |
 |-------------|------|---------------|---------|
 | Stock | `--asset-class stock` | `AAPL`, `MSFT` | `omega-quant analyze AAPL --asset-class stock` |
-| Forex | `--asset-class forex` | `EUR/USD`, `GBP/JPY` | `omega-quant order EUR/USD buy 20000 --asset-class forex` |
-| Crypto | `--asset-class crypto` | `BTC`, `ETH` | `omega-quant analyze BTC --asset-class crypto` |
+| Forex | `--asset-class forex` | `EUR/USD`, `GBP/JPY` | `omega-quant order EUR/USD buy 20000 --asset-class forex` (uses tick-by-tick midpoint) |
+| Crypto | `--asset-class crypto` | `BTC`, `ETH` | `omega-quant analyze BTC --asset-class crypto` (uses realtime bars) |
 
 ## Prerequisites
 
