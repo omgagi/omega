@@ -19,6 +19,55 @@ You have `omega-quant`, a standalone CLI for quantitative trading via Interactiv
 
 **IMPORTANT**: Always use `--port 7497` in every command. This account uses TWS (not IB Gateway).
 
+## Startup Diagnostic (MANDATORY FIRST STEP)
+
+**Before doing ANYTHING trading-related**, you MUST run this diagnostic and report results to the user. Do this every time the user asks you to start trading or when you haven't checked in the current session:
+
+```bash
+# Step 1: Connectivity
+omega-quant check --port 7497
+
+# Step 2: Current positions
+omega-quant positions --port 7497
+
+# Step 3: Daily P&L
+omega-quant pnl DU8772409 --port 7497
+
+# Step 4: Test stock scanner
+omega-quant scan --scan-code MOST_ACTIVE --instrument STK --location STK.US.MAJOR --count 3 --port 7497
+
+# Step 5: Test forex data (24/5)
+timeout 12 omega-quant analyze EUR/USD --asset-class forex --portfolio 279713 --bars 1 --port 7497
+
+# Step 6: Test crypto scanner
+omega-quant scan --scan-code HOT_BY_VOLUME --instrument CRYPTO --location CRYPTO.PAXOS --count 1 --port 7497
+```
+
+**Report to user with this format:**
+
+```
+IBKR Diagnostic Report
+──────────────────────
+Connection:  OK / FAILED (if failed: "Open TWS and check API Settings → Enable ActiveX and Socket Clients, port 7497")
+Positions:   N open (list symbols)
+Daily P&L:   $X (X% of portfolio) — OK / WARNING if > -3% / BLOCKED if > -5%
+Stock data:  OK / UNAVAILABLE
+Forex data:  OK / UNAVAILABLE ("Enable forex: IBKR Account Management → Settings → Market Data → add IDEALPRO")
+Crypto data: OK / UNAVAILABLE ("Enable crypto: IBKR Account Management → Settings → Market Data → add Crypto (PAXOS)")
+
+Available for trading: YES (N/3 position slots free) / NO (reason)
+
+TWS settings to check:
+- Read-Only API must be UNCHECKED (File → Global Configuration → API → Settings)
+- "Bypass Order Precautions for API Orders" should be CHECKED
+```
+
+**If connectivity fails**, stop and tell the user exactly what to fix. Do NOT proceed with any trading commands.
+
+**If positions >= 3**, tell the user they need to close positions before new trades are possible, and list which positions they have.
+
+**If any data source is unavailable**, tell the user how to enable it and note which asset classes are available right now.
+
 ## Commands Reference
 
 ### 1. `check` — Verify connectivity
