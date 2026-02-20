@@ -557,6 +557,115 @@ pub async fn get_daily_pnl(config: &IbkrConfig, account_id: &str) -> Result<Dail
     }
 }
 
+/// Info about an open order from IBKR.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenOrderInfo {
+    /// IBKR order ID.
+    pub order_id: i32,
+    /// Instrument symbol.
+    pub symbol: String,
+    /// Side: "BUY" or "SELL".
+    pub action: String,
+    /// Total order quantity.
+    pub quantity: f64,
+    /// Order type (e.g. "MKT", "LMT", "STP").
+    pub order_type: String,
+    /// Limit price (if applicable).
+    pub limit_price: Option<f64>,
+    /// Stop price (if applicable).
+    pub stop_price: Option<f64>,
+    /// Order status (e.g. "Submitted", "PreSubmitted", "Filled").
+    pub status: String,
+    /// Quantity already filled.
+    pub filled: f64,
+    /// Quantity remaining.
+    pub remaining: f64,
+    /// Parent order ID (0 if no parent).
+    pub parent_id: i32,
+}
+
+/// Get all open orders from IBKR.
+pub async fn get_open_orders(config: &IbkrConfig) -> Result<Vec<OpenOrderInfo>> {
+    use ibapi::orders::Orders;
+    use ibapi::Client;
+
+    let client = Client::connect(&config.connection_url(), config.client_id + 600)
+        .await
+        .map_err(|e| anyhow::anyhow!("IBKR connection failed: {e}"))?;
+
+    let mut subscription = client
+        .all_open_orders()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to request open orders: {e}"))?;
+
+    let mut orders = Vec::new();
+    let timeout_dur = std::time::Duration::from_secs(10);
+
+    while let Ok(Some(Ok(item))) = tokio::time::timeout(timeout_dur, subscription.next()).await {
+        match item {
+            Orders::OrderData(data) => {
+                orders.push(OpenOrderInfo {
+                    order_id: data.order_id,
+                    symbol: data.contract.symbol.to_string(),
+                    action: format!("{:?}", data.order.action),
+                    quantity: data.order.total_quantity,
+                    order_type: data.order.order_type.clone(),
+                    limit_price: data.order.limit_price,
+                    stop_price: data.order.aux_price,
+                    status: data.order_state.status.clone(),
+                    filled: data.order.filled_quantity,
+                    remaining: data.order.total_quantity - data.order.filled_quantity,
+                    parent_id: data.order.parent_id,
+                });
+            }
+            Orders::OrderStatus(_) | Orders::Notice(_) => {}
+        }
+    }
+
+    Ok(orders)
+}
+
+/// Cancel a specific order by ID.
+pub async fn cancel_order_by_id(config: &IbkrConfig, order_id: i32) -> Result<String> {
+    use ibapi::orders::CancelOrder;
+    use ibapi::Client;
+
+    let client = Client::connect(&config.connection_url(), config.client_id + 700)
+        .await
+        .map_err(|e| anyhow::anyhow!("IBKR connection failed: {e}"))?;
+
+    let mut subscription = client
+        .cancel_order(order_id, "")
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to cancel order {order_id}: {e}"))?;
+
+    let timeout_dur = std::time::Duration::from_secs(10);
+    if let Ok(Some(Ok(item))) = tokio::time::timeout(timeout_dur, subscription.next()).await {
+        match item {
+            CancelOrder::OrderStatus(status) => return Ok(status.status),
+            CancelOrder::Notice(notice) => return Ok(format!("{notice:?}")),
+        }
+    }
+
+    Ok("cancel_sent".to_string())
+}
+
+/// Cancel all open orders globally.
+pub async fn cancel_all_orders(config: &IbkrConfig) -> Result<()> {
+    use ibapi::Client;
+
+    let client = Client::connect(&config.connection_url(), config.client_id + 800)
+        .await
+        .map_err(|e| anyhow::anyhow!("IBKR connection failed: {e}"))?;
+
+    client
+        .global_cancel()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to cancel all orders: {e}"))?;
+
+    Ok(())
+}
+
 /// Place a bracket order (market entry + take profit + stop loss).
 ///
 /// Creates 3 linked orders: parent MKT → TP LMT → SL STP.
@@ -952,5 +1061,28 @@ mod tests {
         assert!(check_daily_pnl_cutoff(-600.0, 10_000.0, 5.0).is_err());
         // Zero portfolio → always OK (avoids division by zero)
         assert!(check_daily_pnl_cutoff(-1000.0, 0.0, 5.0).is_ok());
+    }
+
+    #[test]
+    fn test_open_order_info_serde() {
+        let order = OpenOrderInfo {
+            order_id: 42,
+            symbol: "AAPL".into(),
+            action: "Buy".into(),
+            quantity: 100.0,
+            order_type: "LMT".into(),
+            limit_price: Some(185.50),
+            stop_price: None,
+            status: "Submitted".into(),
+            filled: 0.0,
+            remaining: 100.0,
+            parent_id: 0,
+        };
+        let json = serde_json::to_string(&order).unwrap();
+        let recovered: OpenOrderInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(recovered.order_id, 42);
+        assert_eq!(recovered.symbol, "AAPL");
+        assert_eq!(recovered.status, "Submitted");
+        assert!((recovered.remaining - 100.0).abs() < f64::EPSILON);
     }
 }

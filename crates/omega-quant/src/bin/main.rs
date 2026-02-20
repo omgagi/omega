@@ -12,8 +12,9 @@
 use clap::{Parser, Subcommand};
 use omega_quant::execution::{ImmediatePlan, Side};
 use omega_quant::executor::{
-    check_daily_pnl_cutoff, check_max_positions, close_position, get_daily_pnl, get_ibkr_price,
-    get_positions, place_bracket_order, CircuitBreaker, DailyLimits, Executor,
+    cancel_all_orders, cancel_order_by_id, check_daily_pnl_cutoff, check_max_positions,
+    close_position, get_daily_pnl, get_ibkr_price, get_open_orders, get_positions,
+    place_bracket_order, CircuitBreaker, DailyLimits, Executor,
 };
 use omega_quant::market_data::{build_contract, AssetClass, IbkrConfig};
 
@@ -149,6 +150,27 @@ enum Commands {
         /// Quantity to close (omit to close entire position).
         #[arg(long)]
         quantity: Option<f64>,
+        /// TWS/Gateway port.
+        #[arg(long, default_value_t = 4002)]
+        port: u16,
+        /// TWS/Gateway host.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+    },
+    /// List all open/pending orders.
+    Orders {
+        /// TWS/Gateway port.
+        #[arg(long, default_value_t = 4002)]
+        port: u16,
+        /// TWS/Gateway host.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+    },
+    /// Cancel an order by ID, or cancel all open orders.
+    Cancel {
+        /// Order ID to cancel (omit to cancel ALL open orders).
+        #[arg(long)]
+        order_id: Option<i32>,
         /// TWS/Gateway port.
         #[arg(long, default_value_t = 4002)]
         port: u16,
@@ -461,6 +483,51 @@ async fn main() -> anyhow::Result<()> {
                 "errors": state.errors,
             });
             println!("{}", serde_json::to_string(&result)?);
+        }
+
+        Commands::Orders { port, host } => {
+            let config = IbkrConfig {
+                host: host.clone(),
+                port,
+                client_id: 1,
+            };
+            if !omega_quant::market_data::check_connection(&config).await {
+                connectivity_error(&host, port);
+            }
+
+            let orders = get_open_orders(&config).await?;
+            println!("{}", serde_json::to_string(&orders)?);
+        }
+
+        Commands::Cancel {
+            order_id,
+            port,
+            host,
+        } => {
+            let config = IbkrConfig {
+                host: host.clone(),
+                port,
+                client_id: 1,
+            };
+            if !omega_quant::market_data::check_connection(&config).await {
+                connectivity_error(&host, port);
+            }
+
+            if let Some(id) = order_id {
+                let status = cancel_order_by_id(&config, id).await?;
+                let result = serde_json::json!({
+                    "cancelled": id,
+                    "status": status,
+                });
+                println!("{}", serde_json::to_string(&result)?);
+            } else {
+                cancel_all_orders(&config).await?;
+                let result = serde_json::json!({
+                    "cancelled": "all",
+                    "status": "global_cancel_sent",
+                });
+                println!("{}", serde_json::to_string(&result)?);
+            }
         }
     }
 

@@ -188,6 +188,28 @@ omega-quant close AAPL --asset-class stock --quantity 50 --port YOUR_PORT
 omega-quant close EUR/USD --asset-class forex --port YOUR_PORT
 ```
 
+### 8. `orders` — List open/pending orders
+
+```bash
+omega-quant orders --port YOUR_PORT
+```
+
+Returns: JSON array of `{order_id, symbol, action, quantity, order_type, limit_price, stop_price, status, filled, remaining, parent_id}`
+
+**Always check open orders before placing new ones** to avoid duplicates. If you see duplicate orders for the same symbol, cancel the extras with `cancel`.
+
+### 9. `cancel` — Cancel orders
+
+```bash
+# Cancel a specific order by ID
+omega-quant cancel --order-id 42 --port YOUR_PORT
+
+# Cancel ALL open orders
+omega-quant cancel --port YOUR_PORT
+```
+
+**Use this to clean up duplicate orders** or to cancel pending bracket legs (SL/TP) that are no longer needed.
+
 ## Strategy Rules (YOU MUST FOLLOW)
 
 1. **Always use bracket orders**: Every entry must have `--stop-loss 1.5 --take-profit 3.0` unless the user specifies otherwise. Always include `--account YOUR_ACCOUNT_ID --portfolio YOUR_PORTFOLIO --max-positions 3`.
@@ -212,6 +234,8 @@ omega-quant close EUR/USD --asset-class forex --port YOUR_PORT
    - Let bracket orders handle exits (SL/TP)
    - Manual close only if regime changes dramatically (Bull → Bear)
    - Check positions every monitoring cycle
+
+7. **No duplicate orders**: Before placing any order (entry or close), run `orders` first. If there's already a pending order for that symbol, do NOT place another one. If you see duplicates, cancel the extras with `cancel --order-id`.
 
 ## Reporting Format
 

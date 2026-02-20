@@ -15,6 +15,8 @@ The AI learns about omega-quant from the `ibkr-quant` skill (`skills/ibkr-quant/
 5. **Monitor positions**: `omega-quant positions`
 6. **Check P&L**: `omega-quant pnl DU1234567`
 7. **Close positions**: `omega-quant close AAPL --asset-class stock`
+8. **List open orders**: `omega-quant orders`
+9. **Cancel orders**: `omega-quant cancel --order-id 42` or `omega-quant cancel` (all)
 
 ## CLI Commands
 
@@ -111,6 +113,25 @@ omega-quant close AAPL --asset-class stock --port 4002
 
 # Partial close
 omega-quant close AAPL --asset-class stock --quantity 50 --port 4002
+```
+
+### Orders — list open/pending orders
+
+```bash
+omega-quant orders --port 4002
+# → [{"order_id":42,"symbol":"AAPL","action":"BUY","quantity":100.0,"order_type":"MKT","status":"Submitted","filled":0.0,"remaining":100.0,"parent_id":0}]
+```
+
+Always check open orders before placing new ones to avoid duplicates.
+
+### Cancel — cancel orders
+
+```bash
+# Cancel a specific order
+omega-quant cancel --order-id 42 --port 4002
+
+# Cancel ALL open orders
+omega-quant cancel --port 4002
 ```
 
 ## Signal Interpretation

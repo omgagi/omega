@@ -30,14 +30,14 @@ crates/omega-quant/src/executor.rs     ← order execution, bracket orders, posi
 
 | Module | Purpose |
 |--------|---------|
-| `bin/main.rs` | CLI binary: 7 subcommands (`check`, `scan`, `analyze`, `order`, `positions`, `pnl`, `close`) via clap |
+| `bin/main.rs` | CLI binary: 9 subcommands (`check`, `scan`, `analyze`, `order`, `positions`, `pnl`, `close`, `orders`, `cancel`) via clap |
 | `signal.rs` | Output types: `QuantSignal`, `Regime`, `Direction`, `Action`, `ExecutionStrategy` |
 | `kalman.rs` | Kalman filter (2D state: price + trend, plain f64 math, no nalgebra) |
 | `hmm.rs` | Hidden Markov Model (3-state: Bull/Bear/Lateral, 5 observations, Baum-Welch training) |
 | `kelly.rs` | Fractional Kelly criterion (position sizing with safety clamps) |
 | `market_data.rs` | `AssetClass` enum (Stock/Forex/Crypto), `build_contract()`, IBKR TWS real-time price feed with auto-reconnect (stocks/crypto: `realtime_bars`, forex: `tick_by_tick_midpoint`), `run_scanner()`, `ScanResult` |
 | `execution.rs` | TWAP + Immediate execution plan types |
-| `executor.rs` | Live order execution with circuit breaker, daily limits, crash recovery, bracket orders (`place_bracket_order`), position queries (`get_positions`), P&L queries via snapshot API (`get_daily_pnl`), price queries via `market_data().snapshot()` (`get_ibkr_price`), close positions (`close_position`), safety checks (`check_max_positions`, `check_daily_pnl_cutoff`) |
+| `executor.rs` | Live order execution with circuit breaker, daily limits, crash recovery, bracket orders (`place_bracket_order`), position queries (`get_positions`), P&L queries via snapshot API (`get_daily_pnl`), price queries via `market_data().snapshot()` (`get_ibkr_price`), close positions (`close_position`), open orders (`get_open_orders`), cancel orders (`cancel_order_by_id`, `cancel_all_orders`), safety checks (`check_max_positions`, `check_daily_pnl_cutoff`) |
 | `lib.rs` | `QuantEngine` orchestrator + inline Merton allocation |
 
 ## Multi-Asset Support
@@ -145,7 +145,7 @@ Price tick → Kalman filter → Returns → EWMA volatility
 ## Skill Integration
 
 The `ibkr-quant` skill (`skills/ibkr-quant/SKILL.md`) teaches the AI:
-- All 7 subcommands with examples for stocks, forex, and crypto
+- All 9 subcommands with examples for stocks, forex, and crypto
 - Strategy rules (bracket orders, max positions, pre-entry checklist)
 - Autonomous loop via SCHEDULE_ACTION (scan every 5min, monitor every 1min)
 - Safety rules (paper first, P&L cutoff, not financial advice)
