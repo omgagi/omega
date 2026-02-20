@@ -27,6 +27,10 @@ pub fn generate_plist(
     let config = xml_escape(config_path);
     let work = xml_escape(working_dir);
     let data = xml_escape(data_dir);
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/unknown".to_string());
+    let path = xml_escape(&format!(
+        "{home}/.cargo/bin:{home}/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+    ));
 
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -54,8 +58,10 @@ pub fn generate_plist(
     <string>{data}/omega.stderr.log</string>
     <key>EnvironmentVariables</key>
     <dict>
+        <key>HOME</key>
+        <string>{home}</string>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <string>{path}</string>
     </dict>
 </dict>
 </plist>
@@ -70,6 +76,7 @@ pub fn generate_systemd_unit(
     working_dir: &str,
     data_dir: &str,
 ) -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/unknown".to_string());
     format!(
         r#"[Unit]
 Description=OMEGA Ω AI Agent
@@ -82,6 +89,7 @@ ExecStart={binary_path} -c {config_path} start
 WorkingDirectory={working_dir}
 Restart=on-failure
 RestartSec=5
+Environment=PATH={home}/.cargo/bin:{home}/.local/bin:/usr/local/bin:/usr/bin:/bin
 StandardOutput=append:{data_dir}/omega.stdout.log
 StandardError=append:{data_dir}/omega.stderr.log
 
@@ -332,6 +340,12 @@ mod tests {
         assert!(plist.contains("<key>RunAtLoad</key>"));
         assert!(plist.contains("omega.stdout.log"));
         assert!(plist.contains("omega.stderr.log"));
+        assert!(plist.contains(".cargo/bin"), "PATH must include .cargo/bin");
+        assert!(plist.contains(".local/bin"), "PATH must include .local/bin");
+        assert!(
+            plist.contains("<key>HOME</key>"),
+            "HOME env var must be set"
+        );
     }
 
     #[test]
@@ -364,6 +378,8 @@ mod tests {
         assert!(unit.contains("RestartSec=5"));
         assert!(unit.contains("omega.stdout.log"));
         assert!(unit.contains("omega.stderr.log"));
+        assert!(unit.contains(".cargo/bin"), "PATH must include .cargo/bin");
+        assert!(unit.contains(".local/bin"), "PATH must include .local/bin");
     }
 
     #[test]
