@@ -81,6 +81,9 @@ Uses Apple's Seatbelt framework via `sandbox-exec -p <profile>`.
   (subpath "/private/var/folders")
   (subpath "{home}/.claude")
   (subpath "{home}/.cargo")
+  (literal "/dev/null")
+  (literal "/dev/zero")
+  (subpath "/dev/fd")
 )
 ```
 
@@ -155,6 +158,9 @@ For both Sandbox and Rx modes, OS enforcement allows writes to:
 | `/private/var/folders` (macOS only) | macOS temp directories |
 | `~/.claude` | Claude CLI session data |
 | `~/.cargo` | Cargo registry cache and build artifacts |
+| `/dev/null` | Essential device file for output redirection |
+| `/dev/zero` | Essential device file for data generation |
+| `/dev/fd/` | File descriptors for pipes and process substitution |
 
 ## Tests
 
@@ -163,11 +169,12 @@ For both Sandbox and Rx modes, OS enforcement allows writes to:
 - `test_sandbox_mode_returns_command` — Sandbox mode returns a valid command
 - `test_rx_mode_returns_command` — Rx mode returns a valid command
 
-### `seatbelt.rs` tests (5, macOS only)
+### `seatbelt.rs` tests (6, macOS only)
 - `test_profile_contains_data_dir` — profile includes data directory path
 - `test_profile_denies_writes_then_allows` — profile has deny + allow structure
 - `test_profile_allows_claude_dir` — profile includes ~/.claude
 - `test_profile_allows_cargo_dir` — profile includes ~/.cargo
+- `test_profile_allows_dev_null` — profile includes /dev/null, /dev/zero, /dev/fd
 - `test_command_structure` — command program is sandbox-exec or claude (fallback)
 
 ### `landlock_sandbox.rs` tests (3, Linux only)
@@ -184,7 +191,7 @@ For both Sandbox and Rx modes, OS enforcement allows writes to:
 | Lines of code (landlock_sandbox.rs) | ~95 |
 | Public functions | 1 |
 | Modules | 2 (platform-conditional) |
-| Tests | 11 (3 cross-platform + 5 macOS + 3 Linux) |
+| Tests | 12 (3 cross-platform + 6 macOS + 3 Linux) |
 
 ## Implementation Status
 

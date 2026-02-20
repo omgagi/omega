@@ -69,6 +69,9 @@ The **workspace** subdirectory (`~/.omega/workspace/`) is:
 | `/private/var/folders` (macOS) | macOS temp directories |
 | `~/.claude` | Claude CLI session data |
 | `~/.cargo` | Cargo registry cache and build artifacts |
+| `/dev/null` | Essential device file for output redirection |
+| `/dev/zero` | Essential device file for data generation |
+| `/dev/fd/` | File descriptors for pipes and process substitution |
 
 ### Dependency Installation
 

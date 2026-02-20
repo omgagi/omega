@@ -26,6 +26,9 @@ fn build_profile(data_dir: &Path) -> String {
   (subpath "/private/var/folders")
   (subpath "{home}/.claude")
   (subpath "{home}/.cargo")
+  (literal "/dev/null")
+  (literal "/dev/zero")
+  (subpath "/dev/fd")
 )"#
     )
 }
@@ -84,6 +87,15 @@ mod tests {
         let ws = PathBuf::from("/tmp/ws");
         let profile = build_profile(&ws);
         assert!(profile.contains(".cargo"));
+    }
+
+    #[test]
+    fn test_profile_allows_dev_null() {
+        let ws = PathBuf::from("/tmp/ws");
+        let profile = build_profile(&ws);
+        assert!(profile.contains(r#"(literal "/dev/null")"#));
+        assert!(profile.contains(r#"(literal "/dev/zero")"#));
+        assert!(profile.contains(r#"(subpath "/dev/fd")"#));
     }
 
     #[test]
