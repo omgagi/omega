@@ -81,6 +81,98 @@ fn is_valid_fact(key: &str, value: &str) -> bool {
     true
 }
 
+/// Summarize a conversation and extract facts in a single provider call.
+/// Designed for background use — all errors are logged, never surfaced.
+async fn summarize_and_extract(
+    store: &Store,
+    provider: &Arc<dyn Provider>,
+    conversation_id: &str,
+    summarize_prompt: &str,
+    facts_prompt: &str,
+) -> Result<(), anyhow::Error> {
+    let messages = store.get_conversation_messages(conversation_id).await?;
+    if messages.is_empty() {
+        store
+            .close_conversation(conversation_id, "(empty conversation)")
+            .await?;
+        return Ok(());
+    }
+
+    // Build transcript.
+    let mut transcript = String::new();
+    for (role, content) in &messages {
+        let label = if role == "user" { "User" } else { "Assistant" };
+        transcript.push_str(&format!("{label}: {content}\n"));
+    }
+
+    // Single combined prompt for summary + facts.
+    let combined_prompt = format!(
+        "{summarize_prompt}\n\n\
+         Additionally, extract personal facts about the user from this conversation.\n\
+         {facts_prompt}\n\n\
+         Transcript:\n{transcript}\n\n\
+         Respond in this exact format:\n\
+         SUMMARY: <1-2 sentence summary>\n\
+         FACTS:\n\
+         <key: value per line, or \"none\">"
+    );
+    let ctx = Context::new(&combined_prompt);
+
+    match provider.complete(&ctx).await {
+        Ok(resp) => {
+            let text = resp.text.trim();
+            // Parse response: split on FACTS: line.
+            let (summary, facts_section) = if let Some(idx) = text.find("\nFACTS:") {
+                let summary_part = text[..idx].trim();
+                let facts_part = text[idx + 7..].trim(); // skip "\nFACTS:"
+                                                         // Strip "SUMMARY: " prefix if present.
+                let summary_clean = summary_part
+                    .strip_prefix("SUMMARY:")
+                    .unwrap_or(summary_part)
+                    .trim();
+                (summary_clean.to_string(), facts_part.to_string())
+            } else {
+                // No FACTS: section — treat entire response as summary.
+                let summary_clean = text.strip_prefix("SUMMARY:").unwrap_or(text).trim();
+                (summary_clean.to_string(), String::new())
+            };
+
+            // Store facts if present.
+            if !facts_section.is_empty() && facts_section.to_lowercase() != "none" {
+                let conv_info: Option<(String,)> =
+                    sqlx::query_as("SELECT sender_id FROM conversations WHERE id = ?")
+                        .bind(conversation_id)
+                        .fetch_optional(store.pool())
+                        .await
+                        .ok()
+                        .flatten();
+
+                if let Some((sender_id,)) = conv_info {
+                    for line in facts_section.lines() {
+                        if let Some((key, value)) = line.split_once(':') {
+                            let key = key.trim().trim_start_matches("- ").to_lowercase();
+                            let value = value.trim().to_string();
+                            if !key.is_empty() && !value.is_empty() && is_valid_fact(&key, &value) {
+                                let _ = store.store_fact(&sender_id, &key, &value).await;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Update the already-closed conversation with the summary.
+            store.close_conversation(conversation_id, &summary).await?;
+            info!("Conversation {conversation_id} summarized in background");
+        }
+        Err(e) => {
+            warn!("background summarization failed: {e}");
+            // Conversation is already closed — just log, no fallback needed.
+        }
+    }
+
+    Ok(())
+}
+
 /// The central gateway that routes messages between channels and providers.
 pub struct Gateway {
     provider: Arc<dyn Provider>,
@@ -987,9 +1079,16 @@ impl Gateway {
         Ok(())
     }
 
-    /// Handle /forget: find active conversation, summarize + extract facts, close.
-    /// Falls back to a plain close if no active conversation or summarization fails.
+    /// Handle /forget: close conversation instantly, summarize in background.
     async fn handle_forget(&self, channel: &str, sender_id: &str) -> String {
+        let lang = self
+            .memory
+            .get_fact(sender_id, "preferred_language")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "English".to_string());
+
         // Find the active conversation for this sender.
         let conv: Option<(String,)> = sqlx::query_as(
             "SELECT id FROM conversations \
@@ -1005,25 +1104,34 @@ impl Gateway {
 
         match conv {
             Some((conversation_id,)) => {
-                // Summarize (extracts facts + closes the conversation).
-                if let Err(e) = Self::summarize_conversation(
-                    &self.memory,
-                    &self.provider,
-                    &conversation_id,
-                    &self.prompts.summarize,
-                    &self.prompts.facts,
-                )
-                .await
-                {
-                    warn!("summarization during /forget failed: {e}, closing directly");
-                    let _ = self
-                        .memory
-                        .close_current_conversation(channel, sender_id)
-                        .await;
-                }
-                "Conversation saved and cleared. Starting fresh.".to_string()
+                // Close immediately so new messages start a fresh conversation.
+                let _ = self
+                    .memory
+                    .close_current_conversation(channel, sender_id)
+                    .await;
+
+                // Summarize + extract facts in the background.
+                let store = self.memory.clone();
+                let provider = Arc::clone(&self.provider);
+                let summarize_prompt = self.prompts.summarize.clone();
+                let facts_prompt = self.prompts.facts.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = summarize_and_extract(
+                        &store,
+                        &provider,
+                        &conversation_id,
+                        &summarize_prompt,
+                        &facts_prompt,
+                    )
+                    .await
+                    {
+                        warn!("background summarization after /forget failed: {e}");
+                    }
+                });
+
+                i18n::t("conversation_cleared", &lang).to_string()
             }
-            None => "No active conversation to clear.".to_string(),
+            None => i18n::t("no_active_conversation", &lang).to_string(),
         }
     }
 

@@ -269,24 +269,23 @@ No facts stored yet.
 
 **Behavior:**
 - **Intercepted by the gateway** — not handled directly in `commands.rs`.
-- The gateway finds the active conversation, triggers `summarize_conversation()` (which extracts facts and closes the conversation), then responds.
-- If summarization fails, falls back to a direct close without fact extraction.
-- This ensures facts learned during the conversation are preserved before clearing.
+- The gateway responds **instantly** with a localized confirmation, then spawns a background task to summarize and extract facts.
+- Flow: find active conversation → close it immediately via `close_current_conversation()` → spawn `summarize_and_extract()` in background → return localized `i18n::t("conversation_cleared")`.
+- Background `summarize_and_extract()` uses a single combined provider call (summary + facts) and updates the already-closed conversation with the summary.
+- If no active conversation exists, returns localized `i18n::t("no_active_conversation")`.
+- All responses are localized via the user's `preferred_language` fact.
 
 **Response Format (Success - Conversation Cleared):**
 ```
 Conversation cleared. Starting fresh.
 ```
+*(Localized per user's preferred language)*
 
 **Response Format (Success - No Active Conversation):**
 ```
 No active conversation to clear.
 ```
-
-**Response Format (Error):**
-```
-Error: [error description]
-```
+*(Localized per user's preferred language)*
 
 ---
 
@@ -605,7 +604,7 @@ All command handlers interact with the `omega_memory::Store` trait/type:
 | `handle_memory()` | `store.get_memory_stats(sender_id)` | `Result<(i64, i64, i64)>` | Count conversations, messages, facts |
 | `handle_history()` | `store.get_history(channel, sender_id, 5)` | `Result<Vec<(String, String)>>` | Fetch last 5 conversation summaries |
 | `handle_facts()` | `store.get_facts(sender_id)` | `Result<Vec<(String, String)>>` | Fetch all facts for user |
-| `handle_forget()` | *(intercepted by gateway — triggers `summarize_conversation()`)* | — | Summarize + extract facts + close |
+| `handle_forget()` | *(intercepted by gateway — instant close + background `summarize_and_extract()`)* | — | Close immediately, summarize + extract facts in background |
 | `handle_tasks()` | `store.get_tasks_for_sender(sender_id)` | `Result<Vec<(String, String, String, Option<String>)>>` | Fetch pending tasks for user |
 | `handle_cancel()` | `store.cancel_task(id_prefix, sender_id)` | `Result<bool>` | Cancel a task by ID prefix |
 | `handle_language()` | `store.get_facts(sender_id)` | `Result<Vec<(String, String)>>` | Look up current preferred_language fact |

@@ -135,6 +135,7 @@ New users should be greeted warmly and informed about the agent's privacy stance
 - The command is handled locally without calling the AI provider.
 - A response is returned immediately.
 - The message processing stops here (provider is never called).
+- **Special case — `/forget`:** The gateway intercepts `/forget` before the normal command dispatch. It closes the conversation instantly and returns a localized confirmation (sub-second). Summarization and fact extraction run in the background via `summarize_and_extract()` — a single combined provider call that updates the closed conversation with a summary and stores extracted facts.
 
 **Why This Exists:**
 Commands are fast, deterministic, and don't require AI reasoning. They provide system introspection without API latency or cost.

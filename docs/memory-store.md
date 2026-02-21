@@ -426,15 +426,16 @@ store.close_conversation(conversation_id, &summary).await?;
 When a user sends `/forget`:
 
 ```rust
-// Close the active conversation without summarization
+// Close the active conversation immediately (instant response)
 let closed = store.close_current_conversation(channel, sender_id).await?;
 
-// Optionally delete facts
-let deleted = store.delete_facts(sender_id, None).await?;  // all facts
-let deleted = store.delete_facts(sender_id, Some("name")).await?;  // specific fact
+// Background: summarize + extract facts via single provider call
+tokio::spawn(async move {
+    summarize_and_extract(&store, &provider, &conversation_id, &summarize_prompt, &facts_prompt).await;
+});
 ```
 
-The next message from the user will create a fresh conversation with no history from the forgotten one.
+The conversation is closed instantly so the user gets a sub-second response. Summarization and fact extraction happen in the background — the already-closed conversation gets its summary updated via `close_conversation()` (idempotent). The next message from the user will create a fresh conversation.
 
 ## Configuration
 

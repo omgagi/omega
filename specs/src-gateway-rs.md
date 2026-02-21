@@ -648,6 +648,27 @@ pub struct Gateway {
 
 ## Free Functions (Module-Level Helpers)
 
+### `async fn summarize_and_extract(store, provider, conversation_id, summarize_prompt, facts_prompt) -> Result<(), anyhow::Error>`
+**Purpose:** Summarize a conversation and extract facts in a single provider call. Used by `handle_forget()` for background summarization after instant close.
+
+**Parameters:**
+- `store: &Store` — Reference to the memory store.
+- `provider: &Arc<dyn Provider>` — Reference to the AI provider.
+- `conversation_id: &str` — ID of the conversation to summarize.
+- `summarize_prompt: &str` — Prompt for conversation summarization.
+- `facts_prompt: &str` — Prompt for facts extraction.
+
+**Logic:**
+1. Load messages via `get_conversation_messages()` (no status filter — works after close).
+2. Build transcript from messages.
+3. Send a single combined prompt asking for both summary and facts in a structured format (`SUMMARY: ... FACTS: ...`).
+4. Parse response: split on `FACTS:` line to extract summary and facts sections.
+5. Store valid facts using existing `is_valid_fact()` validation.
+6. Update the already-closed conversation with the summary via `close_conversation()` (idempotent — sets summary on the closed row).
+7. All errors are logged via `warn!()`, never surfaced to user.
+
+**Difference from `summarize_conversation()`:** Uses one provider call instead of two. Does not close the conversation itself (expects it to be already closed). Designed for background spawning.
+
 ### `fn parse_plan_response(text: &str) -> Option<Vec<String>>`
 **Purpose:** Parse the planning provider response into actionable steps.
 
