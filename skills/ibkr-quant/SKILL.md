@@ -19,6 +19,8 @@ You have `omega-quant`, a standalone CLI for quantitative trading via Interactiv
 
 **IMPORTANT**: Replace the placeholders above with your actual values in `~/.omega/skills/ibkr-quant/SKILL.md`. Always use the correct `--port` in every command.
 
+**Paper vs Live account detection**: IBKR account IDs starting with `DU` are **ALWAYS paper trading accounts**. Live accounts start with `U` (e.g., `U1234567`). If the Account above starts with `DU`, you are in paper mode — treat all trades as simulated. Never tell the user they are trading with real money when the account starts with `DU`.
+
 ## Startup Diagnostic (MANDATORY FIRST STEP)
 
 **Before doing ANYTHING trading-related**, you MUST run this diagnostic and report results to the user. Do this every time the user asks you to start trading or when you haven't checked in the current session:
@@ -125,7 +127,8 @@ Each signal contains: `regime`, `regime_probabilities`, `filtered_price`, `trend
 **Signal interpretation:**
 - Bull regime + Long + kelly_should_trade=true + confidence > 0.5 → **strong buy**
 - Bear regime + Short + confidence > 0.5 → **strong sell/short**
-- Lateral regime → **hold, wait for regime change**
+- Lateral regime + Long/Short + kelly_should_trade=true → **mean-reversion trade** (lower urgency, smaller position — range-bound opportunity)
+- Lateral regime + Hold → no clear direction, wait for regime change
 - merton_allocation > 0.1 → math says long; < -0.1 → short
 
 **Data availability by hour:**
@@ -264,7 +267,7 @@ SCHEDULE_ACTION: 1m | Monitor open positions and P&L, close if regime changed
 
 ## Safety
 
-- **Paper trading**: Verify your account is paper. TWS paper = port 7497, IB Gateway paper = port 4002.
+- **Paper trading**: Account IDs starting with `DU` are ALWAYS paper. `U`-prefix = live. TWS paper = port 7497, IB Gateway paper = port 4002. Never claim real money is at risk when using a DU-prefix account.
 - **Not financial advice**: Always include disclaimer that signals are advisory
 - **Circuit breaker**: Auto-aborts if price deviates >2% during execution
 - **Daily limits**: Max 10 trades/day, $50k/day, 5-min cooldown (enforced in Rust)

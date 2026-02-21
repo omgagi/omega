@@ -127,6 +127,20 @@ Price tick → Kalman filter → Returns → EWMA volatility
                                     → QuantSignal output
 ```
 
+## Action Mapping
+
+| Regime | Direction | Kelly | Action |
+|--------|-----------|-------|--------|
+| Bull | Long | should_trade=true | Long (urgency = regime_confidence) |
+| Bear | Short | should_trade=true | Short (urgency = regime_confidence) |
+| Lateral | Long | should_trade=true | Long (urgency = regime_confidence × 0.7) |
+| Lateral | Short | should_trade=true | Short (urgency = regime_confidence × 0.7) |
+| Bear | any | merton < -0.2 | ReducePosition |
+| any | any | should_trade=false | Hold |
+| any | Hold | any | Hold |
+
+Lateral regime uses mean-reversion parameters (win_rate=0.52, w/l=1.2) giving a small positive Kelly edge. Urgency is reduced to 70% to reflect lower conviction vs trending regimes.
+
 ## Safety Invariants
 
 1. Paper trading by default (port 4002)

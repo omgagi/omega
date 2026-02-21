@@ -138,7 +138,8 @@ omega-quant cancel --port 4002
 
 - **Bull regime + Long direction + kelly_should_trade=true** → strong buy signal
 - **Bear regime + Short direction** → consider reducing exposure
-- **Lateral regime** → typically Hold, wait for regime change
+- **Lateral regime + Long/Short + kelly_should_trade=true** → mean-reversion trade (range-bound opportunity, lower urgency, smaller position)
+- **Lateral regime + Hold** → no clear direction, wait for regime change
 - **confidence > 0.5** → higher conviction signal
 - **merton_allocation > 0.1** → math says go long; < -0.1 → go short
 

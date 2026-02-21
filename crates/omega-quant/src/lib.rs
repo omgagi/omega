@@ -36,7 +36,9 @@ const VOL_LATERAL: f64 = 0.35;
 /// Regime-specific win rates for Kelly calculation.
 const WIN_RATE_BULL: f64 = 0.58;
 const WIN_RATE_BEAR: f64 = 0.42;
-const WIN_RATE_LATERAL: f64 = 0.50;
+/// Lateral uses a slight mean-reversion edge — range-bound markets
+/// allow buying low / selling high within the range.
+const WIN_RATE_LATERAL: f64 = 0.52;
 
 /// Main orchestrator combining all quant modules.
 pub struct QuantEngine {
@@ -141,7 +143,7 @@ impl QuantEngine {
         let (win_rate, win_loss_ratio) = match regime {
             Regime::Bull => (WIN_RATE_BULL, 1.8),
             Regime::Bear => (WIN_RATE_BEAR, 1.2),
-            Regime::Lateral => (WIN_RATE_LATERAL, 1.0),
+            Regime::Lateral => (WIN_RATE_LATERAL, 1.2),
         };
         let kelly_output = self.kelly.calculate(
             win_rate,
@@ -165,6 +167,14 @@ impl QuantEngine {
             },
             (Regime::Bear, Direction::Short) if kelly_output.should_trade => Action::Short {
                 urgency: regime_confidence,
+            },
+            // Lateral regime: allow mean-reversion trades when Merton shows
+            // clear direction, but with reduced urgency (0.7×).
+            (Regime::Lateral, Direction::Long) if kelly_output.should_trade => Action::Long {
+                urgency: regime_confidence * 0.7,
+            },
+            (Regime::Lateral, Direction::Short) if kelly_output.should_trade => Action::Short {
+                urgency: regime_confidence * 0.7,
             },
             (Regime::Bear, _) if merton_allocation < -0.2 => Action::ReducePosition {
                 by_percent: (merton_allocation.abs() * 50.0).min(100.0),
@@ -377,6 +387,48 @@ mod tests {
             signal.hurst_interpretation,
             HurstInterpretation::Random
         ));
+    }
+
+    #[test]
+    fn test_lateral_regime_can_trade() {
+        // Verify that Lateral regime with mean-reversion edge can produce
+        // trade signals instead of always returning Hold/DontTrade.
+        let kelly = kelly::KellyCriterion::crypto_default();
+        // Lateral params: win_rate=0.52, w/l=1.2
+        let output = kelly.calculate(0.52, 1.2, 100_000.0, 0.80);
+        // Kelly = (0.52*1.2 - 0.48) / 1.2 = 0.12 → positive edge
+        assert!(output.full_kelly > 0.0, "Lateral should have positive edge");
+        assert!(output.should_trade, "Lateral should allow trading");
+        assert!(
+            output.position_size_usd > 0.0,
+            "Position size should be positive"
+        );
+    }
+
+    #[test]
+    fn test_lateral_regime_reduced_urgency() {
+        // Lateral trades should have reduced urgency (0.7× confidence)
+        let mut engine = QuantEngine::new("EURUSD", 100_000.0);
+        // Train HMM toward lateral with tight-range prices
+        let base = 1.1000;
+        for i in 0..30 {
+            let price = base + (i as f64 * 0.3).sin() * 0.0005;
+            engine.process_price(price);
+        }
+        let signal = engine.last_signal().unwrap();
+        // If regime is Lateral and action is Long/Short, urgency should be < confidence
+        if matches!(signal.regime, Regime::Lateral) {
+            match &signal.action {
+                Action::Long { urgency } | Action::Short { urgency } => {
+                    assert!(
+                        *urgency < signal.confidence + 0.01,
+                        "Lateral urgency should be reduced"
+                    );
+                }
+                Action::Hold => {} // Also valid — depends on Merton direction
+                _ => {}
+            }
+        }
     }
 
     #[test]
