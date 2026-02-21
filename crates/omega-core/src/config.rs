@@ -512,8 +512,14 @@ pub struct Prompts {
     pub identity: String,
     /// Soul prompt — values and personality.
     pub soul: String,
-    /// System prompt — behavioral rules.
+    /// System prompt — core behavioral rules (always injected).
     pub system: String,
+    /// Scheduling rules — conditionally injected when message mentions scheduling.
+    pub scheduling: String,
+    /// Project management rules — conditionally injected when projects are relevant.
+    pub projects_rules: String,
+    /// Meta rules (skill improvement, bug reporting, WhatsApp, heartbeat) — conditionally injected.
+    pub meta: String,
     /// Conversation summarization instruction.
     pub summarize: String,
     /// Facts extraction instruction.
@@ -555,7 +561,15 @@ impl Default for Prompts {
                    - You have access to someone's personal life. That's trust. Private things stay private. Period.".into(),
             system: "- When reporting the result of an action, give ONLY the outcome in plain language. Never include technical artifacts.\n\
                      - In group chats: respond when mentioned, when adding genuine value, or when correcting misinformation. Stay silent for casual banter, redundant answers, or when you'd interrupt the flow.\n\
-                     - When the user asks to connect, set up, or configure WhatsApp, respond with exactly WHATSAPP_QR on its own line. Do not explain the process — the system will handle QR generation automatically.".into(),
+                     - Verify before you claim. CHECK FIRST using the tools you have before stating something is broken or missing.".into(),
+            scheduling: "You have a built-in scheduler — an internal task queue polled every 60 seconds.\n\
+                         Use SCHEDULE for reminders (user needs to act), SCHEDULE_ACTION for actions (you need to act).\n\
+                         Initial due_at: set to the NEXT upcoming occurrence. Scheduler uses UTC.".into(),
+            projects_rules: "Projects path: ~/.omega/projects/<name>/ROLE.md. Directory name = project name (lowercase, hyphenated).\n\
+                             Use PROJECT_ACTIVATE: <name> / PROJECT_DEACTIVATE to switch.".into(),
+            meta: "SKILL_IMPROVE: <name> | <lesson> to update skills after mistakes.\n\
+                   BUG_REPORT: <description> for infrastructure gaps.\n\
+                   WHATSAPP_QR to trigger WhatsApp setup.".into(),
             summarize: "Summarize this conversation in 1-2 sentences. Be factual and concise. \
                         Do not add commentary.".into(),
             facts: "Extract ONLY personal facts about the user — things that describe WHO they are, not what was discussed.\n\
@@ -649,6 +663,15 @@ impl Prompts {
             }
             if let Some(v) = sections.get("System") {
                 prompts.system = v.clone();
+            }
+            if let Some(v) = sections.get("Scheduling") {
+                prompts.scheduling = v.clone();
+            }
+            if let Some(v) = sections.get("Projects") {
+                prompts.projects_rules = v.clone();
+            }
+            if let Some(v) = sections.get("Meta") {
+                prompts.meta = v.clone();
             }
             if let Some(v) = sections.get("Summarize") {
                 prompts.summarize = v.clone();

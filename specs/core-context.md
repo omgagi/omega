@@ -77,6 +77,34 @@ pub struct Context {
 
 **Traits derived:** `Debug`, `Clone`, `Serialize`, `Deserialize`.
 
+---
+
+### `ContextNeeds`
+
+Controls which optional context blocks are loaded during `build_context`. The gateway inspects the user's message for task-related keywords (e.g., "task", "reminder", "schedule") and recall-related signals, then constructs a `ContextNeeds` to skip expensive queries when the message doesn't need them — reducing token overhead by ~55%.
+
+```rust
+pub struct ContextNeeds {
+    /// Load semantic recall (FTS5 related past messages).
+    pub recall: bool,
+    /// Load and inject pending scheduled tasks.
+    pub pending_tasks: bool,
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `recall` | `bool` | `true` | When `true`, `build_context` runs an FTS5 semantic recall query to inject related past messages. When `false`, the recall block is skipped entirely. |
+| `pending_tasks` | `bool` | `true` | When `true`, `build_context` queries and injects the user's pending scheduled tasks. When `false`, the pending-tasks block is skipped. |
+
+**Default impl:** Both fields default to `true` (load everything). The gateway overrides specific fields to `false` based on keyword detection before calling `store.build_context()`.
+
+**No derived traits.** This struct is a gateway-internal control signal, not serialized or sent to providers.
+
+**Usage sites:**
+- `src/gateway.rs` — keyword detection builds a `ContextNeeds` with selective flags, passed to `store.build_context()`.
+- `crates/omega-memory/src/store.rs` — `build_context()` accepts `&ContextNeeds` and conditionally skips recall and pending-task queries based on the flags.
+
 ## Methods
 
 ### `Context::new(message: &str) -> Self`

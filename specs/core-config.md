@@ -434,12 +434,14 @@ Channel and provider sub-configs use `Option<T>` rather than `#[serde(default)]`
 
 | Constant | Source | Description |
 |----------|--------|-------------|
-| `BUNDLED_SYSTEM_PROMPT` | `include_str!("../../../prompts/SYSTEM_PROMPT.md")` | Default system prompt with 3 sections: `## Identity`, `## Soul`, `## System` |
+| `BUNDLED_SYSTEM_PROMPT` | `include_str!("../../../prompts/SYSTEM_PROMPT.md")` | Default system prompt with 6 sections: `## Identity`, `## Soul`, `## System`, `## Scheduling`, `## Projects`, `## Meta` |
 | `BUNDLED_WELCOME_TOML` | `include_str!("../../../prompts/WELCOME.toml")` | Default welcome messages (8 languages) in TOML format |
 
-### `Prompts` Struct — `identity` and `soul` Fields
+### `Prompts` Struct — Prompt Fields
 
-The `Prompts` struct has three prompt fields parsed from `SYSTEM_PROMPT.md`:
+The `Prompts` struct has six prompt fields parsed from `SYSTEM_PROMPT.md` -- three always-injected and three conditionally-injected:
+
+**Always-injected fields** (included in every system prompt composition):
 
 | Field | Type | Section Header | Description |
 |-------|------|----------------|-------------|
@@ -447,11 +449,19 @@ The `Prompts` struct has three prompt fields parsed from `SYSTEM_PROMPT.md`:
 | `soul` | `String` | `## Soul` | Agent personality and values. |
 | `system` | `String` | `## System` | Operational rules and constraints. |
 
-**`Prompts::load()`** parses the file by splitting on `## Identity`, `## Soul`, and `## System` section headers. Each section's content (between its header and the next header) becomes the corresponding field value.
+**Conditionally-injected fields** (appended by the gateway only when keyword detection in the user message warrants it):
 
-**Backward compatibility:** If the user's `SYSTEM_PROMPT.md` only contains `## System` (no `## Identity` or `## Soul` sections), the `identity` and `soul` fields retain their compiled-in defaults from `Default` impl. Only the `system` field is overwritten from the file.
+| Field | Type | Section Header | Description |
+|-------|------|----------------|-------------|
+| `scheduling` | `String` | `## Scheduling` | Scheduling rules (scheduler queue, SCHEDULE/SCHEDULE_ACTION markers, UTC handling). Injected when the message mentions scheduling-related keywords. |
+| `projects_rules` | `String` | `## Projects` | Project management rules (paths, PROJECT_ACTIVATE/PROJECT_DEACTIVATE markers). Injected when projects are relevant to the message. |
+| `meta` | `String` | `## Meta` | Meta rules (SKILL_IMPROVE, BUG_REPORT, WHATSAPP_QR markers). Injected when meta-level operations are relevant. |
 
-**`Default` impl:** Provides hardcoded defaults for all three fields (`identity`, `soul`, `system`), ensuring the agent has a complete prompt even without any file on disk.
+**`Prompts::load()`** parses the file by splitting on `## ` section headers via `parse_markdown_sections()`. It looks for all six sections (`## Identity`, `## Soul`, `## System`, `## Scheduling`, `## Projects`, `## Meta`) plus additional sections (`## Summarize`, `## Facts`, `## Heartbeat`, `## Heartbeat Checklist`). Each section's content (between its header and the next header) becomes the corresponding field value.
+
+**Backward compatibility:** If the user's `SYSTEM_PROMPT.md` only contains `## System` (no other sections), all other fields retain their compiled-in defaults from `Default` impl. Only the sections present in the file are overwritten.
+
+**`Default` impl:** Provides hardcoded defaults for all six fields (`identity`, `soul`, `system`, `scheduling`, `projects_rules`, `meta`), ensuring the agent has a complete prompt even without any file on disk.
 
 ### `install_bundled_prompts(data_dir: &str)`
 
@@ -459,7 +469,7 @@ The `Prompts` struct has three prompt fields parsed from `SYSTEM_PROMPT.md`:
 pub fn install_bundled_prompts(data_dir: &str)
 ```
 
-Deploys `SYSTEM_PROMPT.md` and `WELCOME.toml` from compile-time embedded templates to `data_dir`. Creates the directory if needed. **Never overwrites existing files** so user edits are preserved. The deployed `SYSTEM_PROMPT.md` contains all three sections (`## Identity`, `## Soul`, `## System`).
+Deploys `SYSTEM_PROMPT.md` and `WELCOME.toml` from compile-time embedded templates to `data_dir`. Creates the directory if needed. **Never overwrites existing files** so user edits are preserved. The deployed `SYSTEM_PROMPT.md` contains all six sections (`## Identity`, `## Soul`, `## System`, `## Scheduling`, `## Projects`, `## Meta`).
 
 Called from `main.rs` before `Prompts::load()` so first-run users get editable files instead of falling back to hardcoded defaults.
 

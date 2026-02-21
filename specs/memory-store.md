@@ -765,9 +765,9 @@ LIMIT ?
 
 ---
 
-#### `async fn build_context(&self, incoming: &IncomingMessage, base_system_prompt: &str) -> Result<Context, OmegaError>`
+#### `async fn build_context(&self, incoming: &IncomingMessage, base_system_prompt: &str, needs: &ContextNeeds) -> Result<Context, OmegaError>`
 
-**Purpose:** Build a complete conversation context for the AI provider from the current conversation state, user facts, recent summaries, and recalled past messages.
+**Purpose:** Build a complete conversation context for the AI provider from the current conversation state, user facts, recent summaries, and conditionally loaded recall and pending tasks.
 
 **Parameters:**
 
@@ -775,27 +775,29 @@ LIMIT ?
 |-----------|------|-------------|
 | `incoming` | `&IncomingMessage` | The incoming message (provides `channel`, `sender_id`, `text`). |
 | `base_system_prompt` | `&str` | The base system prompt (identity + soul + rules), composed by the gateway from `Prompts.identity`, `Prompts.soul`, and `Prompts.system`. |
+| `needs` | `&ContextNeeds` | Controls which optional context blocks are loaded. `recall` and `pending_tasks` are conditionally loaded based on this parameter. Facts and summaries are always loaded. |
 
 **Returns:** `Result<Context, OmegaError>`.
 
 **Logic:**
 1. Call `get_or_create_conversation(channel, sender_id)` to get the active conversation ID.
 2. Fetch recent messages from the conversation (newest first, then reversed to chronological order).
-3. Fetch all facts for the sender (errors suppressed, default to empty).
-4. Fetch the 3 most recent closed conversation summaries (errors suppressed, default to empty).
-5. Search past messages via FTS5 for cross-conversation recall (errors suppressed, default to empty).
-6. Resolve language preference:
+3. Fetch all facts for the sender (always loaded, errors suppressed, default to empty).
+4. Fetch the 3 most recent closed conversation summaries (always loaded, errors suppressed, default to empty).
+5. If `needs.recall` is true, search past messages via FTS5 for cross-conversation recall (errors suppressed, default to empty). Otherwise, empty vec.
+6. If `needs.pending_tasks` is true, fetch pending tasks for the sender (errors suppressed, default to empty). Otherwise, empty vec.
+7. Resolve language preference:
    - If a `preferred_language` fact exists in the fetched facts, use it.
    - Otherwise, call `detect_language(&incoming.text)` and store the result as a `preferred_language` fact.
-7. Compute progressive onboarding stage:
+8. Compute progressive onboarding stage:
    - Read `onboarding_stage` from facts (default 0).
    - Call `compute_onboarding_stage()` with current stage, real fact count, and task presence.
    - If stage advanced: store new stage via `store_fact()`, pass `Some(new_stage)` to `build_system_prompt()`.
    - If first contact (no stage fact, 0 real facts): pass `Some(0)` (show intro).
    - If pre-existing user with no stage fact: silently bootstrap their stage, pass `None` (no hint).
    - Otherwise: pass `None` (no hint).
-8. Build a dynamic system prompt via `build_system_prompt()`, passing the `base_system_prompt`, resolved language, and onboarding hint.
-9. Return a `Context` with the system prompt, history, and current message.
+9. Build a dynamic system prompt via `build_system_prompt()`, passing the `base_system_prompt`, resolved language, and onboarding hint.
+10. Return a `Context` with the system prompt, history, and current message.
 
 **SQL (step 2):**
 ```sql
@@ -813,13 +815,16 @@ get_or_create_conversation(channel, sender_id)
           |
     ┌─────┴──────────────────────────────────┐
     v                                         v
-SELECT messages                          get_facts(sender_id)
+SELECT messages                          get_facts(sender_id)         [always]
 (newest N, reversed)                          |
     |                                         v
-    |                                   get_recent_summaries(channel, sender_id, 3)
+    |                                   get_recent_summaries(...)     [always]
     |                                         |
     |                                         v
-    |                                   search_messages(text, conv_id, sender_id, 5)
+    |                                   search_messages(...)          [if needs.recall]
+    |                                         |
+    |                                         v
+    |                                   get_tasks_for_sender(...)     [if needs.pending_tasks]
     |                                         |
     |                                         v
     |                                   resolve language:
@@ -844,7 +849,8 @@ history: Vec<ContextEntry>     build_system_prompt(base_system_prompt, facts, su
 - Message query failure propagates as `OmegaError`.
 - `get_facts` failure silently defaults to empty vec (`unwrap_or_default()`).
 - `get_recent_summaries` failure silently defaults to empty vec (`unwrap_or_default()`).
-- `search_messages` failure silently defaults to empty vec (`unwrap_or_default()`).
+- `search_messages` failure silently defaults to empty vec (`unwrap_or_default()`) — only called when `needs.recall` is true.
+- `get_tasks_for_sender` failure silently defaults to empty vec (`unwrap_or_default()`) — only called when `needs.pending_tasks` is true.
 
 ---
 
@@ -1374,38 +1380,15 @@ Related past context:                 ← (only if recall is non-empty)
 - [2024-01-10 16:00:00] User: How do I use tokio::spawn for background tasks...
 - [2024-01-08 11:30:00] User: I need to set up nginx reverse proxy for port 8080...
 
+User's scheduled tasks:               ← (only if pending_tasks is non-empty)
+- [a1b2c3d4] Call John (due: 2026-02-17 15:00:00, once)
+- [e5f6g7h8] Check deployment [action] (due: 2026-02-18 09:00:00, daily)
+
 IMPORTANT: Always respond in Spanish.  ← (always present, uses language parameter)
 
 If the user explicitly asks you to change language (e.g. 'speak in French'),
 respond in the requested language. Include LANG_SWITCH: <language> on its own line
 at the END of your response.
-
-To schedule a task, include this marker on its own line at the END of your response:
-SCHEDULE: <description> | <ISO 8601 datetime> | <once|daily|weekly|monthly|weekdays>
-Example: SCHEDULE: Call John | 2026-02-17T15:00:00 | once
-Use this when the user asks for a reminder AND proactively after any action you take
-that warrants follow-up. After every action, ask yourself: does this need a check later?
-If yes, schedule it. An autonomous agent closes its own loops.
-
-To schedule an autonomous action (you will be invoked with full tool access when due):
-SCHEDULE_ACTION: <description> | <ISO 8601 datetime> | <once|daily|weekly|monthly|weekdays>
-Example: SCHEDULE_ACTION: Check deployment status | 2026-02-17T16:00:00 | once
-Use this when the follow-up requires you to actually DO something (run commands, check
-services, analyze data) rather than just remind the user. When the action fires, you
-will be invoked as if the user sent the description as a message, with full tool access.
-
-To add something to your periodic monitoring checklist, include this marker on its
-own line at the END of your response:
-HEARTBEAT_ADD: <description>
-To remove something from monitoring:
-HEARTBEAT_REMOVE: <description>
-Use this when the user asks AND proactively when any action you take needs ongoing
-monitoring. If something you did will evolve over time and could need attention,
-add it to your watchlist. Don't wait to be told to keep an eye on your own actions.
-To change the heartbeat check interval, include this marker on its own line:
-HEARTBEAT_INTERVAL: <minutes>
-Value must be between 1 and 1440 (24 hours). Use when the user asks to change how
-often you check in (e.g., "check every 15 minutes").
 
 ```
 
@@ -1414,12 +1397,11 @@ often you check in (e.g., "check every 15 minutes").
 - Progressive onboarding hint: injected only when a stage transition fires (`onboarding_hint` is `Some(stage)`). Each hint teaches ONE feature and fires exactly once. Stage 0 = intro, 1 = /help, 2 = /personality, 3 = /tasks, 4 = /projects, 5+ = done (no hint). See `onboarding_hint_text()` for details.
 - Summaries section: appended only if `summaries` is non-empty.
 - Recall section: appended only if `recall` is non-empty. Each message is truncated to 200 characters.
+- Pending tasks section: appended only if `pending_tasks` is non-empty. Each task shows `[id_short] description [action] (due: datetime, repeat)`.
 - Language directive: always appended (unconditional). Uses the `language` parameter.
 - LANG_SWITCH instruction: always appended (unconditional). Tells the provider to include a `LANG_SWITCH:` marker when the user explicitly asks to change language.
-- SCHEDULE marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE:` marker line when the user requests a reminder or scheduled task, AND proactively when the agent takes an action that needs follow-up.
-- SCHEDULE_ACTION marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE_ACTION:` marker line when the follow-up requires autonomous execution with full tool access rather than a simple reminder.
-- HEARTBEAT_ADD/REMOVE/INTERVAL marker instructions: always appended (unconditional). Tells the provider to include `HEARTBEAT_ADD:` or `HEARTBEAT_REMOVE:` markers when the user requests monitoring changes, AND proactively when the agent takes an action that needs ongoing monitoring. Also includes `HEARTBEAT_INTERVAL:` instruction for dynamic interval changes (1–1440 minutes).
-- SKILL_IMPROVE marker instructions: always appended (unconditional). Tells the provider to include a `SKILL_IMPROVE:` marker when it identifies a skill that could be improved.
+
+**Note:** Marker instructions for SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_ADD/REMOVE/INTERVAL, SKILL_IMPROVE, and LIMITATION are now defined in `SYSTEM_PROMPT.md` conditional sections (within the `## System` section), not in this function. The function still handles: user profile, summaries, recall, pending tasks, language enforcement, onboarding hints, and LANG_SWITCH instruction.
 
 ---
 
@@ -1482,9 +1464,10 @@ often you check in (e.g., "check every 15 minutes").
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                          build_context()                              │
+│                build_context(incoming, base_prompt, needs)             │
 │                                                                       │
 │  IncomingMessage { channel, sender_id, text }                        │
+│  ContextNeeds { recall: bool, pending_tasks: bool }                  │
 │         |                                                             │
 │         v                                                             │
 │  get_or_create_conversation(channel, sender_id)                      │
@@ -1506,16 +1489,21 @@ often you check in (e.g., "check every 15 minutes").
 │               |                                                       │
 │    ┌──────────┼──────────────────────────────────┐                   │
 │    v          v                  v                v                    │
-│  SELECT     get_facts()    get_recent_      search_messages()        │
-│  messages   (sender_id)    summaries()      (text, conv_id,          │
-│  (DESC,     └──┬───┘      (channel,         sender_id, 5)           │
-│   LIMIT N)     |           sender_id, 3)    └──────┬─────┘           │
+│  SELECT     get_facts()    get_recent_      [if needs.recall]        │
+│  messages   (sender_id)    summaries()      search_messages()        │
+│  (DESC,     [always]       (channel,        (text, conv_id,          │
+│   LIMIT N)     |           sender_id, 3)     sender_id, 5)          │
+│    |           |           [always]         └──────┬─────┘           │
 │    |           v           └──┬──────┘             v                  │
 │    v       facts[]            v               recall[]                │
 │  Reverse                 summaries[]               |                  │
 │  to ASC                       |                    |                  │
 │    |                          v                    v                  │
-│    |      build_system_prompt(facts, summaries, recall, text)        │
+│    |                    [if needs.pending_tasks]                      │
+│    |                    get_tasks_for_sender()                        │
+│    |                          |                                       │
+│    |                          v                                       │
+│    |      build_system_prompt(facts, summaries, recall, tasks, ...)  │
 │    v                          |                                       │
 │  history[]                    v                                       │
 │    |                    system_prompt                                  │
@@ -1618,7 +1606,7 @@ All errors are wrapped in `OmegaError::Memory(String)` with descriptive messages
 | `get_open_limitations()` | Propagates errors (caller in heartbeat suppresses with default empty). |
 
 ### Resilience in build_context()
-Facts, summaries, and recalled messages are fetched with `unwrap_or_default()`. This ensures that a failure in retrieving personalization data does not prevent the provider from receiving a valid context. The conversation will still work; it will just lack facts, summaries, or recalled context.
+Facts, summaries, recalled messages, and pending tasks are fetched with `unwrap_or_default()`. This ensures that a failure in retrieving personalization data does not prevent the provider from receiving a valid context. The conversation will still work; it will just lack facts, summaries, recalled context, or task listings. Recall and pending tasks are only loaded when requested via `ContextNeeds`, reducing unnecessary DB queries.
 
 ## Dependencies
 
@@ -1630,7 +1618,7 @@ Facts, summaries, and recalled messages are fetched with `unwrap_or_default()`. 
 
 ### Internal Dependencies
 - `omega_core::config::MemoryConfig` -- Configuration struct.
-- `omega_core::context::{Context, ContextEntry}` -- Context types returned by `build_context()`.
+- `omega_core::context::{Context, ContextEntry, ContextNeeds}` -- Context types returned by and parameterizing `build_context()`.
 - `omega_core::error::OmegaError` -- Error type used for all results.
 - `omega_core::message::{IncomingMessage, OutgoingMessage}` -- Message types used by `build_context()` and `store_exchange()`.
 - `omega_core::shellexpand` -- Home directory expansion utility (replaces local copy).
@@ -1696,12 +1684,10 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 14. Task status is one of `'pending'`, `'delivered'`, or `'cancelled'`.
 15. Recurring tasks stay in `'pending'` status with an advanced `due_at`; one-shot tasks transition to `'delivered'`.
 16. Task cancellation requires sender_id ownership check (users can only cancel their own tasks).
-17. The SCHEDULE marker instruction is always included in the system prompt.
-18. The language directive is always included in the system prompt (uses resolved `preferred_language` fact or auto-detected language).
-19. The LANG_SWITCH marker instruction is always included in the system prompt.
-20. The HEARTBEAT_ADD/REMOVE marker instructions are always included in the system prompt.
-21. The SKILL_IMPROVE marker instruction is always included in the system prompt.
-22. Skill improvement suggestions are deduplicated by title (case-insensitive) — duplicate inserts are silently ignored.
-23. Limitation status is one of `'open'` or `'resolved'` (table retained for SKILL_IMPROVE storage).
-24. The SCHEDULE_ACTION marker instruction is always included in the system prompt.
-25. Task type is one of `'reminder'` or `'action'` — default is `'reminder'`.
+17. The language directive is always included in the system prompt (uses resolved `preferred_language` fact or auto-detected language).
+18. The LANG_SWITCH marker instruction is always included in the system prompt.
+19. Marker instructions (SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_ADD/REMOVE/INTERVAL, SKILL_IMPROVE, LIMITATION) are defined in `SYSTEM_PROMPT.md`, not in `build_system_prompt()`.
+20. Skill improvement suggestions are deduplicated by title (case-insensitive) — duplicate inserts are silently ignored.
+21. Limitation status is one of `'open'` or `'resolved'` (table retained for SKILL_IMPROVE storage).
+22. Task type is one of `'reminder'` or `'action'` — default is `'reminder'`.
+23. `build_context()` conditionally loads recall and pending tasks based on the `ContextNeeds` parameter. Facts and summaries are always loaded.

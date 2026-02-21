@@ -1,5 +1,25 @@
 use serde::{Deserialize, Serialize};
 
+/// Controls which optional context blocks are loaded and injected.
+///
+/// Used by the gateway to skip expensive DB queries (semantic recall, pending tasks)
+/// when the user's message doesn't need them — reducing token overhead by ~55%.
+pub struct ContextNeeds {
+    /// Load semantic recall (FTS5 related past messages).
+    pub recall: bool,
+    /// Load and inject pending scheduled tasks.
+    pub pending_tasks: bool,
+}
+
+impl Default for ContextNeeds {
+    fn default() -> Self {
+        Self {
+            recall: true,
+            pending_tasks: true,
+        }
+    }
+}
+
 /// A single entry in the conversation history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextEntry {

@@ -2,7 +2,7 @@
 
 use omega_core::{
     config::MemoryConfig,
-    context::{Context, ContextEntry},
+    context::{Context, ContextEntry, ContextNeeds},
     error::OmegaError,
     message::{IncomingMessage, OutgoingMessage},
     shellexpand,
@@ -486,6 +486,7 @@ impl Store {
         &self,
         incoming: &IncomingMessage,
         base_system_prompt: &str,
+        needs: &ContextNeeds,
     ) -> Result<Context, OmegaError> {
         let conv_id = self
             .get_or_create_conversation(&incoming.channel, &incoming.sender_id)
@@ -508,7 +509,7 @@ impl Store {
             .map(|(role, content)| ContextEntry { role, content })
             .collect();
 
-        // Fetch facts, summaries, and recalled messages for enriched context.
+        // Facts and summaries are always loaded (small, essential).
         let facts = self
             .get_facts(&incoming.sender_id)
             .await
@@ -517,14 +518,22 @@ impl Store {
             .get_recent_summaries(&incoming.channel, &incoming.sender_id, 3)
             .await
             .unwrap_or_default();
-        let recall = self
-            .search_messages(&incoming.text, &conv_id, &incoming.sender_id, 5)
-            .await
-            .unwrap_or_default();
-        let pending_tasks = self
-            .get_tasks_for_sender(&incoming.sender_id)
-            .await
-            .unwrap_or_default();
+
+        // Semantic recall and pending tasks are conditionally loaded.
+        let recall = if needs.recall {
+            self.search_messages(&incoming.text, &conv_id, &incoming.sender_id, 5)
+                .await
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
+        let pending_tasks = if needs.pending_tasks {
+            self.get_tasks_for_sender(&incoming.sender_id)
+                .await
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
 
         // Resolve language: stored preference > auto-detect > English.
         let language =
@@ -1325,48 +1334,6 @@ fn build_system_prompt(
         "\n\nIf the user explicitly asks you to change language (e.g. 'speak in French'), \
          respond in the requested language. Include LANG_SWITCH: <language> on its own line \
          at the END of your response.",
-    );
-
-    prompt.push_str(
-        "\n\nTo schedule a task, include this marker on its own line at the END of your response:\n\
-         SCHEDULE: <description> | <ISO 8601 datetime> | <once|daily|weekly|monthly|weekdays>\n\
-         Example: SCHEDULE: Call John | 2026-02-17T15:00:00 | once\n\
-         Use this when the user asks for a reminder AND proactively after any action you take \
-         that warrants follow-up. After every action, ask yourself: does this need a check later? \
-         If yes, schedule it. An autonomous agent closes its own loops.",
-    );
-
-    prompt.push_str(
-        "\n\nAction Tasks: For tasks that require you to EXECUTE an action (not just remind), \
-         use this marker on its own line at the END of your response:\n\
-         SCHEDULE_ACTION: <what to do> | <ISO 8601 datetime> | <once|daily|weekly|monthly|weekdays>\n\
-         When the time comes, you will be invoked with full tool access to carry out the action \
-         autonomously. Use SCHEDULE for reminders (user needs to act), SCHEDULE_ACTION for \
-         actions (you need to act).",
-    );
-
-    prompt.push_str(
-        "\n\nTo add something to your periodic monitoring checklist, include this marker on its \
-         own line at the END of your response:\n\
-         HEARTBEAT_ADD: <description>\n\
-         To remove something from monitoring:\n\
-         HEARTBEAT_REMOVE: <description>\n\
-         Use this when the user asks AND proactively when any action you take needs ongoing \
-         monitoring. If something you did will evolve over time and could need attention, \
-         add it to your watchlist. Don't wait to be told to keep an eye on your own actions.\n\
-         To change the heartbeat check interval, include this marker on its own line:\n\
-         HEARTBEAT_INTERVAL: <minutes>\n\
-         Value must be between 1 and 1440 (24 hours). Use when the user asks to change how \
-         often you check in (e.g., \"check every 15 minutes\").",
-    );
-
-    prompt.push_str(
-        "\n\nSelf-Introspection: You are self-aware of your capabilities and limitations. \
-         When you encounter something you CANNOT do but SHOULD be able to (missing tools, \
-         unavailable services, missing integrations), report it using this marker on its own line:\n\
-         LIMITATION: <short title> | <what you can't do and why> | <your proposed plan to fix it>\n\
-         Only report genuine infrastructure/capability gaps, not user-specific requests. \
-         Be specific and actionable in your proposed plan.",
     );
 
     prompt
@@ -2262,7 +2229,11 @@ mod tests {
             reply_target: Some("chat1".to_string()),
             is_group: false,
         };
-        let ctx = store.build_context(&msg, "Base rules").await.unwrap();
+        let needs = ContextNeeds::default();
+        let ctx = store
+            .build_context(&msg, "Base rules", &needs)
+            .await
+            .unwrap();
         assert!(
             ctx.system_prompt.contains("first conversation"),
             "first contact should trigger stage 0 intro"
@@ -2273,14 +2244,20 @@ mod tests {
         store.store_fact(sender, "name", "Alice").await.unwrap();
 
         // Second message: should advance to stage 1 and show /help hint.
-        let ctx2 = store.build_context(&msg, "Base rules").await.unwrap();
+        let ctx2 = store
+            .build_context(&msg, "Base rules", &needs)
+            .await
+            .unwrap();
         assert!(
             ctx2.system_prompt.contains("/help"),
             "after learning name, should show stage 1 /help hint"
         );
 
         // Third message: stage already at 1, no new transition → no hint.
-        let ctx3 = store.build_context(&msg, "Base rules").await.unwrap();
+        let ctx3 = store
+            .build_context(&msg, "Base rules", &needs)
+            .await
+            .unwrap();
         assert!(
             !ctx3.system_prompt.contains("Onboarding hint"),
             "no hint when stage hasn't changed"
