@@ -685,8 +685,9 @@ impl Store {
 
     // --- Scheduled tasks ---
 
-    /// Create a scheduled task. Deduplicates: if a pending task with the same
-    /// sender, description, and due_at already exists, returns the existing ID.
+    /// Create a scheduled task. Deduplicates on two levels:
+    /// 1. Exact match: same sender + description + normalized due_at.
+    /// 2. Fuzzy match: same sender + similar description + due_at within 30 min.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_task(
         &self,
@@ -698,7 +699,9 @@ impl Store {
         repeat: Option<&str>,
         task_type: &str,
     ) -> Result<String, OmegaError> {
-        // Deduplicate: check for existing pending task with same sender + description + due_at.
+        let normalized_due = normalize_due_at(due_at);
+
+        // Level 1: exact dedup on (sender, description, normalized due_at).
         let existing: Option<(String,)> = sqlx::query_as(
             "SELECT id FROM scheduled_tasks \
              WHERE sender_id = ? AND description = ? AND due_at = ? AND status = 'pending' \
@@ -706,7 +709,7 @@ impl Store {
         )
         .bind(sender_id)
         .bind(description)
-        .bind(due_at)
+        .bind(&normalized_due)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| OmegaError::Memory(format!("dedup check failed: {e}")))?;
@@ -714,6 +717,27 @@ impl Store {
         if let Some((id,)) = existing {
             tracing::info!("scheduled task dedup: reusing existing {id}");
             return Ok(id);
+        }
+
+        // Level 2: fuzzy dedup — same sender, similar description, due_at within 30 min.
+        let nearby: Vec<(String, String, String)> = sqlx::query_as(
+            "SELECT id, description, due_at FROM scheduled_tasks \
+             WHERE sender_id = ? AND status = 'pending' \
+             AND abs(strftime('%s', ?) - strftime('%s', due_at)) <= 1800",
+        )
+        .bind(sender_id)
+        .bind(&normalized_due)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("fuzzy dedup check failed: {e}")))?;
+
+        for (existing_id, existing_desc, _) in &nearby {
+            if descriptions_are_similar(description, existing_desc) {
+                tracing::info!(
+                    "scheduled task fuzzy dedup: reusing {existing_id} (similar to new)"
+                );
+                return Ok(existing_id.clone());
+            }
         }
 
         let id = Uuid::new_v4().to_string();
@@ -726,7 +750,7 @@ impl Store {
         .bind(sender_id)
         .bind(reply_target)
         .bind(description)
-        .bind(due_at)
+        .bind(&normalized_due)
         .bind(repeat)
         .bind(task_type)
         .execute(&self.pool)
@@ -737,14 +761,34 @@ impl Store {
     }
 
     /// Get tasks that are due for delivery.
+    #[allow(clippy::type_complexity)]
     pub async fn get_due_tasks(
         &self,
-    ) -> Result<Vec<(String, String, String, String, Option<String>, String)>, OmegaError> {
-        // Returns: (id, channel, reply_target, description, repeat, task_type)
-        let rows: Vec<(String, String, String, String, Option<String>, String)> = sqlx::query_as(
-            "SELECT id, channel, reply_target, description, repeat, task_type \
-             FROM scheduled_tasks \
-             WHERE status = 'pending' AND datetime(due_at) <= datetime('now')",
+    ) -> Result<
+        Vec<(
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+        )>,
+        OmegaError,
+    > {
+        // Returns: (id, channel, sender_id, reply_target, description, repeat, task_type)
+        let rows: Vec<(
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+        )> = sqlx::query_as(
+            "SELECT id, channel, sender_id, reply_target, description, repeat, task_type \
+                 FROM scheduled_tasks \
+                 WHERE status = 'pending' AND datetime(due_at) <= datetime('now')",
         )
         .fetch_all(&self.pool)
         .await
@@ -1363,6 +1407,54 @@ pub fn detect_language(text: &str) -> &'static str {
     }
 }
 
+/// Normalize a datetime string to a consistent format for dedup comparison.
+///
+/// Strips trailing `Z`, replaces `T` separator with space when not followed by
+/// timezone info, so `2026-02-22T07:00:00Z` and `2026-02-22 07:00:00` match.
+fn normalize_due_at(due_at: &str) -> String {
+    let s = due_at.trim_end_matches('Z');
+    s.replacen('T', " ", 1)
+}
+
+/// Check if two task descriptions are semantically similar via word overlap.
+///
+/// Extracts significant words (3+ chars, excluding stop words), returns true
+/// if 50%+ of the smaller word set overlaps with the larger. Requires at least
+/// 3 significant words in each description to avoid false positives on short text.
+fn descriptions_are_similar(a: &str, b: &str) -> bool {
+    let words_a = significant_words(a);
+    let words_b = significant_words(b);
+
+    // Require minimum 3 significant words to avoid false positives on short descriptions.
+    if words_a.len() < 3 || words_b.len() < 3 {
+        return false;
+    }
+
+    let (smaller, larger) = if words_a.len() <= words_b.len() {
+        (&words_a, &words_b)
+    } else {
+        (&words_b, &words_a)
+    };
+
+    let overlap = smaller.iter().filter(|w| larger.contains(w)).count();
+    let threshold = smaller.len().div_ceil(2);
+    overlap >= threshold
+}
+
+/// Extract significant words from text (lowercase, 3+ chars, no stop words).
+fn significant_words(text: &str) -> Vec<String> {
+    const STOP_WORDS: &[&str] = &[
+        "the", "and", "for", "that", "this", "with", "from", "are", "was", "were", "been", "have",
+        "has", "had", "will", "would", "could", "should", "may", "might", "can", "about", "into",
+        "over", "after", "before", "between", "under", "again", "then", "once", "daily", "weekly",
+        "monthly", "cada", "diario", "escribir", "enviar", "usar", "nunca", "siempre", "cada",
+    ];
+    text.split(|c: char| !c.is_alphanumeric())
+        .map(|w| w.to_lowercase())
+        .filter(|w| w.len() >= 3 && !STOP_WORDS.contains(&w.as_str()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1410,7 +1502,7 @@ mod tests {
         let tasks = store.get_tasks_for_sender("user1").await.unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].1, "Call John");
-        assert_eq!(tasks[0].2, "2026-12-31T15:00:00");
+        assert_eq!(tasks[0].2, "2026-12-31 15:00:00");
         assert!(tasks[0].3.is_none());
         assert_eq!(tasks[0].4, "reminder");
     }
@@ -1447,8 +1539,8 @@ mod tests {
 
         let due = store.get_due_tasks().await.unwrap();
         assert_eq!(due.len(), 1);
-        assert_eq!(due[0].3, "Past task");
-        assert_eq!(due[0].5, "reminder");
+        assert_eq!(due[0].4, "Past task");
+        assert_eq!(due[0].6, "reminder");
     }
 
     #[tokio::test]
@@ -1709,10 +1801,10 @@ mod tests {
 
         let due = store.get_due_tasks().await.unwrap();
         assert_eq!(due.len(), 2);
-        let reminder = due.iter().find(|t| t.3 == "Reminder task").unwrap();
-        let action = due.iter().find(|t| t.3 == "Action task").unwrap();
-        assert_eq!(reminder.5, "reminder");
-        assert_eq!(action.5, "action");
+        let reminder = due.iter().find(|t| t.4 == "Reminder task").unwrap();
+        let action = due.iter().find(|t| t.4 == "Action task").unwrap();
+        assert_eq!(reminder.6, "reminder");
+        assert_eq!(action.6, "action");
     }
 
     #[tokio::test]
@@ -2219,5 +2311,123 @@ mod tests {
         let resolved = store.resolve_sender_id("phone123").await.unwrap();
         let facts = store.get_facts(&resolved).await.unwrap();
         assert!(facts.iter().any(|(k, v)| k == "name" && v == "Alice"));
+    }
+
+    #[test]
+    fn test_normalize_due_at_strips_z() {
+        assert_eq!(
+            normalize_due_at("2026-02-22T07:00:00Z"),
+            "2026-02-22 07:00:00"
+        );
+    }
+
+    #[test]
+    fn test_normalize_due_at_replaces_t() {
+        assert_eq!(
+            normalize_due_at("2026-02-22T07:00:00"),
+            "2026-02-22 07:00:00"
+        );
+    }
+
+    #[test]
+    fn test_normalize_due_at_already_normalized() {
+        assert_eq!(
+            normalize_due_at("2026-02-22 07:00:00"),
+            "2026-02-22 07:00:00"
+        );
+    }
+
+    #[test]
+    fn test_descriptions_similar_email_variants() {
+        assert!(descriptions_are_similar(
+            "Enviar email de amor diario a Adriana (adri_navega@hotmail.com)",
+            "Enviar email de amor diario a Adriana (adri_navega@hotmail.com) — escribir un mensaje"
+        ));
+    }
+
+    #[test]
+    fn test_descriptions_similar_hostinger() {
+        assert!(descriptions_are_similar(
+            "Cancel Hostinger plan — expires March 17",
+            "Cancel Hostinger VPS — last reminder, expires TOMORROW"
+        ));
+    }
+
+    #[test]
+    fn test_descriptions_different() {
+        assert!(!descriptions_are_similar(
+            "Send good morning message to the team",
+            "Cancel Hostinger plan and subscription"
+        ));
+    }
+
+    #[test]
+    fn test_descriptions_short_skipped() {
+        // Short descriptions (< 3 significant words) skip fuzzy matching.
+        assert!(!descriptions_are_similar("Reminder task", "Action task"));
+    }
+
+    #[tokio::test]
+    async fn test_create_task_fuzzy_dedup() {
+        let store = test_store().await;
+
+        // Create first task.
+        let id1 = store
+            .create_task(
+                "telegram",
+                "user1",
+                "reply1",
+                "Send daily email to Adriana",
+                "2026-02-22 07:00:00",
+                Some("daily"),
+                "action",
+            )
+            .await
+            .unwrap();
+
+        // Same task with different datetime format — should dedup.
+        let id2 = store
+            .create_task(
+                "telegram",
+                "user1",
+                "reply1",
+                "Send daily email to Adriana",
+                "2026-02-22T07:00:00Z",
+                Some("daily"),
+                "action",
+            )
+            .await
+            .unwrap();
+        assert_eq!(id1, id2, "exact dedup with normalized datetime");
+
+        // Similar description, same time window — should fuzzy dedup.
+        let id3 = store
+            .create_task(
+                "telegram",
+                "user1",
+                "reply1",
+                "Send daily love email to Adriana via gmail",
+                "2026-02-22 07:05:00",
+                Some("daily"),
+                "action",
+            )
+            .await
+            .unwrap();
+        assert_eq!(id1, id3, "fuzzy dedup: similar description within 30min");
+
+        // Different sender — should NOT dedup.
+        let id4 = store
+            .create_task(
+                "telegram",
+                "user2",
+                "reply2",
+                "Send daily email to Adriana",
+                "2026-02-22 07:00:00",
+                Some("daily"),
+                "action",
+            )
+            .await
+            .unwrap();
+        assert_ne!(id1, id4, "different sender should create new task");
     }
 }

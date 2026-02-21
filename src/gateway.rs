@@ -372,7 +372,16 @@ impl Gateway {
 
             match store.get_due_tasks().await {
                 Ok(tasks) => {
-                    for (id, channel_name, reply_target, description, repeat, task_type) in &tasks {
+                    for (
+                        id,
+                        channel_name,
+                        sender_id,
+                        reply_target,
+                        description,
+                        repeat,
+                        task_type,
+                    ) in &tasks
+                    {
                         if task_type == "action" {
                             // --- Action task: invoke provider ---
                             info!("scheduler: executing action task {id}: {description}");
@@ -412,7 +421,7 @@ impl Gateway {
                                             match store
                                                 .create_task(
                                                     channel_name,
-                                                    "",
+                                                    sender_id,
                                                     reply_target,
                                                     &desc,
                                                     &due,
@@ -445,7 +454,7 @@ impl Gateway {
                                             match store
                                                 .create_task(
                                                     channel_name,
-                                                    "",
+                                                    sender_id,
                                                     reply_target,
                                                     &desc,
                                                     &due,
@@ -483,7 +492,7 @@ impl Gateway {
                                     // Process CANCEL_TASK markers from action response.
                                     for id_prefix in extract_all_cancel_tasks(&text) {
                                         match store
-                                            .cancel_task(&id_prefix, "")
+                                            .cancel_task(&id_prefix, sender_id)
                                             .await
                                         {
                                             Ok(true) => info!(
@@ -507,7 +516,7 @@ impl Gateway {
                                             match store
                                                 .update_task(
                                                     &id_prefix,
-                                                    "",
+                                                    sender_id,
                                                     desc.as_deref(),
                                                     due_at.as_deref(),
                                                     repeat.as_deref(),

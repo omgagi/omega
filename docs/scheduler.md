@@ -84,7 +84,11 @@ The confirmation is localized to the user's preferred language.
 
 ### Duplicate Prevention
 
-The gateway checks all newly created tasks against the user's existing pending tasks using word-overlap similarity (`descriptions_are_similar()` in `task_confirmation.rs`). If a similar task exists, the confirmation includes a warning. The system prompt also instructs the AI to review existing tasks before creating new ones and to never pre-confirm task creation in its response text.
+Task deduplication operates at two levels:
+
+1. **Storage-level dedup** (in `create_task()`): Before inserting, the store checks for (a) exact match on sender + description + normalized datetime, and (b) fuzzy match — same sender, similar description (word overlap ≥ 50%, min 3 significant words), and `due_at` within 30 minutes. Datetime normalization ensures `2026-02-22T07:00:00Z` and `2026-02-22 07:00:00` are treated as identical. If either check matches, the existing task ID is returned without creating a duplicate.
+
+2. **Confirmation-level warning** (in `task_confirmation.rs`): The gateway checks all newly created tasks against the user's existing pending tasks using `descriptions_are_similar()`. If a similar task exists, the confirmation includes a warning. The system prompt also instructs the AI to review existing tasks before creating new ones and to never pre-confirm task creation in its response text.
 
 ### Step 4: The Scheduler Delivers
 

@@ -171,14 +171,16 @@ pub struct Gateway {
 **Logic:**
 1. Loop forever with `poll_secs`-second sleep between iterations.
 2. Call `store.get_due_tasks()` to find tasks where `status = 'pending'` and `due_at <= now`.
-3. For each due task `(id, channel_name, reply_target, description, repeat)`:
-   - Build an `OutgoingMessage` with text `"Reminder: {description}"` and `reply_target`.
+3. For each due task `(id, channel_name, sender_id, reply_target, description, repeat, task_type)`:
+   - **Action tasks:** invoke the provider with full tool/MCP access, process response markers (SCHEDULE, SCHEDULE_ACTION, CANCEL_TASK, UPDATE_TASK, HEARTBEAT) using the task's `sender_id` for nested operations, send non-empty response to channel.
+   - **Reminder tasks:** Build an `OutgoingMessage` with text `"Reminder: {description}"` and `reply_target`.
    - Look up the channel by `channel_name` in the channels map.
    - If channel not found, log warning and skip.
    - Send the message via `channel.send()`.
    - If send fails, log error and skip to next task.
    - Call `store.complete_task(id, repeat)` to mark task as delivered (one-shot) or advance `due_at` (recurring).
    - Log success.
+   - **Note:** `sender_id` is propagated from the parent task to all nested task operations (create, cancel, update), ensuring correct ownership.
 4. Log errors from `get_due_tasks()` but continue the loop.
 
 **Async Patterns:**

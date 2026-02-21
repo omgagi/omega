@@ -882,7 +882,7 @@ INSERT INTO messages (id, conversation_id, role, content, metadata_json) VALUES 
 
 #### `async fn create_task(&self, channel: &str, sender_id: &str, reply_target: &str, description: &str, due_at: &str, repeat: Option<&str>, task_type: &str) -> Result<String, OmegaError>`
 
-**Purpose:** Create a new scheduled task.
+**Purpose:** Create a new scheduled task with two-level deduplication.
 
 **Parameters:**
 
@@ -892,11 +892,17 @@ INSERT INTO messages (id, conversation_id, role, content, metadata_json) VALUES 
 | `sender_id` | `&str` | User who created the task. |
 | `reply_target` | `&str` | Platform-specific delivery target (e.g., chat ID). |
 | `description` | `&str` | Human-readable task description. |
-| `due_at` | `&str` | ISO 8601 datetime when the task is due. |
+| `due_at` | `&str` | ISO 8601 datetime when the task is due (normalized before storage). |
 | `repeat` | `Option<&str>` | Recurrence pattern (`None` for one-shot, `Some("daily")`, etc.). |
 | `task_type` | `&str` | Task type: `"reminder"` (simple delivery) or `"action"` (provider-backed execution). |
 
-**Returns:** `Result<String, OmegaError>` -- the UUID of the created task.
+**Returns:** `Result<String, OmegaError>` -- the UUID of the created (or reused) task.
+
+**Deduplication (two levels):**
+1. **Exact match:** Same sender + description + normalized `due_at` → returns existing task ID.
+2. **Fuzzy match:** Same sender + similar description (word overlap ≥ 50%, min 3 significant words) + `due_at` within 30 minutes → returns existing task ID.
+
+**Datetime normalization:** `due_at` is normalized before comparison and storage — trailing `Z` stripped, `T` separator replaced with space (e.g., `2026-02-22T07:00:00Z` → `2026-02-22 07:00:00`).
 
 **SQL:**
 ```sql
@@ -904,21 +910,21 @@ INSERT INTO scheduled_tasks (id, channel, sender_id, reply_target, description, 
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ```
 
-**Called by:** `gateway.rs::handle_message()` Stage 5b (SCHEDULE and SCHEDULE_ACTION marker extraction).
+**Called by:** `gateway.rs::handle_message()` Stage 5b (SCHEDULE and SCHEDULE_ACTION marker extraction), `gateway.rs::scheduler_loop()` for nested tasks from action responses.
 
 ---
 
-#### `async fn get_due_tasks(&self) -> Result<Vec<(String, String, String, String, Option<String>, String)>, OmegaError>`
+#### `async fn get_due_tasks(&self) -> Result<Vec<(String, String, String, String, String, Option<String>, String)>, OmegaError>`
 
 **Purpose:** Get tasks that are due for delivery (status is pending and due_at is in the past or now).
 
 **Parameters:** None.
 
-**Returns:** `Result<Vec<(String, String, String, String, Option<String>, String)>, OmegaError>` where each tuple is `(id, channel, reply_target, description, repeat, task_type)`.
+**Returns:** `Result<Vec<(String, String, String, String, String, Option<String>, String)>, OmegaError>` where each tuple is `(id, channel, sender_id, reply_target, description, repeat, task_type)`.
 
 **SQL:**
 ```sql
-SELECT id, channel, reply_target, description, repeat, task_type
+SELECT id, channel, sender_id, reply_target, description, repeat, task_type
 FROM scheduled_tasks
 WHERE status = 'pending' AND datetime(due_at) <= datetime('now')
 ```
