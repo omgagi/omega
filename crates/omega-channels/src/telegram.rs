@@ -422,6 +422,13 @@ impl Channel for TelegramChannel {
                         continue;
                     }
 
+                    // Drop group messages — OMEGA only interacts person-to-person.
+                    let is_group = matches!(msg.chat.chat_type.as_str(), "group" | "supergroup");
+                    if is_group {
+                        debug!("telegram: ignoring group message from chat {}", msg.chat.id);
+                        continue;
+                    }
+
                     let sender_name = if let Some(ref un) = user.username {
                         format!("@{un}")
                     } else if let Some(ref ln) = user.last_name {
@@ -429,8 +436,6 @@ impl Channel for TelegramChannel {
                     } else {
                         user.first_name.clone()
                     };
-
-                    let is_group = matches!(msg.chat.chat_type.as_str(), "group" | "supergroup");
 
                     let incoming = IncomingMessage {
                         id: Uuid::new_v4(),
@@ -442,7 +447,7 @@ impl Channel for TelegramChannel {
                         reply_to: None,
                         attachments,
                         reply_target: Some(msg.chat.id.to_string()),
-                        is_group,
+                        is_group: false,
                     };
 
                     if tx.send(incoming).await.is_err() {

@@ -117,7 +117,7 @@ Note: `message_id` and `from` are marked `#[allow(dead_code)]` -- `message_id` i
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `i64` | Unique chat identifier; used as `reply_target` |
-| `chat_type` | `String` | Chat type from the Telegram API: `"private"`, `"group"`, `"supergroup"`, or `"channel"`. Annotated with `#[serde(default, rename = "type")]` to map from the JSON `type` field and default to an empty string if missing. Used to set `is_group` on `IncomingMessage`. |
+| `chat_type` | `String` | Chat type from the Telegram API: `"private"`, `"group"`, `"supergroup"`, or `"channel"`. Annotated with `#[serde(default, rename = "type")]` to map from the JSON `type` field and default to an empty string if missing. Group/supergroup messages are dropped immediately at the channel level. |
 
 ---
 
@@ -268,7 +268,7 @@ For each `TgUpdate` in the response:
 | `reply_to` | `None` |
 | `attachments` | Photo attachments from downloaded images, empty Vec otherwise |
 | `reply_target` | `Some(chat.id.to_string())` |
-| `is_group` | `true` if `chat.chat_type` is `"group"` or `"supergroup"`, `false` otherwise |
+| `is_group` | Always `false` (group messages are dropped at channel level before reaching the gateway) |
 
 ---
 

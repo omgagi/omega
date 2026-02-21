@@ -385,12 +385,6 @@ pub struct Gateway {
   - Other channels: no hint injected.
 - This hint is appended to the system prompt before context building.
 
-**Stage 3c: Group Chat Rules Injection**
-- If `incoming.is_group` is `true`, append group-specific rules to the system prompt:
-  - Only respond when directly mentioned by name, asked a question, or adding genuine value.
-  - Do not leak personal facts from private conversations.
-  - If the message does not warrant a response, reply with exactly `SILENT`.
-
 **Stage 4: Typing Indicator (Lines 322-342)**
 - Get the channel for the incoming message.
 - If channel exists and incoming has a `reply_target`, spawn a repeating task:
@@ -452,13 +446,6 @@ pub struct Gateway {
   - Audit the error with status `AuditStatus::Error`.
   - Send friendly error message.
   - Return.
-
-**Stage 5a: SILENT Response Suppression (Group Chats)**
-- After receiving the provider response and aborting the typing indicator:
-- If `incoming.is_group` is `true` AND `response.text.trim()` equals `"SILENT"`:
-  - Log info about the suppression.
-  - Return immediately (skip storage, audit, and sending).
-  - This prevents the bot from sending empty or unwanted responses in group chats.
 
 **Stage 5: Classify and Route (Model Selection)**
 - After SILENT suppression check:
@@ -1127,9 +1114,7 @@ All interactions are logged to SQLite with:
 13. Heartbeat loop only runs when `heartbeat_config.enabled` is true.
 14. Heartbeat alerts are suppressed when the provider response contains `HEARTBEAT_OK` (after stripping markdown formatting).
 15. Status updater is aborted when provider result arrives.
-16. When `is_group` is true and the provider response is `SILENT`, the response is suppressed (not stored, not audited, not sent).
-17. Platform formatting hints are injected into the system prompt based on `incoming.channel` (WhatsApp avoids markdown tables/headers; Telegram supports full markdown).
-18. Group chat rules are injected into the system prompt when `incoming.is_group` is `true`.
+16. Platform formatting hints are injected into the system prompt based on `incoming.channel` (WhatsApp avoids markdown tables/headers; Telegram supports full markdown).
 19. Heartbeat loop skips API calls entirely when no checklist file (`~/.omega/HEARTBEAT.md`) is configured.
 20. Heartbeat prompt is enriched with user facts and recent conversation summaries from memory.
 21. HEARTBEAT_ADD:, HEARTBEAT_REMOVE:, and HEARTBEAT_INTERVAL: markers are stripped from the response before sending to the user. Adds are appended to `~/.omega/HEARTBEAT.md`; removes use case-insensitive partial matching and never remove comment lines. HEARTBEAT_INTERVAL: updates the shared `AtomicU64` interval (valid range: 1–1440 minutes) and sends a localized confirmation notification (via `i18n::heartbeat_interval_updated()`) to the owner via the heartbeat channel.

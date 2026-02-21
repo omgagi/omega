@@ -1081,16 +1081,6 @@ impl Gateway {
                 _ => {}
             }
 
-            // Group chat awareness.
-            if incoming.is_group {
-                prompt.push_str(
-                    "\n\nThis is a GROUP CHAT. Only respond when directly mentioned by name, \
-                     asked a question, or you can add genuine value. Do not leak personal facts \
-                     from private conversations. If the message does not warrant a response, \
-                     reply with exactly SILENT on its own line.",
-                );
-            }
-
             // Determine once whether the active project is trading-related.
             let is_trading_project = active_project
                 .as_deref()
@@ -1309,15 +1299,6 @@ impl Gateway {
         // Stop typing indicator.
         if let Some(h) = typing_handle {
             h.abort();
-        }
-
-        // --- 5a. SUPPRESS SILENT RESPONSES (group chats) ---
-        if incoming.is_group && response.text.trim() == "SILENT" {
-            info!(
-                "[{}] group chat: suppressing SILENT response",
-                incoming.channel
-            );
-            return;
         }
 
         // --- 5. PROCESS MARKERS ---

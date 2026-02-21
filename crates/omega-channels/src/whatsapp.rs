@@ -383,21 +383,20 @@ async fn handle_whatsapp_message(
         is_group, info.source.is_from_me, info.source.sender.user, info.source.chat.user,
     );
 
+    // Only process self-chat (personal messages to yourself). Drop all group messages.
     if is_group {
-        if info.source.is_from_me {
-            return;
-        }
-    } else {
-        if !info.source.is_from_me {
-            return;
-        }
-        if info.source.sender.user != info.source.chat.user {
-            debug!(
-                "WA filtered: sender '{}' != chat '{}'",
-                info.source.sender.user, info.source.chat.user
-            );
-            return;
-        }
+        debug!("WA filtered: ignoring group message");
+        return;
+    }
+    if !info.source.is_from_me {
+        return;
+    }
+    if info.source.sender.user != info.source.chat.user {
+        debug!(
+            "WA filtered: sender '{}' != chat '{}'",
+            info.source.sender.user, info.source.chat.user
+        );
+        return;
     }
 
     let msg_id = info.id.clone();
@@ -442,11 +441,7 @@ async fn handle_whatsapp_message(
         .unwrap_or("")
         .to_string();
 
-    // In group chats, never download images or audio — processing other
-    // people's media is a privacy violation. Text-only messages still pass.
-    let skip_media = is_group;
-
-    let (text, attachments) = if !skip_media {
+    let (text, attachments) = {
         if let Some(ref img) = inner.image_message {
             let caption = img.caption.as_deref().unwrap_or("[Photo]").to_string();
             let wa_client = { client_store.lock().await.clone() };
@@ -517,12 +512,6 @@ async fn handle_whatsapp_message(
         } else {
             (text, Vec::new())
         }
-    } else if text.is_empty() {
-        // Group media-only message (no text/caption) — skip entirely.
-        return;
-    } else {
-        // Group message with text — process text only, no media.
-        (text, Vec::new())
     };
 
     let chat_jid = info.source.chat.to_string();
@@ -542,7 +531,7 @@ async fn handle_whatsapp_message(
         reply_to: None,
         attachments,
         reply_target: Some(chat_jid),
-        is_group,
+        is_group: false,
     };
 
     if tx.send(incoming).await.is_err() {

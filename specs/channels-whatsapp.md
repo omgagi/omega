@@ -101,13 +101,12 @@ pub struct WhatsAppChannel {
 
 ### Message Processing Pipeline
 
-1. **Group-aware filter**: Check `info.source.is_group`. In groups: skip `is_from_me` messages (don't echo ourselves), **skip all image and audio attachments** (privacy: never download other people's media). In personal chats: only process self-chat (`is_from_me` + `sender.user == chat.user`)
+1. **Group filter**: If `info.source.is_group`, drop immediately with debug log. Only self-chat is processed (`is_from_me` + `sender.user == chat.user`)
 2. **Echo prevention**: Check `sent_ids` set — if message ID matches a sent message, skip it
 3. **Auth check**: Verify sender phone is in `allowed_users` (or list is empty)
 4. **Unwrap wrappers**: Extract inner message from `DeviceSentMessage`, `EphemeralMessage`, or `ViewOnceMessage` containers
 5. **Text extraction**: Read from `conversation` or `extended_text_message.text`
-6. **Media gate**: If `is_group`, skip all media processing (image/audio). Media-only group messages are dropped; group messages with text+media keep only the text.
-7. **Image handling** (personal chats only): Check `inner.image_message`. If an image message is found:
+6. **Image handling**: Check `inner.image_message`. If an image message is found:
    - Extract caption from `img.caption` (defaults to `"[Photo]"` if empty)
    - Acquire the client from `client_store` (lock, clone, drop)
    - Download image bytes via `wa_client.download(img.as_ref())` (`ImageMessage` implements `Downloadable`)
@@ -115,14 +114,14 @@ pub struct WhatsAppChannel {
    - Build `Attachment { file_type: Image, data: Some(bytes), filename: Some("{uuid}.{ext}") }`
    - Set text to the caption
    - On download failure, log a warning and skip the message
-8. **Voice handling** (personal chats only): If no text or image, check `inner.audio_message`. If present and `whisper_api_key` is configured:
+7. **Voice handling**: If no text or image, check `inner.audio_message`. If present and `whisper_api_key` is configured:
    - Download audio bytes via `wa_client.download(audio.as_ref())`
    - Transcribe via `crate::whisper::transcribe_whisper()` (shared with Telegram)
    - Inject as `"[Voice message] {transcript}"`
    - Skip with debug log if no whisper key
-9. **Empty guard**: If text is still empty and no image/voice was processed, skip the message
+8. **Empty guard**: If text is still empty and no image/voice was processed, skip the message
 9. **Sender name**: Use `info.push_name` when available, fall back to phone number
-10. **Forward**: Send `IncomingMessage` (with `is_group` flag, `attachments` if applicable) to gateway via mpsc channel
+10. **Forward**: Send `IncomingMessage` (with `is_group: false`, `attachments` if applicable) to gateway via mpsc channel
 
 ---
 
@@ -189,8 +188,8 @@ No second bot is created — `restart_for_pairing()` replaces the current bot in
 | `channel` | `"whatsapp"` |
 | `sender_id` | Phone number (e.g. `"5511999887766"`) |
 | `sender_name` | `push_name` from WhatsApp profile when available, falls back to phone number |
-| `reply_target` | Chat JID (e.g. `"5511999887766@s.whatsapp.net"` for personal, `"120363...@g.us"` for groups) |
-| `is_group` | `true` for group chats (`@g.us`), `false` for personal chats |
+| `reply_target` | Chat JID (e.g. `"5511999887766@s.whatsapp.net"`) |
+| `is_group` | Always `false` (group messages are dropped at channel level) |
 | `attachments` | Empty for text-only messages; contains `Attachment { file_type: Image, data: Some(bytes), filename: Some("{uuid}.{ext}") }` for image messages |
 
 ### Outgoing (Gateway → WhatsApp)

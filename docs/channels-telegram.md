@@ -222,15 +222,9 @@ If the photo download fails, the message is silently skipped (logged as a warnin
 
 ---
 
-## Group Chat Awareness
+## Private Chat Only
 
-The Telegram channel detects group chats using the `type` field from the Telegram Bot API's `Chat` object. When the chat type is `"group"` or `"supergroup"`, the `is_group` flag on `IncomingMessage` is set to `true`.
-
-When `is_group` is true, the gateway:
-
-1. **Injects group-specific rules** into the system prompt, instructing the AI to only respond when directly mentioned, asked a question, or when it can add genuine value.
-2. **Suppresses SILENT responses** -- the AI can reply with exactly `SILENT` to indicate it should stay quiet, and the gateway silently drops the message instead of sending it.
-3. **Prevents personal fact leakage** -- the group-chat rules instruct the AI not to reveal facts learned in private conversations.
+The Telegram channel only processes private (direct) messages. Group and supergroup messages are detected using the `type` field from the Telegram Bot API's `Chat` object and dropped immediately at the channel level — they never reach the gateway.
 
 ## Limitations
 
