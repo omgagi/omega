@@ -287,7 +287,7 @@ All our architecture must be monolithic and modular, like Legos.
 
 5. **Post-Implementation Prompt**: After every modification or new implementation is complete, always ask: **"Do you want to make a commit and push?"**
 
-6. **Prompt Sync**: When `prompts/SYSTEM_PROMPT.md` or `prompts/WELCOME.toml` is modified, **always** delete the runtime copy (`rm -f ~/.omega/SYSTEM_PROMPT.md` / `rm -f ~/.omega/WELCOME.toml`) **before** rebuilding. The binary auto-deploys fresh copies on startup when the files are missing. Without this step, the runtime reads a stale copy and changes have no effect.
+6. **Prompt Sync**: When `prompts/SYSTEM_PROMPT.md` or `prompts/WELCOME.toml` is modified, **always** delete the runtime copy (`rm -f ~/.omega/prompts/SYSTEM_PROMPT.md` / `rm -f ~/.omega/prompts/WELCOME.toml`) **before** rebuilding. The binary auto-deploys fresh copies on startup when the files are missing. Without this step, the runtime reads a stale copy and changes have no effect.
 
 7. **Output Filtering**: Always filter verbose output:
 Apply always outour redirection to a /tmp/ folder to avoid polluting the console to later apply filters.
@@ -321,7 +321,7 @@ Message → Dispatch (buffer if sender busy, ack) → Auth → Sanitize → Inbo
 
 Non-blocking message handling: Gateway wraps in `Arc<Self>`, spawns each message as a concurrent task via `tokio::spawn`. Messages from the same sender are serialized — if a sender has an active provider call, new messages are buffered with a "Got it, I'll get to this next." ack, then processed in order after the active call completes.
 
-Self-audit: OMEGA's system prompt includes a self-audit instruction — when behavior doesn't match expectations (wrong output, silent failures, unverifiable claims), OMEGA flags it immediately. The audit trail at `~/.omega/memory.db` is exposed to OMEGA so it can query its own `audit_log`, `conversations`, and `facts` tables to verify its behavior.
+Self-audit: OMEGA's system prompt includes a self-audit instruction — when behavior doesn't match expectations (wrong output, silent failures, unverifiable claims), OMEGA flags it immediately. The audit trail at `~/.omega/data/memory.db` is exposed to OMEGA so it can query its own `audit_log`, `conversations`, and `facts` tables to verify its behavior.
 
 Autonomous model routing: Every message gets a fast complexity-aware Sonnet classification call (tiny prompt enriched with ~90 tokens of context — active project, last 3 messages, skill names — no system prompt, no MCP, no tool access via `--allowedTools ""`, max_turns=1) that routes based on task complexity, not count. Routine actions (reminders, scheduling, lookups) are always DIRECT regardless of quantity; step lists are reserved for genuinely complex work (multi-file code changes, deep research, building, sequential dependencies). When in doubt, prefers DIRECT. DIRECT responses are handled by Sonnet (fast, cheap). Step lists are executed by Opus (powerful) — each step runs in a fresh provider call with accumulated context, progress reported after each step, failures retried up to 3 times, final summary sent.
 
@@ -337,7 +337,7 @@ Progressive onboarding: Stage-based system tracked by an `onboarding_stage` fact
 
 Background loops (spawned in `gateway::run()`):
 - **Scheduler**: polls `scheduled_tasks` table every 60s, delivers due reminders via channel, executes action tasks via provider with full tool/MCP access
-- **Heartbeat**: clock-aligned periodic context-aware provider check-in (default 30min, fires at clean boundaries like :00/:30, dynamic via `HEARTBEAT_INTERVAL:` marker + `Arc<AtomicU64>`), enriched with user facts + recent summaries, full Identity/Soul/System prompt attached (same as scheduler action tasks), skips when no `~/.omega/HEARTBEAT.md` checklist is configured, suppresses `HEARTBEAT_OK`, alerts otherwise. Current interval is injected into the system prompt so OMEGA can report it when asked. Interval-change notifications are localized via `i18n::heartbeat_interval_updated()`.
+- **Heartbeat**: clock-aligned periodic context-aware provider check-in (default 30min, fires at clean boundaries like :00/:30, dynamic via `HEARTBEAT_INTERVAL:` marker + `Arc<AtomicU64>`), enriched with user facts + recent summaries, full Identity/Soul/System prompt attached (same as scheduler action tasks), skips when no `~/.omega/prompts/HEARTBEAT.md` checklist is configured, suppresses `HEARTBEAT_OK`, alerts otherwise. Current interval is injected into the system prompt so OMEGA can report it when asked. Interval-change notifications are localized via `i18n::heartbeat_interval_updated()`.
 - **CLAUDE.md maintenance** (`src/claudemd.rs`): On startup, if provider is `claude-code` and `~/.omega/workspace/CLAUDE.md` doesn't exist, spawns `claude -p` to create it (explores workspace, skills, projects). Background loop refreshes it every 24 hours. Direct subprocess call (not Provider trait). Non-fatal — warnings on failure, never blocks startup.
 
 Proactive self-scheduling: After every action it takes, the AI evaluates: "Does this need follow-up?" If yes, it uses SCHEDULE (for time-based checks) or HEARTBEAT_ADD (for ongoing monitoring) autonomously — no user request needed. This applies universally to any context, not just specific domains. The Identity section and injected marker instructions both reinforce this: an autonomous agent closes its own loops.
@@ -387,18 +387,18 @@ cargo build --release        # Optimized binary
 ## File Conventions
 
 - Config: `config.toml` (gitignored), `config.example.toml` (committed)
-- Database: `~/.omega/memory.db`
+- Database: `~/.omega/data/memory.db`
 - Prompt templates: `prompts/SYSTEM_PROMPT.md` (3 sections: `## Identity`, `## Soul`, `## System`), `prompts/WELCOME.toml` (bundled into binary via `include_str!`)
-- Prompts: `~/.omega/SYSTEM_PROMPT.md` (auto-deployed on first run, `## Identity` + `## Soul` + `## System` sections, read at startup)
-- Welcome messages: `~/.omega/WELCOME.toml` (auto-deployed on first run, `[messages]` table keyed by language, read at startup)
+- Prompts: `~/.omega/prompts/SYSTEM_PROMPT.md` (auto-deployed on first run, `## Identity` + `## Soul` + `## System` sections, read at startup)
+- Welcome messages: `~/.omega/prompts/WELCOME.toml` (auto-deployed on first run, `[messages]` table keyed by language, read at startup)
 - Skills: `~/.omega/skills/*/SKILL.md` (auto-deployed on first run, TOML or YAML frontmatter + instructions, scanned at startup)
 - Projects: `~/.omega/projects/*/ROLE.md` (user-created or AI-created, directory name = project name, hot-reloaded per message)
 - Workspace: `~/.omega/workspace/` (sandbox working directory, created on startup)
 - Workspace CLAUDE.md: `~/.omega/workspace/CLAUDE.md` (auto-created by `claudemd.rs` on first run via `claude -p`, refreshed every 24h — gives Claude Code subprocess persistent workspace context)
 - Inbox: `~/.omega/workspace/inbox/` (temporary storage for incoming image attachments, auto-cleaned after provider response)
-- Heartbeat checklist: `~/.omega/HEARTBEAT.md` (optional, read by heartbeat loop)
+- Heartbeat checklist: `~/.omega/prompts/HEARTBEAT.md` (optional, read by heartbeat loop)
 - Bug reports: `~/.omega/BUG.md` (auto-created by BUG_REPORT: marker, date-grouped entries)
-- Logs: `~/.omega/omega.log`
+- Logs: `~/.omega/logs/omega.log`
 - Service (macOS): `~/Library/LaunchAgents/com.omega-cortex.omega.plist`
 - Service (Linux): `~/.config/systemd/user/omega.service`
 

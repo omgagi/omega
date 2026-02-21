@@ -107,7 +107,7 @@ omega_core
 | `default_ollama_base_url()` | `String` | `"http://localhost:11434"` |
 | `default_ollama_model()` | `String` | `"llama3"` |
 | `default_memory_backend()` | `String` | `"sqlite"` |
-| `default_db_path()` | `String` | `"~/.omega/memory.db"` |
+| `default_db_path()` | `String` | `"~/.omega/data/memory.db"` |
 | `default_max_context()` | `usize` | `50` |
 
 **`load()` Flow:**

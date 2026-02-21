@@ -107,7 +107,7 @@ Beyond skill improvement, OMEGA monitors its own behavior for anomalies. The sel
 - Tools fail silently
 - Results don't add up
 
-OMEGA has read access to its own audit trail at `~/.omega/memory.db`:
+OMEGA has read access to its own audit trail at `~/.omega/data/memory.db`:
 - `audit_log` — every exchange with model used, processing time, status
 - `conversations` — conversation history
 - `facts` — user profile data

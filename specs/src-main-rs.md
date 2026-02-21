@@ -235,7 +235,7 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
 
 5. **Initialize memory**
    - Create Store instance with config settings
-   - Opens SQLite database at `~/.omega/memory.db`
+   - Opens SQLite database at `~/.omega/data/memory.db`
    - Creates tables if first run
 
 6. **Run self-checks**

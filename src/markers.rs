@@ -463,10 +463,10 @@ pub fn strip_heartbeat_markers(text: &str) -> String {
         .to_string()
 }
 
-/// Read `~/.omega/HEARTBEAT.md` if it exists.
+/// Read `~/.omega/prompts/HEARTBEAT.md` if it exists.
 pub fn read_heartbeat_file() -> Option<String> {
     let home = std::env::var("HOME").ok()?;
-    let path = format!("{home}/.omega/HEARTBEAT.md");
+    let path = format!("{home}/.omega/prompts/HEARTBEAT.md");
     let content = std::fs::read_to_string(path).ok()?;
     if content.trim().is_empty() {
         None
@@ -475,7 +475,7 @@ pub fn read_heartbeat_file() -> Option<String> {
     }
 }
 
-/// Apply heartbeat add/remove actions to `~/.omega/HEARTBEAT.md`.
+/// Apply heartbeat add/remove actions to `~/.omega/prompts/HEARTBEAT.md`.
 ///
 /// Creates the file if missing. Prevents duplicate adds. Uses case-insensitive
 /// partial matching for removes. Skips comment lines (`#`) during removal.
@@ -484,7 +484,7 @@ pub fn apply_heartbeat_changes(actions: &[HeartbeatAction]) {
         Ok(h) => h,
         Err(_) => return,
     };
-    let path = format!("{home}/.omega/HEARTBEAT.md");
+    let path = format!("{home}/.omega/prompts/HEARTBEAT.md");
 
     // Read existing lines (or start empty).
     let mut lines: Vec<String> = std::fs::read_to_string(&path)
@@ -527,7 +527,7 @@ pub fn apply_heartbeat_changes(actions: &[HeartbeatAction]) {
     // Write back.
     let content = lines.join("\n");
     // Ensure parent directory exists.
-    let dir = format!("{home}/.omega");
+    let dir = format!("{home}/.omega/prompts");
     let _ = std::fs::create_dir_all(&dir);
     let _ = std::fs::write(
         &path,
@@ -1256,9 +1256,9 @@ mod tests {
     #[test]
     fn test_apply_heartbeat_add() {
         let fake_home = std::env::temp_dir().join("omega_test_hb_add_home");
-        let _ = std::fs::create_dir_all(fake_home.join(".omega"));
+        let _ = std::fs::create_dir_all(fake_home.join(".omega/prompts"));
         std::fs::write(
-            fake_home.join(".omega/HEARTBEAT.md"),
+            fake_home.join(".omega/prompts/HEARTBEAT.md"),
             "# My checklist\n- Existing item\n",
         )
         .unwrap();
@@ -1267,12 +1267,14 @@ mod tests {
 
         apply_heartbeat_changes(&[HeartbeatAction::Add("New item".to_string())]);
 
-        let content = std::fs::read_to_string(fake_home.join(".omega/HEARTBEAT.md")).unwrap();
+        let content =
+            std::fs::read_to_string(fake_home.join(".omega/prompts/HEARTBEAT.md")).unwrap();
         assert!(content.contains("- Existing item"), "should keep existing");
         assert!(content.contains("- New item"), "should add new item");
 
         apply_heartbeat_changes(&[HeartbeatAction::Add("New item".to_string())]);
-        let content = std::fs::read_to_string(fake_home.join(".omega/HEARTBEAT.md")).unwrap();
+        let content =
+            std::fs::read_to_string(fake_home.join(".omega/prompts/HEARTBEAT.md")).unwrap();
         assert_eq!(
             content.matches("New item").count(),
             1,
@@ -1286,9 +1288,9 @@ mod tests {
     #[test]
     fn test_apply_heartbeat_remove() {
         let fake_home = std::env::temp_dir().join("omega_test_hb_remove_home");
-        let _ = std::fs::create_dir_all(fake_home.join(".omega"));
+        let _ = std::fs::create_dir_all(fake_home.join(".omega/prompts"));
         std::fs::write(
-            fake_home.join(".omega/HEARTBEAT.md"),
+            fake_home.join(".omega/prompts/HEARTBEAT.md"),
             "# My checklist\n- Check exercise habits\n- Water the plants\n",
         )
         .unwrap();
@@ -1298,7 +1300,8 @@ mod tests {
 
         apply_heartbeat_changes(&[HeartbeatAction::Remove("exercise".to_string())]);
 
-        let content = std::fs::read_to_string(fake_home.join(".omega/HEARTBEAT.md")).unwrap();
+        let content =
+            std::fs::read_to_string(fake_home.join(".omega/prompts/HEARTBEAT.md")).unwrap();
         assert!(!content.contains("exercise"), "should remove exercise line");
         assert!(
             content.contains("Water the plants"),

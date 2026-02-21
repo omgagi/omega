@@ -56,7 +56,7 @@ This ignores any file ending in `.db` (database files). In the Omega project, th
 
 **Where it lives:**
 
-According to `CLAUDE.md`, the database is stored at `~/.omega/memory.db`, outside the repository directory, so this rule is extra protection.
+According to `CLAUDE.md`, the database is stored at `~/.omega/data/memory.db`, outside the repository directory, so this rule is extra protection.
 
 ### config.toml
 
@@ -213,8 +213,8 @@ From `CLAUDE.md`, the Omega project has these key configuration points:
 
 - **config.toml:** Primary configuration (must be gitignored)
 - **config.example.toml:** Template for users to start from (must be committed)
-- **~/.omega/memory.db:** SQLite database storing state (excluded by `*.db` pattern)
-- **~/.omega/omega.log:** Application logs (not currently in .gitignore, but could be added)
+- **~/.omega/data/memory.db:** SQLite database storing state (excluded by `*.db` pattern)
+- **~/.omega/logs/omega.log:** Application logs (not currently in .gitignore, but could be added)
 - **~/Library/LaunchAgents/com.omega-cortex.omega.plist:** Service file (user-specific, not in repo)
 
 The `.gitignore` correctly protects all sensitive areas of this architecture.

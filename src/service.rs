@@ -53,9 +53,9 @@ pub fn generate_plist(
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>{data}/omega.stdout.log</string>
+    <string>{data}/logs/omega.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>{data}/omega.stderr.log</string>
+    <string>{data}/logs/omega.stderr.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>HOME</key>
@@ -90,8 +90,8 @@ WorkingDirectory={working_dir}
 Restart=on-failure
 RestartSec=5
 Environment=PATH={home}/.cargo/bin:{home}/.local/bin:/usr/local/bin:/usr/bin:/bin
-StandardOutput=append:{data_dir}/omega.stdout.log
-StandardError=append:{data_dir}/omega.stderr.log
+StandardOutput=append:{data_dir}/logs/omega.stdout.log
+StandardError=append:{data_dir}/logs/omega.stderr.log
 
 [Install]
 WantedBy=default.target
@@ -338,8 +338,8 @@ mod tests {
         assert!(plist.contains("<true/>"), "RunAtLoad should be true");
         assert!(plist.contains("<key>KeepAlive</key>"));
         assert!(plist.contains("<key>RunAtLoad</key>"));
-        assert!(plist.contains("omega.stdout.log"));
-        assert!(plist.contains("omega.stderr.log"));
+        assert!(plist.contains("logs/omega.stdout.log"));
+        assert!(plist.contains("logs/omega.stderr.log"));
         assert!(plist.contains(".cargo/bin"), "PATH must include .cargo/bin");
         assert!(plist.contains(".local/bin"), "PATH must include .local/bin");
         assert!(

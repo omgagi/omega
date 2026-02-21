@@ -277,14 +277,14 @@ Conversation memory and context storage.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `backend` | String | `"sqlite"` | Memory backend type. Currently only `"sqlite"` is supported. |
-| `db_path` | Path | `"~/.omega/memory.db"` | Path to SQLite database file. Supports `~` expansion. Auto-created on first run. |
+| `db_path` | Path | `"~/.omega/data/memory.db"` | Path to SQLite database file. Supports `~` expansion. Auto-created on first run. |
 | `max_context_messages` | Integer | `50` | Maximum number of recent messages to include in context when querying the provider. Prevents context explosion while retaining conversation continuity. |
 
 **Example:**
 ```toml
 [memory]
 backend = "sqlite"
-db_path = "~/.omega/memory.db"
+db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 ```
 
@@ -354,7 +354,7 @@ reply_target = ""               # Chat ID for delivery
 
 ### Notes
 
-- **Heartbeat File:** If `~/.omega/HEARTBEAT.md` exists and contains content, it is included in the heartbeat prompt as a checklist for the provider to review.
+- **Heartbeat File:** If `~/.omega/prompts/HEARTBEAT.md` exists and contains content, it is included in the heartbeat prompt as a checklist for the provider to review.
 - **Suppression:** When the provider responds with text containing `HEARTBEAT_OK`, no message is sent to the user. Only non-OK responses are delivered as alerts.
 - **Active Hours:** Heartbeat checks are skipped outside the configured active hours window. Useful to avoid late-night alerts.
 - **Prerequisites:** The `channel` must be configured and enabled, and `reply_target` must be set to a valid chat/conversation ID for the target channel.
@@ -436,8 +436,8 @@ The config file should contain empty string values (`api_key = ""`) for these fi
 2. Inject secrets via environment variables at runtime.
 3. Enable `auth.enabled = true` and populate `allowed_users` to restrict access.
 4. Keep `sandbox.mode = "sandbox"` (the default) unless you explicitly need broader access.
-5. Monitor `~/.omega/omega.log` for suspicious activity.
-6. Review `~/.omega/memory.db` audit trail periodically.
+5. Monitor `~/.omega/logs/omega.log` for suspicious activity.
+6. Review `~/.omega/data/memory.db` audit trail periodically.
 
 ---
 

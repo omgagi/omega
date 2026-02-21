@@ -89,9 +89,14 @@ async fn main() -> anyhow::Result<()> {
         Commands::Start => {
             let mut cfg = config::load(&cli.config)?;
 
-            // Set up logging: stdout + file appender to {data_dir}/omega.log.
+            // Migrate flat ~/.omega/ layout to structured subdirectories.
+            config::migrate_layout(&cfg.omega.data_dir, &cli.config);
+
+            // Set up logging: stdout + file appender to {data_dir}/logs/omega.log.
             let data_dir = shellexpand(&cfg.omega.data_dir);
-            let file_appender = tracing_appender::rolling::never(&data_dir, "omega.log");
+            let log_dir = PathBuf::from(&data_dir).join("logs");
+            let _ = std::fs::create_dir_all(&log_dir);
+            let file_appender = tracing_appender::rolling::never(&log_dir, "omega.log");
             let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
             let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()

@@ -73,7 +73,7 @@ if let Some(tg) = &cfg.channel.telegram {
 }
 
 // Memory
-println!("DB path: {}", cfg.memory.db_path);        // "~/.omega/memory.db"
+println!("DB path: {}", cfg.memory.db_path);        // "~/.omega/data/memory.db"
 println!("Max context: {}", cfg.memory.max_context_messages); // 50
 ```
 

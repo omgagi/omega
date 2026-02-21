@@ -51,7 +51,7 @@ Generates a complete macOS LaunchAgent plist XML document.
 - `WorkingDirectory`: Absolute path to config file's parent directory
 - `RunAtLoad`: `true` — starts on login
 - `KeepAlive`: `true` — auto-restarts on crash
-- `StandardOutPath` / `StandardErrorPath`: Log to `{data_dir}/omega.stdout.log` and `omega.stderr.log`
+- `StandardOutPath` / `StandardErrorPath`: Log to `{data_dir}/logs/omega.stdout.log` and `logs/omega.stderr.log`
 - `EnvironmentVariables.PATH`: `/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`
 
 All path arguments are XML-escaped before interpolation.
@@ -62,7 +62,7 @@ Generates a complete Linux systemd user unit file.
 **Template features:**
 - `[Unit]`: After/Wants `network-online.target`
 - `[Service]`: Type=simple, ExecStart with binary/config/start, WorkingDirectory, Restart=on-failure, RestartSec=5
-- `StandardOutput` / `StandardError`: append to `{data_dir}/omega.stdout.log` and `omega.stderr.log`
+- `StandardOutput` / `StandardError`: append to `{data_dir}/logs/omega.stdout.log` and `logs/omega.stderr.log`
 - `[Install]`: WantedBy=default.target (user session)
 
 ---

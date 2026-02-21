@@ -67,7 +67,7 @@ Self-check uses [cliclack](https://crates.io/crates/cliclack) for styled termina
 - Database file can be read and its size determined
 
 **Where the database is:**
-- Default location: `~/.omega/memory.db`
+- Default location: `~/.omega/data/memory.db`
 - Configured in: `config.toml` under `[storage]`
 
 **What gets reported:**
@@ -83,10 +83,10 @@ Self-check uses [cliclack](https://crates.io/crates/cliclack) for styled termina
 **How to fix it:**
 ```bash
 # Check if database file exists and is readable
-ls -la ~/.omega/memory.db
+ls -la ~/.omega/data/memory.db
 
 # If corrupted, backup and delete (will be recreated on next start)
-mv ~/.omega/memory.db ~/.omega/memory.db.backup
+mv ~/.omega/data/memory.db ~/.omega/data/memory.db.backup
 ```
 
 ---
@@ -257,13 +257,13 @@ The self-check function returns:
 
 1. Check if database file exists:
    ```bash
-   ls -la ~/.omega/memory.db
+   ls -la ~/.omega/data/memory.db
    ```
 
 2. Check file permissions:
    ```bash
    # File should be readable/writable by current user
-   chmod 600 ~/.omega/memory.db
+   chmod 600 ~/.omega/data/memory.db
    ```
 
 3. Check disk space:
@@ -273,7 +273,7 @@ The self-check function returns:
 
 4. If file is corrupted, rebuild it:
    ```bash
-   rm ~/.omega/memory.db
+   rm ~/.omega/data/memory.db
    # Omega will recreate on next start
    ```
 

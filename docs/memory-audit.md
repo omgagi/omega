@@ -336,7 +336,7 @@ The audit log stores the full text of both the user's input and the AI's respons
 
 ### Recommendations
 
-1. **Secure the database file.** The SQLite database at `~/.omega/memory.db` contains audit data. Restrict file permissions to the Omega user.
+1. **Secure the database file.** The SQLite database at `~/.omega/data/memory.db` contains audit data. Restrict file permissions to the Omega user.
 
 2. **Do not expose audit queries to untrusted users.** The audit log contains everyone's messages. Access should be limited to the system operator.
 
@@ -363,7 +363,7 @@ Store::new() creates SqlitePool
               +--> AuditLogger uses pool for audit_log writes
 ```
 
-Both the `Store` and `AuditLogger` write to the same `~/.omega/memory.db` file. The pool manages connection sharing automatically via sqlx's built-in pooling (max 4 connections).
+Both the `Store` and `AuditLogger` write to the same `~/.omega/data/memory.db` file. The pool manages connection sharing automatically via sqlx's built-in pooling (max 4 connections).
 
 ## Debugging Audit Issues
 

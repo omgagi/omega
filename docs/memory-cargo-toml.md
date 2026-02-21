@@ -10,7 +10,7 @@ The `omega-memory` crate is Omega's persistence layer. It is responsible for eve
 - **Audit logging** -- recording every interaction for accountability and debugging.
 - **Conversation metadata** -- summaries, extracted facts, and context windows used to enrich future prompts.
 
-All of this is backed by SQLite via the `sqlx` crate. The database file lives at `~/.omega/memory.db`. There is no external database server to manage -- SQLite is embedded directly in the binary.
+All of this is backed by SQLite via the `sqlx` crate. The database file lives at `~/.omega/data/memory.db`. There is no external database server to manage -- SQLite is embedded directly in the binary.
 
 The crate exports two primary types:
 

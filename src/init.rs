@@ -304,7 +304,7 @@ allowed_users = []
 
 [memory]
 backend = "sqlite"
-db_path = "~/.omega/memory.db"
+db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
 [sandbox]

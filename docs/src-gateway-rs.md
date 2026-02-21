@@ -460,7 +460,7 @@ Users shouldn't need to memorize slash commands. When a user says "be more casua
 **Implementation:**
 - Calls `extract_heartbeat_markers(&response.text)` to find all `HEARTBEAT_ADD:`, `HEARTBEAT_REMOVE:`, and `HEARTBEAT_INTERVAL:` lines.
 - If any markers are found:
-  - Calls `apply_heartbeat_changes(&actions)` to update `~/.omega/HEARTBEAT.md`:
+  - Calls `apply_heartbeat_changes(&actions)` to update `~/.omega/prompts/HEARTBEAT.md`:
     - **Add**: Appends `- {item}` to the file. Prevents duplicate adds (case-insensitive).
     - **Remove**: Removes lines containing the keyword (case-insensitive partial match). Comment lines (`#`) are never removed.
   - For **SetInterval**: Updates the shared `Arc<AtomicU64>` with the new value and sends a confirmation notification to the owner via the heartbeat channel.
@@ -475,7 +475,7 @@ HEARTBEAT_INTERVAL: 15
 ```
 
 **Why This Exists:**
-Without conversational management, users must manually edit `~/.omega/HEARTBEAT.md` or `config.toml` to change monitoring. This breaks the conversational flow and makes the heartbeat feature less discoverable. The marker pattern (proven by SCHEDULE and LANG_SWITCH) keeps management invisible to the user.
+Without conversational management, users must manually edit `~/.omega/prompts/HEARTBEAT.md` or `config.toml` to change monitoring. This breaks the conversational flow and makes the heartbeat feature less discoverable. The marker pattern (proven by SCHEDULE and LANG_SWITCH) keeps management invisible to the user.
 
 **Error Handling:**
 File write errors are silently ignored. The response is always sent to the user. If `$HOME` is not set, the function returns without action. Invalid interval values (non-numeric, zero, or >1440) are silently ignored.
@@ -812,7 +812,7 @@ The heartbeat is a background task that performs periodic AI check-ins. It is sp
 At each clock-aligned boundary (e.g. :00 and :30 for a 30-minute interval), the heartbeat:
 
 1. **Active Hours Check** -- If `active_start` and `active_end` are configured, checks the current local time. Skips the check if outside the window.
-2. **Read Checklist** -- Reads `~/.omega/HEARTBEAT.md` if it exists. If the file is missing or empty, the entire cycle is **skipped** (no API call). This prevents wasted provider calls when no checklist is configured.
+2. **Read Checklist** -- Reads `~/.omega/prompts/HEARTBEAT.md` if it exists. If the file is missing or empty, the entire cycle is **skipped** (no API call). This prevents wasted provider calls when no checklist is configured.
 3. **Context Enrichment** -- Before calling the provider, the heartbeat enriches the prompt with:
    - **User facts** from `memory.get_all_facts()` (excluding internal `welcomed` markers).
    - **Recent conversation summaries** from `memory.get_all_recent_summaries(3)`.
@@ -841,7 +841,7 @@ At each clock-aligned boundary (e.g. :00 and :30 for a 30-minute interval), the 
 
 ### The HEARTBEAT.md File
 
-This is an optional markdown file at `~/.omega/HEARTBEAT.md`. When present, its contents are included in the prompt sent to the provider. This allows you to define a custom checklist that the AI evaluates on each heartbeat.
+This is an optional markdown file at `~/.omega/prompts/HEARTBEAT.md`. When present, its contents are included in the prompt sent to the provider. This allows you to define a custom checklist that the AI evaluates on each heartbeat.
 
 **Example:**
 ```markdown

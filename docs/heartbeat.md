@@ -11,7 +11,7 @@ Think of it as a watchdog that uses AI reasoning instead of simple threshold che
 The heartbeat runs as a background loop inside the gateway, firing at clock-aligned boundaries (e.g., :00 and :30 for a 30-minute interval). Each cycle follows this sequence:
 
 1. **Check active hours** -- If you configured an active hours window (e.g., 08:00-22:00), the heartbeat checks the current local time. Outside the window, it sleeps until the next cycle.
-2. **Read the checklist** -- Looks for `~/.omega/HEARTBEAT.md`. If the file does not exist or is empty, the entire cycle is **skipped** — no API call is made. This prevents wasted provider calls when no checklist is configured.
+2. **Read the checklist** -- Looks for `~/.omega/prompts/HEARTBEAT.md`. If the file does not exist or is empty, the entire cycle is **skipped** — no API call is made. This prevents wasted provider calls when no checklist is configured.
 3. **Enrich with context** -- The heartbeat enriches the prompt with data from memory:
    - **User facts** (name, timezone, interests, etc.) from all users — gives the AI awareness of who it's monitoring for.
    - **Recent conversation summaries** (last 3 closed conversations) — gives the AI context about recent activity.
@@ -68,7 +68,7 @@ active_end = ""
 
 ## The HEARTBEAT.md Checklist
 
-`~/.omega/HEARTBEAT.md` is an optional file you create to customize what the heartbeat checks. When this file exists and has content, its contents are appended to the heartbeat prompt.
+`~/.omega/prompts/HEARTBEAT.md` is an optional file you create to customize what the heartbeat checks. When this file exists and has content, its contents are appended to the heartbeat prompt.
 
 ### Example HEARTBEAT.md
 
@@ -103,7 +103,7 @@ Ask Omega to monitor something:
 
 Omega also adds items proactively. After any action it takes, it evaluates whether the outcome will evolve over time and could need attention. If yes, it adds the item to its watchlist without being asked.
 
-Omega will emit a `HEARTBEAT_ADD:` marker in its response, which the gateway intercepts to add the item to `~/.omega/HEARTBEAT.md`. The marker is stripped before the response reaches you.
+Omega will emit a `HEARTBEAT_ADD:` marker in its response, which the gateway intercepts to add the item to `~/.omega/prompts/HEARTBEAT.md`. The marker is stripped before the response reaches you.
 
 ### Removing Items
 
@@ -140,13 +140,13 @@ The interval is held in memory and resets to the configured `interval_minutes` o
 
 1. The current heartbeat checklist is injected into the system prompt so the provider knows what is already being monitored.
 2. `build_system_prompt()` includes instructions telling the provider when to emit `HEARTBEAT_ADD:`, `HEARTBEAT_REMOVE:`, and `HEARTBEAT_INTERVAL:` markers.
-3. After the provider responds, the gateway extracts markers, updates `~/.omega/HEARTBEAT.md` (for add/remove) or the runtime interval (for interval changes), and strips the markers from the response.
+3. After the provider responds, the gateway extracts markers, updates `~/.omega/prompts/HEARTBEAT.md` (for add/remove) or the runtime interval (for interval changes), and strips the markers from the response.
 4. Duplicate adds are prevented (case-insensitive check).
 5. Interval values are validated: must be between 1 and 1440 (24 hours). Invalid values are silently ignored.
 
 ### Manual Editing
 
-You can still edit `~/.omega/HEARTBEAT.md` manually. Conversational management and manual editing coexist — the file is the single source of truth.
+You can still edit `~/.omega/prompts/HEARTBEAT.md` manually. Conversational management and manual editing coexist — the file is the single source of truth.
 
 ## Configuration
 

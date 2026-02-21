@@ -376,7 +376,7 @@ fn default_memory_backend() -> String {
     "sqlite".to_string()
 }
 fn default_db_path() -> String {
-    "~/.omega/memory.db".to_string()
+    "~/.omega/data/memory.db".to_string()
 }
 fn default_max_context() -> usize {
     50
@@ -408,6 +408,66 @@ pub fn shellexpand(path: &str) -> String {
         }
     }
     path.to_string()
+}
+
+/// Migrate the flat `~/.omega/` layout to the structured subdirectory layout.
+///
+/// Creates `data/`, `logs/`, `prompts/` subdirectories and moves files from
+/// old locations to new ones. Only moves if source exists AND destination does
+/// NOT (idempotent, no overwrites). Also patches `config.toml` if it contains
+/// the old default `db_path`.
+pub fn migrate_layout(data_dir: &str, config_path: &str) {
+    let dir = shellexpand(data_dir);
+    let base = Path::new(&dir);
+
+    // Create subdirectories.
+    for sub in &["data", "logs", "prompts"] {
+        let _ = std::fs::create_dir_all(base.join(sub));
+    }
+
+    // Migration pairs: (old_relative, new_relative).
+    let pairs: &[(&str, &str)] = &[
+        ("memory.db", "data/memory.db"),
+        ("memory.db-wal", "data/memory.db-wal"),
+        ("memory.db-shm", "data/memory.db-shm"),
+        ("omega.log", "logs/omega.log"),
+        ("omega.stdout.log", "logs/omega.stdout.log"),
+        ("omega.stderr.log", "logs/omega.stderr.log"),
+        ("SYSTEM_PROMPT.md", "prompts/SYSTEM_PROMPT.md"),
+        ("WELCOME.toml", "prompts/WELCOME.toml"),
+        ("HEARTBEAT.md", "prompts/HEARTBEAT.md"),
+    ];
+
+    for (old_rel, new_rel) in pairs {
+        let src = base.join(old_rel);
+        let dst = base.join(new_rel);
+        if src.exists() && !dst.exists() {
+            if let Err(e) = std::fs::rename(&src, &dst) {
+                warn!(
+                    "migrate: failed to move {} → {}: {e}",
+                    src.display(),
+                    dst.display()
+                );
+            } else {
+                info!("migrate: {} → {}", old_rel, new_rel);
+            }
+        }
+    }
+
+    // Patch config.toml if it contains the old default db_path.
+    let config_file = Path::new(config_path);
+    if config_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(config_file) {
+            if content.contains("~/.omega/memory.db") {
+                let patched = content.replace("~/.omega/memory.db", "~/.omega/data/memory.db");
+                if let Err(e) = std::fs::write(config_file, patched) {
+                    warn!("migrate: failed to patch config db_path: {e}");
+                } else {
+                    info!("migrate: patched config.toml db_path");
+                }
+            }
+        }
+    }
 }
 
 /// Externalized prompts and welcome messages, loaded from `~/.omega/` at startup.
@@ -497,13 +557,13 @@ const BUNDLED_SYSTEM_PROMPT: &str = include_str!("../../../prompts/SYSTEM_PROMPT
 /// Bundled welcome messages, embedded at compile time.
 const BUNDLED_WELCOME_TOML: &str = include_str!("../../../prompts/WELCOME.toml");
 
-/// Deploy bundled prompt files to `data_dir`, creating the directory if needed.
+/// Deploy bundled prompt files to `{data_dir}/prompts/`, creating the directory if needed.
 ///
 /// Never overwrites existing files so user edits are preserved.
 pub fn install_bundled_prompts(data_dir: &str) {
     let expanded = shellexpand(data_dir);
-    let dir = Path::new(&expanded);
-    if let Err(e) = std::fs::create_dir_all(dir) {
+    let dir = Path::new(&expanded).join("prompts");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
         warn!("prompts: failed to create {}: {e}", dir.display());
         return;
     }
@@ -524,7 +584,7 @@ pub fn install_bundled_prompts(data_dir: &str) {
 }
 
 impl Prompts {
-    /// Load prompts from `SYSTEM_PROMPT.md` and `WELCOME.toml` in `data_dir`.
+    /// Load prompts from `{data_dir}/prompts/SYSTEM_PROMPT.md` and `{data_dir}/prompts/WELCOME.toml`.
     ///
     /// Missing files or sections fall back to defaults.
     pub fn load(data_dir: &str) -> Self {
@@ -532,7 +592,7 @@ impl Prompts {
         let dir = shellexpand(data_dir);
 
         // Load SYSTEM_PROMPT.md
-        let prompt_path = format!("{dir}/SYSTEM_PROMPT.md");
+        let prompt_path = format!("{dir}/prompts/SYSTEM_PROMPT.md");
         if let Ok(content) = std::fs::read_to_string(&prompt_path) {
             let sections = parse_markdown_sections(&content);
             if let Some(v) = sections.get("Identity") {
@@ -560,7 +620,7 @@ impl Prompts {
         }
 
         // Load WELCOME.toml
-        let welcome_path = format!("{dir}/WELCOME.toml");
+        let welcome_path = format!("{dir}/prompts/WELCOME.toml");
         if let Ok(content) = std::fs::read_to_string(&welcome_path) {
             match toml::from_str::<WelcomeFile>(&content) {
                 Ok(w) => {
@@ -740,8 +800,8 @@ mod tests {
 
         install_bundled_prompts(tmp.to_str().unwrap());
 
-        let prompt_path = tmp.join("SYSTEM_PROMPT.md");
-        let welcome_path = tmp.join("WELCOME.toml");
+        let prompt_path = tmp.join("prompts/SYSTEM_PROMPT.md");
+        let welcome_path = tmp.join("prompts/WELCOME.toml");
         assert!(prompt_path.exists(), "SYSTEM_PROMPT.md should be deployed");
         assert!(welcome_path.exists(), "WELCOME.toml should be deployed");
 
@@ -798,9 +858,9 @@ mod tests {
         // should keep their compiled defaults.
         let tmp = std::env::temp_dir().join("__omega_test_compat__");
         let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::create_dir_all(tmp.join("prompts")).unwrap();
         std::fs::write(
-            tmp.join("SYSTEM_PROMPT.md"),
+            tmp.join("prompts/SYSTEM_PROMPT.md"),
             "## System\nCustom rules only.",
         )
         .unwrap();
@@ -892,5 +952,151 @@ mod tests {
         "#;
         let cfg: WhatsAppConfig = toml::from_str(toml_str).unwrap();
         assert!(cfg.whisper_api_key.is_none());
+    }
+
+    #[test]
+    fn test_migrate_layout_moves_files() {
+        let tmp = std::env::temp_dir().join("__omega_test_migrate__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Create old flat files.
+        std::fs::write(tmp.join("memory.db"), "db").unwrap();
+        std::fs::write(tmp.join("omega.log"), "log").unwrap();
+        std::fs::write(tmp.join("SYSTEM_PROMPT.md"), "prompt").unwrap();
+        std::fs::write(tmp.join("WELCOME.toml"), "welcome").unwrap();
+        std::fs::write(tmp.join("HEARTBEAT.md"), "hb").unwrap();
+
+        migrate_layout(tmp.to_str().unwrap(), "/nonexistent/config.toml");
+
+        // Old files should be gone.
+        assert!(!tmp.join("memory.db").exists());
+        assert!(!tmp.join("omega.log").exists());
+        assert!(!tmp.join("SYSTEM_PROMPT.md").exists());
+        assert!(!tmp.join("WELCOME.toml").exists());
+        assert!(!tmp.join("HEARTBEAT.md").exists());
+
+        // New files should exist with correct content.
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("data/memory.db")).unwrap(),
+            "db"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("logs/omega.log")).unwrap(),
+            "log"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("prompts/SYSTEM_PROMPT.md")).unwrap(),
+            "prompt"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("prompts/WELCOME.toml")).unwrap(),
+            "welcome"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("prompts/HEARTBEAT.md")).unwrap(),
+            "hb"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_migrate_layout_idempotent() {
+        let tmp = std::env::temp_dir().join("__omega_test_migrate_idem__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Create old file.
+        std::fs::write(tmp.join("memory.db"), "old").unwrap();
+
+        // First migration.
+        migrate_layout(tmp.to_str().unwrap(), "/nonexistent/config.toml");
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("data/memory.db")).unwrap(),
+            "old"
+        );
+
+        // Second migration — should be a no-op (no source, dest exists).
+        migrate_layout(tmp.to_str().unwrap(), "/nonexistent/config.toml");
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("data/memory.db")).unwrap(),
+            "old",
+            "should not overwrite on re-run"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_migrate_layout_no_overwrite() {
+        let tmp = std::env::temp_dir().join("__omega_test_migrate_noover__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("data")).unwrap();
+
+        // Pre-existing new file.
+        std::fs::write(tmp.join("data/memory.db"), "new").unwrap();
+        // Old file also present.
+        std::fs::write(tmp.join("memory.db"), "old").unwrap();
+
+        migrate_layout(tmp.to_str().unwrap(), "/nonexistent/config.toml");
+
+        // New file should NOT be overwritten.
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("data/memory.db")).unwrap(),
+            "new"
+        );
+        // Old file should still be there (wasn't moved because dest exists).
+        assert!(tmp.join("memory.db").exists());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_migrate_layout_patches_config() {
+        let tmp = std::env::temp_dir().join("__omega_test_migrate_cfg__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let cfg_path = tmp.join("config.toml");
+        std::fs::write(
+            &cfg_path,
+            "db_path = \"~/.omega/memory.db\"\nother = true\n",
+        )
+        .unwrap();
+
+        migrate_layout(tmp.to_str().unwrap(), cfg_path.to_str().unwrap());
+
+        let content = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(
+            content.contains("~/.omega/data/memory.db"),
+            "should patch old default"
+        );
+        assert!(
+            !content.contains("\"~/.omega/memory.db\""),
+            "old default should be gone"
+        );
+        assert!(
+            content.contains("other = true"),
+            "should preserve other config"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_migrate_layout_fresh_install() {
+        let tmp = std::env::temp_dir().join("__omega_test_migrate_fresh__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // No old files — just create subdirs.
+        migrate_layout(tmp.to_str().unwrap(), "/nonexistent/config.toml");
+
+        assert!(tmp.join("data").is_dir());
+        assert!(tmp.join("logs").is_dir());
+        assert!(tmp.join("prompts").is_dir());
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

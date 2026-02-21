@@ -12,7 +12,7 @@ This is the first database migration in Omega's memory system. It creates the th
 - **`messages`** -- Stores individual user and assistant messages within conversations.
 - **`facts`** -- Stores key-value facts about users, extracted from conversations for personalization.
 
-All data is stored in a single SQLite database at `~/.omega/memory.db` (configurable via `config.toml`).
+All data is stored in a single SQLite database at `~/.omega/data/memory.db` (configurable via `config.toml`).
 
 ## What This Migration Creates
 
@@ -140,7 +140,7 @@ Every `CREATE TABLE` and `CREATE INDEX` uses `IF NOT EXISTS`. Running this migra
 You can inspect the database using the `sqlite3` CLI:
 
 ```bash
-sqlite3 ~/.omega/memory.db
+sqlite3 ~/.omega/data/memory.db
 ```
 
 **List active conversations:**

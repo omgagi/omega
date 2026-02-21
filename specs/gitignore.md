@@ -26,7 +26,7 @@ The `.gitignore` file specifies which files and directories should be excluded f
   - Leak production or personal data
   - Cause merge conflicts across branches
   - Create version control overhead
-- **Location in Project:** `~/.omega/memory.db` (as per CLAUDE.md)
+- **Location in Project:** `~/.omega/data/memory.db` (as per CLAUDE.md)
 - **Security Impact:** HIGH — may contain sensitive conversation history
 
 ### 3. Application Configuration

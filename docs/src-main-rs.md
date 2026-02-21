@@ -214,7 +214,7 @@ Check: At least one channel enabled?
     ├─ No channels? → STOP with error
     └─ Yes? Continue
     ↓
-Open SQLite database (~/.omega/memory.db)
+Open SQLite database (~/.omega/data/memory.db)
     ↓
 Run health checks (config validity, database schema, provider health)
     ├─ Any check fails? → STOP with error
@@ -384,7 +384,7 @@ RUST_LOG=warn omega start    # Only warnings and errors
 ```
 
 ### Database
-Conversation history is stored in SQLite at `~/.omega/memory.db`. This includes:
+Conversation history is stored in SQLite at `~/.omega/data/memory.db`. This includes:
 - Conversation threads
 - Message history
 - Extracted facts
@@ -392,7 +392,7 @@ Conversation history is stored in SQLite at `~/.omega/memory.db`. This includes:
 
 The database automatically grows as conversations accumulate. You can inspect it:
 ```bash
-sqlite3 ~/.omega/memory.db "SELECT COUNT(*) FROM messages;"
+sqlite3 ~/.omega/data/memory.db "SELECT COUNT(*) FROM messages;"
 ```
 
 ## Advanced: Custom Configuration Path

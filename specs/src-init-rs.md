@@ -475,7 +475,7 @@ allowed_users = []
 
 [memory]
 backend = "sqlite"
-db_path = "~/.omega/memory.db"
+db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
 [sandbox]
@@ -561,7 +561,7 @@ Tests exercise `generate_config()`, `detect_private_browsers()`, and `create_inc
 
 **`[memory]` Section:**
 - `backend` -- Hardcoded to `sqlite` (only option currently)
-- `db_path` -- Where SQLite database is stored. Typically `~/.omega/memory.db`.
+- `db_path` -- Where SQLite database is stored. Typically `~/.omega/data/memory.db`.
 - `max_context_messages` -- How many historical messages to include in prompt context. Set to 50 as a balance between context and token cost.
 
 ---

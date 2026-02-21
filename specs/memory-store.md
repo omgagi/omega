@@ -12,7 +12,7 @@ SQLite-backed persistent memory store for Omega. Manages conversation lifecycle 
 The store owns all read/write access to the SQLite database for conversation data, messages, and facts. It is consumed by the gateway (for the message pipeline) and by background tasks (for summarization and shutdown). The store does **not** manage the audit log -- that is handled by `AuditLogger` which shares the same database pool.
 
 ### Database Location
-Default: `~/.omega/memory.db` (configurable via `MemoryConfig.db_path`). The `~` prefix is expanded at runtime via the `shellexpand()` helper.
+Default: `~/.omega/data/memory.db` (configurable via `MemoryConfig.db_path`). The `~` prefix is expanded at runtime via the `shellexpand()` helper.
 
 ## Constants
 

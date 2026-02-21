@@ -156,9 +156,9 @@ If the user accepts, the service is installed immediately. If it fails, the wiza
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
     <key>StandardOutPath</key>
-    <string>/Users/you/.omega/omega.stdout.log</string>
+    <string>/Users/you/.omega/logs/omega.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/you/.omega/omega.stderr.log</string>
+    <string>/Users/you/.omega/logs/omega.stderr.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
@@ -187,8 +187,8 @@ ExecStart=/path/to/omega -c /path/to/config.toml start
 WorkingDirectory=/path/to/project
 Restart=on-failure
 RestartSec=5
-StandardOutput=append:/home/you/.omega/omega.stdout.log
-StandardError=append:/home/you/.omega/omega.stderr.log
+StandardOutput=append:/home/you/.omega/logs/omega.stdout.log
+StandardError=append:/home/you/.omega/logs/omega.stderr.log
 
 [Install]
 WantedBy=default.target
@@ -228,12 +228,12 @@ Service management only supports macOS and Linux. On other platforms, run Omega 
 Check the logs:
 ```bash
 # macOS
-cat ~/.omega/omega.stdout.log
-cat ~/.omega/omega.stderr.log
+cat ~/.omega/logs/omega.stdout.log
+cat ~/.omega/logs/omega.stderr.log
 
 # Linux
 journalctl --user -u omega.service
-cat ~/.omega/omega.stderr.log
+cat ~/.omega/logs/omega.stderr.log
 ```
 
 ### Reinstalling after moving the binary

@@ -271,7 +271,7 @@ The `[memory]` section handles conversation history.
 ```toml
 [memory]
 backend = "sqlite"
-db_path = "~/.omega/memory.db"
+db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 ```
 
@@ -360,7 +360,7 @@ reply_target = ""
 1. Set `enabled = true`.
 2. Set `channel` to your active channel (e.g., `"telegram"`).
 3. Set `reply_target` to your chat ID (the same ID you use for messaging Omega).
-4. Optionally create `~/.omega/HEARTBEAT.md` with a checklist for the AI to evaluate.
+4. Optionally create `~/.omega/prompts/HEARTBEAT.md` with a checklist for the AI to evaluate.
 
 **Example HEARTBEAT.md:**
 ```markdown
@@ -422,7 +422,7 @@ For 24/7 bot service (listens on Telegram):
 
 **Check the logs:**
 ```bash
-tail -f ~/.omega/omega.log
+tail -f ~/.omega/logs/omega.log
 ```
 
 ## Common Configurations
@@ -454,7 +454,7 @@ enabled = false
 
 [memory]
 backend = "sqlite"
-db_path = "~/.omega/memory.db"
+db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
 [sandbox]
@@ -488,7 +488,7 @@ allowed_users = [123456789]  # Your user ID
 
 [memory]
 backend = "sqlite"
-db_path = "~/.omega/memory.db"
+db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
 [sandbox]
@@ -522,7 +522,7 @@ allowed_users = [123456789, 987654321, 555666777]  # Team member IDs
 
 [memory]
 backend = "sqlite"
-db_path = "~/.omega/memory.db"
+db_path = "~/.omega/data/memory.db"
 max_context_messages = 75  # More context for complex discussions
 
 [sandbox]
@@ -571,7 +571,7 @@ If auth is enabled, your user ID must be in `allowed_users`. Find it:
 1. Send the bot a message.
 2. Check the logs:
    ```bash
-   grep "user_id" ~/.omega/omega.log | tail -5
+   grep "user_id" ~/.omega/logs/omega.log | tail -5
    ```
 3. Add it to config:
    ```toml
@@ -606,7 +606,7 @@ pkill -f omega
 If corrupted, delete the database (you'll lose history):
 
 ```bash
-rm ~/.omega/memory.db
+rm ~/.omega/data/memory.db
 ```
 
 ## Next Steps
@@ -614,15 +614,15 @@ rm ~/.omega/memory.db
 1. **Read the full specification:** See `/specs/config-example-toml.md` for detailed technical information.
 2. **Explore CLI options:** Run `omega --help` to see available commands.
 3. **Set up persistent daemon:** Use your system's process manager (e.g., `systemd`, macOS LaunchAgent) to run Omega 24/7.
-4. **Monitor logs:** Regularly check `~/.omega/omega.log` for errors and activity.
-5. **Backup conversations:** Periodically back up `~/.omega/memory.db` if your conversations are valuable.
+4. **Monitor logs:** Regularly check `~/.omega/logs/omega.log` for errors and activity.
+5. **Backup conversations:** Periodically back up `~/.omega/data/memory.db` if your conversations are valuable.
 
 ## Need Help?
 
 - Check the project README for architecture and design.
 - Read CLAUDE.md for design rules and constraints.
 - Review the full spec: `/specs/config-example-toml.md`.
-- Search the logs: `grep "ERROR\|WARN" ~/.omega/omega.log`.
+- Search the logs: `grep "ERROR\|WARN" ~/.omega/logs/omega.log`.
 
 Happy configuring!
 

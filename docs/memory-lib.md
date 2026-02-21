@@ -43,7 +43,7 @@ use omega_core::config::MemoryConfig;
 
 let config = MemoryConfig {
     backend: "sqlite".to_string(),
-    db_path: "~/.omega/memory.db".to_string(),
+    db_path: "~/.omega/data/memory.db".to_string(),
     max_context_messages: 50,
 };
 

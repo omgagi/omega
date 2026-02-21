@@ -39,7 +39,7 @@ User sends message
 
 ## The Database
 
-The store uses a single SQLite file located at `~/.omega/memory.db` by default (configurable in `config.toml`). The database runs in WAL (Write-Ahead Logging) mode for better concurrent read performance.
+The store uses a single SQLite file located at `~/.omega/data/memory.db` by default (configurable in `config.toml`). The database runs in WAL (Write-Ahead Logging) mode for better concurrent read performance.
 
 ### Tables
 
@@ -443,7 +443,7 @@ The store is configured via the `[memory]` section in `config.toml`:
 ```toml
 [memory]
 backend = "sqlite"           # Only SQLite is supported
-db_path = "~/.omega/memory.db"  # Path to the database file
+db_path = "~/.omega/data/memory.db"  # Path to the database file
 max_context_messages = 50    # Max messages to include in context
 ```
 
@@ -477,7 +477,7 @@ The database runs in WAL (Write-Ahead Logging) mode, which allows concurrent rea
 
 SQLite is the right fit for Omega because:
 - **Zero configuration** -- No separate database server to install or manage.
-- **Single file** -- The entire database is one file at `~/.omega/memory.db`. Easy to back up, move, or delete.
+- **Single file** -- The entire database is one file at `~/.omega/data/memory.db`. Easy to back up, move, or delete.
 - **Embedded** -- Linked directly into the Omega binary. No network latency.
 - **Sufficient scale** -- Omega is a personal assistant, not a multi-tenant SaaS. SQLite handles the expected load with ease.
 

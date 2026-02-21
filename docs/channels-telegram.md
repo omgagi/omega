@@ -173,7 +173,7 @@ These are returned as `OmegaError::Channel` to the caller:
 1. Check that `enabled = true` in your config.
 2. Verify the `bot_token` is correct (try `curl https://api.telegram.org/bot{TOKEN}/getMe`).
 3. Make sure your user ID is in `allowed_users` (or that the list is empty).
-4. Look for polling errors in the logs at `~/.omega/omega.log`.
+4. Look for polling errors in the logs at `~/.omega/logs/omega.log`.
 
 ### Messages are arriving but responses fail
 

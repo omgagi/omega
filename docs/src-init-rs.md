@@ -77,13 +77,13 @@ The wizard prints the ASCII OMEGA banner, then calls `cliclack::intro("omega ini
 
 **What's Happening:**
 The wizard creates `~/.omega`, a hidden directory in the user's home directory where Omega will store:
-- SQLite database (`memory.db`) — conversation history and memory
-- Log files (`omega.log`) — runtime logs
+- SQLite database (`data/memory.db`) — conversation history and memory
+- Log files (`logs/omega.log`) — runtime logs
 - Skills (`skills/*.md`) — loaded at startup
 - WhatsApp session data (if paired)
-- System prompt (`SYSTEM_PROMPT.md`) — optional custom prompt
-- Welcome messages (`WELCOME.toml`) — optional per-language greetings
-- Heartbeat checklist (`HEARTBEAT.md`) — optional self-check items
+- System prompt (`prompts/SYSTEM_PROMPT.md`) — optional custom prompt
+- Welcome messages (`prompts/WELCOME.toml`) — optional per-language greetings
+- Heartbeat checklist (`prompts/HEARTBEAT.md`) — optional self-check items
 
 **Why It Matters:**
 Without this directory, Omega can't persist data between sessions. Creating it upfront ensures the user won't see mysterious "directory not found" errors later.
@@ -556,7 +556,7 @@ allowed_users = []
 
 [memory]
 backend = "sqlite"
-db_path = "~/.omega/memory.db"
+db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
 [sandbox]
@@ -674,7 +674,7 @@ This starts the Omega daemon. It will:
 2. Initialize the SQLite database
 3. Connect to enabled channels (Telegram, WhatsApp)
 4. Start listening for incoming messages
-5. Log all activity to `~/.omega/omega.log`
+5. Log all activity to `~/.omega/logs/omega.log`
 
 **Step 3: Send a Message to the Bot**
 In Telegram or WhatsApp, find the bot and send it a message, e.g.:

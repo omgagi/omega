@@ -205,7 +205,7 @@ Derives: `Debug, Clone, Serialize, Deserialize`
 | Field | Type | Default Function | Default Value |
 |-------|------|-----------------|---------------|
 | `backend` | `String` | `default_memory_backend()` | `"sqlite"` |
-| `db_path` | `String` | `default_db_path()` | `"~/.omega/memory.db"` |
+| `db_path` | `String` | `default_db_path()` | `"~/.omega/data/memory.db"` |
 | `max_context_messages` | `usize` | `default_max_context()` | `50` |
 
 Derives: `Debug, Clone, Serialize, Deserialize`
@@ -306,7 +306,7 @@ All private functions in the module that supply serde defaults:
 | `default_ollama_model()` | `String` | `"llama3"` |
 | `default_gemini_model()` | `String` | `"gemini-2.0-flash"` |
 | `default_memory_backend()` | `String` | `"sqlite"` |
-| `default_db_path()` | `String` | `"~/.omega/memory.db"` |
+| `default_db_path()` | `String` | `"~/.omega/data/memory.db"` |
 | `default_max_context()` | `usize` | `50` |
 | `default_timeout_secs()` | `u64` | `3600` |
 | `default_max_resume_attempts()` | `u32` | `5` |

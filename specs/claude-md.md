@@ -180,15 +180,15 @@ These rules are non-negotiable and must be followed in all code:
 
 ### Runtime Artifacts
 
-- **Database**: `~/.omega/memory.db` (SQLite, conversation history)
-- **Logs**: `~/.omega/omega.log` (structured logs from tracing)
+- **Database**: `~/.omega/data/memory.db` (SQLite, conversation history)
+- **Logs**: `~/.omega/logs/omega.log` (structured logs from tracing)
 - **Service**: `~/Library/LaunchAgents/com.omega-cortex.omega.plist` (macOS LaunchAgent)
 
 ### Directory Structure
 
 - `~/.omega/` created automatically on first run
 - Permissions: User-read/write only (0600 for security-sensitive files)
-- Backup: Recommended to back up `~/.omega/memory.db` periodically
+- Backup: Recommended to back up `~/.omega/data/memory.db` periodically
 
 ---
 

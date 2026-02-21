@@ -85,7 +85,7 @@ The `sqlx` dependency is the defining characteristic of this crate and warrants 
 - **`runtime-tokio`** selects Tokio as the async runtime that `sqlx` uses internally for connection pooling, query execution, and timeouts. This must match the workspace's async runtime choice.
 - **`sqlite`** enables the SQLite database backend. Omega uses SQLite exclusively for all persistent storage (conversation history, facts, summaries, audit logs). No other database backends (`postgres`, `mysql`) are enabled, keeping the dependency footprint minimal and avoiding the need for an external database server.
 
-SQLite database files are stored at `~/.omega/memory.db` as defined by the project conventions.
+SQLite database files are stored at `~/.omega/data/memory.db` as defined by the project conventions.
 
 ## Dependency Graph (Direct)
 
