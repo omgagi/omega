@@ -53,6 +53,7 @@ The main entry point for the Omega binary. Orchestrates CLI argument parsing, ro
 - `Status` — Health check: verify provider availability and channel configuration
 - `Ask { message: Vec<String> }` — One-shot query: send a message and exit (no persistent gateway)
 - `Init` — Interactive setup wizard
+- `Pair` — Standalone WhatsApp QR pairing (or re-pairing)
 - `Service { action: ServiceAction }` — Manage the system service (install, uninstall, status)
 
 ---
@@ -159,6 +160,12 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
 - Launches interactive setup wizard
 - Guides user through config creation
 
+**`omega pair`**
+- No arguments
+- Standalone WhatsApp QR pairing flow
+- Checks existing session, offers re-pair, renders terminal QR, waits for scan
+- Uses `whatsapp::start_pairing()` and `whatsapp::generate_qr_terminal()`
+
 **`omega service install`**
 - No arguments
 - Installs Omega as a macOS LaunchAgent or Linux systemd user unit
@@ -171,6 +178,23 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
 **`omega service status`**
 - No arguments
 - Reports whether service is installed and running
+
+---
+
+### `pair_whatsapp() -> anyhow::Result<()>`
+**Signature:** `async fn pair_whatsapp() -> anyhow::Result<()>`
+
+**Purpose:** Standalone WhatsApp QR pairing from the CLI, without requiring the full init wizard or a running daemon.
+
+**Flow:**
+1. Check if `~/.omega/whatsapp_session/whatsapp.db` exists (already paired)
+2. If paired, confirm re-pair with user — deletes session dir if confirmed, exits otherwise
+3. Call `whatsapp::start_pairing("~/.omega")` to spin up a standalone pairing bot
+4. Wait up to 30s for QR code via mpsc channel
+5. Render terminal QR via `whatsapp::generate_qr_terminal()`
+6. Display in `cliclack::note()`
+7. Wait up to 60s for pairing completion
+8. Report success or failure
 
 ---
 

@@ -350,7 +350,7 @@ Bot commands (`src/commands.rs`): `/help`, `/forget`, `/tasks`, `/cancel <id>`, 
 
 Init wizard Google Workspace: auto-detects installed browsers with incognito/private mode (Chrome, Brave, Firefox, Edge), offers to open OAuth URL in incognito via `BROWSER` env var on the `gog auth add` subprocess, cleans up temp script after.
 
-CLI commands: `start`, `status`, `ask`, `init`, `service install|uninstall|status`
+CLI commands: `start`, `status`, `ask`, `init`, `pair`, `service install|uninstall|status`
 
 ## Build & Test
 

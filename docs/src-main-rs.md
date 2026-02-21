@@ -143,6 +143,23 @@ omega init
 
 **When to use:** First-time setup, or when reconfiguring from scratch.
 
+### 5. omega pair
+**Purpose:** Pair (or re-pair) WhatsApp by scanning a QR code
+
+```bash
+omega pair
+```
+
+**What happens:**
+1. Checks if a WhatsApp session already exists (`~/.omega/whatsapp_session/whatsapp.db`)
+2. If already paired, asks whether to re-pair (deletes old session if confirmed)
+3. Starts a standalone WhatsApp pairing bot
+4. Displays a QR code in the terminal (Unicode half-block characters)
+5. Waits up to 60 seconds for the user to scan from WhatsApp → Linked Devices
+6. Reports success or failure
+
+**When to use:** Linking WhatsApp to Omega without running the full init wizard. Also useful for re-pairing after unlinking from the phone.
+
 ## Global Options
 
 All commands support the `--config` flag:
@@ -437,6 +454,7 @@ For full details, see the [service documentation](src-service-rs.md).
 | `omega status` | Health check | Verify setup before starting |
 | `omega ask` | One-shot query | Quick question, scripting |
 | `omega init` | Setup wizard | First-time configuration |
+| `omega pair` | WhatsApp QR pairing | Link/re-link WhatsApp |
 | `omega service install` | Install system service | Auto-start on login |
 | `omega service uninstall` | Remove system service | Clean removal |
 | `omega service status` | Check service state | Verify service is running |
