@@ -53,7 +53,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [memory-migrations.md](memory-migrations.md) — Database schema and migration system
 - [memory-migration-004.md](memory-migration-004.md) — FTS5 cross-conversation recall migration
 - [memory-migration-005.md](memory-migration-005.md) — Scheduled tasks table migration
-- [memory-migration-006.md](memory-migration-006.md) — Limitations table for autonomous self-introspection
+- [memory-migration-006.md](memory-migration-006.md) — Limitations table (historical — originally for self-introspection, now used by SKILL_IMPROVE)
 - [memory-migration-007.md](memory-migration-007.md) — Task type column for action scheduler (reminder vs provider-backed execution)
 
 ### Milestone 7: omega-skills
@@ -97,7 +97,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 ## Data Flow
 
 ```
-Message → Auth → Sanitize → Sandbox constraint → Memory (context) → Provider → process_markers (SCHEDULE/SCHEDULE_ACTION/CANCEL_TASK/UPDATE_TASK/HEARTBEAT/LIMITATION/SELF_HEAL/...) → Memory (store) → Audit → Send → Task confirmation
+Message → Auth → Sanitize → Sandbox constraint → Memory (context) → Provider → process_markers (SCHEDULE/SCHEDULE_ACTION/CANCEL_TASK/UPDATE_TASK/HEARTBEAT/SKILL_IMPROVE/...) → Memory (store) → Audit → Send → Task confirmation
 
 Background:
   Scheduler: poll due_tasks → channel.send(reminder) → complete_task

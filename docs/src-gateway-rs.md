@@ -288,7 +288,7 @@ Not all messages need the most powerful (and expensive) model. Simple questions,
 
 ### Important: Markers Are Language-Invariant
 
-All system markers (`SCHEDULE:`, `HEARTBEAT_ADD:`, `HEARTBEAT_INTERVAL:`, `LIMITATION:`, `SELF_HEAL:`, `LANG_SWITCH:`, `PROJECT_ACTIVATE:`, etc.) must always use their exact English prefix, regardless of the conversation language. The gateway parses them as literal string prefixes — if the AI translates or paraphrases a marker (e.g., `INTERVALO_HEARTBEAT: 15` instead of `HEARTBEAT_INTERVAL: 15`), the gateway silently ignores it. The system prompt enforces this: "Speak to the user in their language; speak to the system in markers."
+All system markers (`SCHEDULE:`, `HEARTBEAT_ADD:`, `HEARTBEAT_INTERVAL:`, `SKILL_IMPROVE:`, `LANG_SWITCH:`, `PROJECT_ACTIVATE:`, etc.) must always use their exact English prefix, regardless of the conversation language. The gateway parses them as literal string prefixes — if the AI translates or paraphrases a marker (e.g., `INTERVALO_HEARTBEAT: 15` instead of `HEARTBEAT_INTERVAL: 15`), the gateway silently ignores it. The system prompt enforces this: "Speak to the user in their language; speak to the system in markers."
 
 ### Stage 6: Provider Call
 
@@ -683,6 +683,11 @@ User sends message on Telegram
 │ Stage 6d: extract_heartbeat_markers()   │
 │  • Scan for HEARTBEAT_ADD/REMOVE lines  │
 │  ✓ Found? → Update file, strip markers  │
+│  ✗ Not found? → Continue                │
+│                                          │
+│ Stage 6e: extract_bug_report()          │
+│  • Scan for BUG_REPORT: line            │
+│  ✓ Found? → Append to BUG.md, strip     │
 │  ✗ Not found? → Continue                │
 │                                          │
 │ Stage 7: memory.store_exchange()        │

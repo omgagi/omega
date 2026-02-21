@@ -1057,7 +1057,7 @@ INSERT OR IGNORE INTO limitations (id, title, description, proposed_plan) VALUES
 
 **Note:** Uses `INSERT OR IGNORE` — if the title already exists (case-insensitive match via the unique index), the insert is silently ignored and `rows_affected()` returns 0.
 
-**Called by:** `gateway.rs::handle_message()` Stage 5h (LIMITATION marker extraction) and `gateway.rs::heartbeat_loop()` (self-audit).
+**Called by:** `gateway.rs::handle_message()` Stage 5h (SKILL_IMPROVE marker extraction) and `gateway.rs::heartbeat_loop()`.
 
 ---
 
@@ -1373,12 +1373,6 @@ HEARTBEAT_INTERVAL: <minutes>
 Value must be between 1 and 1440 (24 hours). Use when the user asks to change how
 often you check in (e.g., "check every 15 minutes").
 
-Self-Introspection: You are self-aware of your capabilities and limitations.
-When you encounter something you CANNOT do but SHOULD be able to (missing tools,
-unavailable services, missing integrations), report it using this marker on its own line:
-LIMITATION: <short title> | <what you can't do and why> | <your proposed plan to fix it>
-Only report genuine infrastructure/capability gaps, not user-specific requests.
-Be specific and actionable in your proposed plan.
 ```
 
 **Conditional sections:**
@@ -1391,7 +1385,7 @@ Be specific and actionable in your proposed plan.
 - SCHEDULE marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE:` marker line when the user requests a reminder or scheduled task, AND proactively when the agent takes an action that needs follow-up.
 - SCHEDULE_ACTION marker instructions: always appended (unconditional). Tells the provider to include a `SCHEDULE_ACTION:` marker line when the follow-up requires autonomous execution with full tool access rather than a simple reminder.
 - HEARTBEAT_ADD/REMOVE/INTERVAL marker instructions: always appended (unconditional). Tells the provider to include `HEARTBEAT_ADD:` or `HEARTBEAT_REMOVE:` markers when the user requests monitoring changes, AND proactively when the agent takes an action that needs ongoing monitoring. Also includes `HEARTBEAT_INTERVAL:` instruction for dynamic interval changes (1–1440 minutes).
-- LIMITATION marker instructions: always appended (unconditional). Tells the provider to include a `LIMITATION:` marker when it encounters an infrastructure/capability gap it cannot resolve.
+- SKILL_IMPROVE marker instructions: always appended (unconditional). Tells the provider to include a `SKILL_IMPROVE:` marker when it identifies a skill that could be improved.
 
 ---
 
@@ -1670,8 +1664,8 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 18. The language directive is always included in the system prompt (uses resolved `preferred_language` fact or auto-detected language).
 19. The LANG_SWITCH marker instruction is always included in the system prompt.
 20. The HEARTBEAT_ADD/REMOVE marker instructions are always included in the system prompt.
-21. The LIMITATION marker instruction is always included in the system prompt.
-22. Limitations are deduplicated by title (case-insensitive) — duplicate inserts are silently ignored.
-23. Limitation status is one of `'open'` or `'resolved'`.
+21. The SKILL_IMPROVE marker instruction is always included in the system prompt.
+22. Skill improvement suggestions are deduplicated by title (case-insensitive) — duplicate inserts are silently ignored.
+23. Limitation status is one of `'open'` or `'resolved'` (table retained for SKILL_IMPROVE storage).
 24. The SCHEDULE_ACTION marker instruction is always included in the system prompt.
 25. Task type is one of `'reminder'` or `'action'` — default is `'reminder'`.

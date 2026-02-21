@@ -1,8 +1,8 @@
 //! Marker extraction, parsing, and stripping for the gateway protocol.
 //!
-//! All system markers (SCHEDULE:, LANG_SWITCH:, SELF_HEAL:, etc.) are emitted
+//! All system markers (SCHEDULE:, LANG_SWITCH:, SKILL_IMPROVE:, etc.) are emitted
 //! by the AI in response text and processed here. This module centralizes the
-//! 40+ extract/strip/parse functions that were previously scattered in gateway.rs.
+//! extract/strip/parse functions that were previously scattered in gateway.rs.
 
 use std::path::PathBuf;
 
@@ -85,9 +85,8 @@ pub fn strip_all_remaining_markers(text: &str) -> String {
         "HEARTBEAT_ADD:",
         "HEARTBEAT_REMOVE:",
         "HEARTBEAT_INTERVAL:",
-        "LIMITATION:",
-        "SELF_HEAL_RESOLVED",
-        "SELF_HEAL:",
+        "SKILL_IMPROVE:",
+        "BUG_REPORT:",
         "FORGET_CONVERSATION",
         "PURGE_FACTS",
         "WHATSAPP_QR",
@@ -541,165 +540,91 @@ pub fn apply_heartbeat_changes(actions: &[HeartbeatAction]) {
 }
 
 // ---------------------------------------------------------------------------
-// LIMITATION
+// BUG_REPORT
 // ---------------------------------------------------------------------------
 
-/// Extract the first `LIMITATION:` line from response text.
-pub fn extract_limitation_marker(text: &str) -> Option<String> {
-    text.lines()
-        .find(|line| line.trim().starts_with("LIMITATION:"))
-        .map(|line| line.trim().to_string())
+/// Extract the first `BUG_REPORT:` value from response text.
+/// Handles both standalone lines and inline markers.
+pub fn extract_bug_report(text: &str) -> Option<String> {
+    extract_inline_marker_value(text, "BUG_REPORT:")
 }
 
-/// Parse a limitation line: `LIMITATION: title | description | proposed plan`
-pub fn parse_limitation_line(line: &str) -> Option<(String, String, String)> {
-    let content = line.strip_prefix("LIMITATION:")?.trim();
-    let parts: Vec<&str> = content.splitn(3, '|').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    let title = parts[0].trim().to_string();
-    let description = parts[1].trim().to_string();
-    let plan = parts[2].trim().to_string();
-    if title.is_empty() || description.is_empty() {
-        return None;
-    }
-    Some((title, description, plan))
+/// Strip all `BUG_REPORT:` markers from response text (standalone or inline).
+pub fn strip_bug_report(text: &str) -> String {
+    strip_inline_marker(text, "BUG_REPORT:")
 }
 
-/// Strip all `LIMITATION:` lines from response text.
-pub fn strip_limitation_markers(text: &str) -> String {
-    text.lines()
-        .filter(|line| !line.trim().starts_with("LIMITATION:"))
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string()
-}
-
-// ---------------------------------------------------------------------------
-// SELF_HEAL / SELF_HEAL_RESOLVED
-// ---------------------------------------------------------------------------
-
-/// State tracked in `~/.omega/self-healing.json` during active self-healing.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SelfHealingState {
-    /// Description of the anomaly being healed.
-    pub anomaly: String,
-    /// Concrete verification test to confirm the fix works.
-    pub verification: String,
-    /// Current iteration (1-based).
-    pub iteration: u32,
-    /// Maximum iterations before escalation.
-    pub max_iterations: u32,
-    /// ISO 8601 timestamp when self-healing started.
-    pub started_at: String,
-    /// History of what was tried in each iteration.
-    pub attempts: Vec<String>,
-}
-
-/// Extract the first `SELF_HEAL:` line from response text.
-pub fn extract_self_heal_marker(text: &str) -> Option<String> {
-    text.lines()
-        .find(|line| line.trim().starts_with("SELF_HEAL:"))
-        .map(|line| line.trim().to_string())
-}
-
-/// Parse the description and verification test from a `SELF_HEAL: description | verification` line.
-pub fn parse_self_heal_line(line: &str) -> Option<(String, String)> {
-    let content = line.strip_prefix("SELF_HEAL:")?.trim();
-    let mut parts = content.splitn(2, '|');
-    let description = parts.next()?.trim();
-    let verification = parts.next()?.trim();
-    if description.is_empty() || verification.is_empty() {
-        return None;
-    }
-    Some((description.to_string(), verification.to_string()))
-}
-
-/// Check if response text contains a `SELF_HEAL_RESOLVED` marker line.
-pub fn has_self_heal_resolved_marker(text: &str) -> bool {
-    text.lines().any(|line| line.trim() == "SELF_HEAL_RESOLVED")
-}
-
-/// Strip all `SELF_HEAL:` and `SELF_HEAL_RESOLVED` lines from response text.
-pub fn strip_self_heal_markers(text: &str) -> String {
-    text.lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !trimmed.starts_with("SELF_HEAL:") && trimmed != "SELF_HEAL_RESOLVED"
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string()
-}
-
-/// Return the path to `~/.omega/self-healing.json`.
-pub fn self_healing_path() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(format!("{home}/.omega/self-healing.json")))
-}
-
-/// Read the current self-healing state from disk.
-pub fn read_self_healing_state() -> Option<SelfHealingState> {
-    let path = self_healing_path()?;
-    let content = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&content).ok()
-}
-
-/// Write the self-healing state to disk.
-pub fn write_self_healing_state(state: &SelfHealingState) -> anyhow::Result<()> {
-    let path = self_healing_path().ok_or_else(|| anyhow::anyhow!("HOME not set"))?;
-    let json = serde_json::to_string_pretty(state)?;
-    std::fs::write(path, json)?;
-    Ok(())
-}
-
-/// Delete the self-healing state file.
-pub fn delete_self_healing_state() -> anyhow::Result<()> {
-    let path = self_healing_path().ok_or_else(|| anyhow::anyhow!("HOME not set"))?;
-    if path.exists() {
-        std::fs::remove_file(path)?;
-    }
-    Ok(())
-}
-
-/// Auto-detect the repo path from the running binary location.
+/// Append a bug report entry to `{data_dir}/BUG.md`, grouped by date.
 ///
-/// The release binary lives at `{repo}/target/release/omega`, so we go up 3
-/// levels and verify `Cargo.toml` exists. Returns `None` if the binary was
-/// moved or installed elsewhere.
-pub fn detect_repo_path() -> Option<String> {
-    let exe = std::env::current_exe().ok()?;
-    let repo = exe.parent()?.parent()?.parent()?;
-    if repo.join("Cargo.toml").exists() {
-        Some(repo.to_string_lossy().to_string())
-    } else {
-        None
+/// Creates the file if missing. Adds a date header (`## YYYY-MM-DD`) when the
+/// current date section does not yet exist, then appends the description as a
+/// bulleted entry.
+pub fn append_bug_report(data_dir: &str, description: &str) -> Result<(), String> {
+    let path = PathBuf::from(data_dir).join("BUG.md");
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let date_header = format!("## {today}");
+
+    let mut content = std::fs::read_to_string(&path).unwrap_or_default();
+
+    // Ensure file header exists.
+    if !content.contains("# OMEGA Bug Reports") {
+        content = format!("# OMEGA Bug Reports\n\n{content}");
     }
+
+    // Ensure today's date section exists.
+    if !content.contains(&date_header) {
+        // Trim trailing whitespace, then append date section.
+        content = format!("{}\n\n{date_header}\n", content.trim_end());
+    }
+
+    // Append the entry after the date header.
+    let entry = format!("- **{description}**\n");
+    if let Some(pos) = content.find(&date_header) {
+        let insert_pos = content[pos..]
+            .find('\n')
+            .map(|i| pos + i + 1)
+            .unwrap_or(content.len());
+        content.insert_str(insert_pos, &entry);
+    }
+
+    // Ensure parent directory exists.
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&path, &content).map_err(|e| e.to_string())
 }
 
-/// Build the self-healing follow-up task description with repo context.
-pub fn self_heal_follow_up(anomaly: &str, verification: &str) -> String {
-    let repo_hint = detect_repo_path()
-        .map(|p| {
-            format!(
-                " The source code is at {p}. \
-                 Build with: nix --extra-experimental-features \
-                 \"nix-command flakes\" develop --command bash -c \
-                 \"cargo build --release && cargo clippy -- -D warnings\"."
-            )
-        })
-        .unwrap_or_default();
-    format!(
-        "Self-healing verification — read ~/.omega/self-healing.json for context. \
-         Run this verification: {verification}. \
-         If the test passes, emit SELF_HEAL_RESOLVED. \
-         If it fails, diagnose the root cause, fix it, build+clippy until clean, \
-         restart service, update the attempts array in self-healing.json, \
-         and emit SELF_HEAL: {anomaly} | {verification} to continue.{repo_hint}"
-    )
+// ---------------------------------------------------------------------------
+// SKILL_IMPROVE
+// ---------------------------------------------------------------------------
+
+/// Extract the first `SKILL_IMPROVE:` line from response text.
+pub fn extract_skill_improve(text: &str) -> Option<String> {
+    text.lines()
+        .find(|line| line.trim().starts_with("SKILL_IMPROVE:"))
+        .map(|line| line.trim().to_string())
+}
+
+/// Parse a skill improve line: `SKILL_IMPROVE: skill_name | lesson`
+pub fn parse_skill_improve_line(line: &str) -> Option<(String, String)> {
+    let content = line.strip_prefix("SKILL_IMPROVE:")?.trim();
+    let mut parts = content.splitn(2, '|');
+    let skill_name = parts.next()?.trim();
+    let lesson = parts.next()?.trim();
+    if skill_name.is_empty() || lesson.is_empty() {
+        return None;
+    }
+    Some((skill_name.to_string(), lesson.to_string()))
+}
+
+/// Strip all `SKILL_IMPROVE:` lines from response text.
+pub fn strip_skill_improve(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim().starts_with("SKILL_IMPROVE:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1597,56 +1522,6 @@ mod tests {
         assert_eq!(steps[0], "First step");
     }
 
-    // --- LIMITATION ---
-
-    #[test]
-    fn test_extract_limitation_marker() {
-        let text =
-            "I noticed an issue.\nLIMITATION: No email | Cannot send emails | Add SMTP provider";
-        let result = extract_limitation_marker(text);
-        assert_eq!(
-            result,
-            Some("LIMITATION: No email | Cannot send emails | Add SMTP provider".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_limitation_marker_none() {
-        let text = "Everything is working fine.";
-        assert!(extract_limitation_marker(text).is_none());
-    }
-
-    #[test]
-    fn test_parse_limitation_line() {
-        let line = "LIMITATION: No email | Cannot send emails | Add SMTP provider";
-        let result = parse_limitation_line(line).unwrap();
-        assert_eq!(result.0, "No email");
-        assert_eq!(result.1, "Cannot send emails");
-        assert_eq!(result.2, "Add SMTP provider");
-    }
-
-    #[test]
-    fn test_parse_limitation_line_invalid() {
-        assert!(parse_limitation_line("LIMITATION: only one part").is_none());
-        assert!(parse_limitation_line("not a limitation line").is_none());
-        assert!(parse_limitation_line("LIMITATION:  | desc | plan").is_none());
-    }
-
-    #[test]
-    fn test_strip_limitation_markers() {
-        let text =
-            "I found a gap.\nLIMITATION: No email | Cannot send | Add SMTP\nHope this helps.";
-        let result = strip_limitation_markers(text);
-        assert_eq!(result, "I found a gap.\nHope this helps.");
-    }
-
-    #[test]
-    fn test_strip_limitation_markers_multiple() {
-        let text = "Response.\nLIMITATION: A | B | C\nMore text.\nLIMITATION: D | E | F\nEnd.";
-        let result = strip_limitation_markers(text);
-        assert_eq!(result, "Response.\nMore text.\nEnd.");
-    }
-
     // --- SCHEDULE_ACTION ---
 
     #[test]
@@ -1739,207 +1614,6 @@ mod tests {
         let result = extract_all_schedule_action_markers(text);
         assert_eq!(result.len(), 1);
         assert!(result[0].contains("Check price"));
-    }
-
-    // --- SELF_HEAL ---
-
-    #[test]
-    fn test_extract_self_heal_marker() {
-        let text = "Something is wrong.\nSELF_HEAL: Build pipeline broken | run cargo build and confirm exit code 0\nLet me fix it.";
-        let result = extract_self_heal_marker(text);
-        assert_eq!(
-            result,
-            Some(
-                "SELF_HEAL: Build pipeline broken | run cargo build and confirm exit code 0"
-                    .to_string()
-            )
-        );
-    }
-
-    #[test]
-    fn test_extract_self_heal_marker_none() {
-        let text = "Everything is working fine.";
-        assert!(extract_self_heal_marker(text).is_none());
-    }
-
-    #[test]
-    fn test_parse_self_heal_line() {
-        let line = "SELF_HEAL: Build pipeline broken | run cargo build and confirm exit code 0";
-        let (desc, verif) = parse_self_heal_line(line).unwrap();
-        assert_eq!(desc, "Build pipeline broken");
-        assert_eq!(verif, "run cargo build and confirm exit code 0");
-    }
-
-    #[test]
-    fn test_parse_self_heal_line_empty() {
-        assert!(parse_self_heal_line("SELF_HEAL:").is_none());
-        assert!(parse_self_heal_line("SELF_HEAL:   ").is_none());
-        assert!(parse_self_heal_line("not a self-heal line").is_none());
-        assert!(parse_self_heal_line("SELF_HEAL: desc only").is_none());
-        assert!(parse_self_heal_line("SELF_HEAL: desc |").is_none());
-        assert!(parse_self_heal_line("SELF_HEAL: | verification").is_none());
-    }
-
-    #[test]
-    fn test_has_self_heal_resolved_marker() {
-        let text = "Fixed the issue.\nSELF_HEAL_RESOLVED\nAll good now.";
-        assert!(has_self_heal_resolved_marker(text));
-    }
-
-    #[test]
-    fn test_has_self_heal_resolved_marker_none() {
-        let text = "No resolved marker here.";
-        assert!(!has_self_heal_resolved_marker(text));
-    }
-
-    #[test]
-    fn test_strip_self_heal_markers() {
-        let text = "Detected issue.\nSELF_HEAL: Build broken | run cargo build\nFixing now.";
-        let result = strip_self_heal_markers(text);
-        assert_eq!(result, "Detected issue.\nFixing now.");
-    }
-
-    #[test]
-    fn test_strip_self_heal_markers_resolved() {
-        let text = "Fixed it.\nSELF_HEAL_RESOLVED\nAll done.";
-        let result = strip_self_heal_markers(text);
-        assert_eq!(result, "Fixed it.\nAll done.");
-    }
-
-    #[test]
-    fn test_strip_self_heal_markers_both() {
-        let text =
-            "Start.\nSELF_HEAL: Bug found | run cargo test\nMiddle.\nSELF_HEAL_RESOLVED\nEnd.";
-        let result = strip_self_heal_markers(text);
-        assert_eq!(result, "Start.\nMiddle.\nEnd.");
-    }
-
-    #[test]
-    fn test_self_healing_state_serde_roundtrip() {
-        let state = SelfHealingState {
-            anomaly: "Build broken".to_string(),
-            verification: "run cargo build and confirm exit code 0".to_string(),
-            iteration: 3,
-            max_iterations: 10,
-            started_at: "2026-02-18T12:00:00Z".to_string(),
-            attempts: vec![
-                "1: Tried restarting service".to_string(),
-                "2: Fixed import path".to_string(),
-                "3: Rebuilt binary".to_string(),
-            ],
-        };
-        let json = serde_json::to_string(&state).unwrap();
-        let deserialized: SelfHealingState = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.anomaly, "Build broken");
-        assert_eq!(
-            deserialized.verification,
-            "run cargo build and confirm exit code 0"
-        );
-        assert_eq!(deserialized.iteration, 3);
-        assert_eq!(deserialized.max_iterations, 10);
-        assert_eq!(deserialized.attempts.len(), 3);
-    }
-
-    #[test]
-    fn test_self_heal_full_flow_simulation() {
-        let ai_response = "I found a bug in the audit system.\n\
-                           SELF_HEAL: audit_log missing model field | query audit_log for last entry and confirm model is not null\n\
-                           Investigating now.";
-
-        let heal_line = extract_self_heal_marker(ai_response).unwrap();
-        assert!(heal_line.contains("audit_log missing model field"));
-
-        let (description, verification) = parse_self_heal_line(&heal_line).unwrap();
-        assert_eq!(description, "audit_log missing model field");
-        assert_eq!(
-            verification,
-            "query audit_log for last entry and confirm model is not null"
-        );
-
-        let state = SelfHealingState {
-            anomaly: description.clone(),
-            verification: verification.clone(),
-            iteration: 1,
-            max_iterations: 10,
-            started_at: "2026-02-18T20:00:00Z".to_string(),
-            attempts: Vec::new(),
-        };
-
-        let json = serde_json::to_string_pretty(&state).unwrap();
-        assert!(json.contains("\"verification\""));
-        let restored: SelfHealingState = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.verification, verification);
-
-        let follow_up = self_heal_follow_up(&restored.anomaly, &restored.verification);
-        assert!(follow_up.contains("Run this verification: query audit_log"));
-
-        let cleaned = strip_self_heal_markers(ai_response);
-        assert!(!cleaned.contains("SELF_HEAL:"));
-        assert!(cleaned.contains("I found a bug"));
-    }
-
-    #[test]
-    fn test_self_healing_state_old_format_graceful_fallback() {
-        let old_json = r#"{
-            "anomaly": "Build broken",
-            "iteration": 3,
-            "max_iterations": 10,
-            "started_at": "2026-02-18T12:00:00Z",
-            "attempts": ["1: tried X", "2: tried Y"]
-        }"#;
-        let result: Result<SelfHealingState, _> = serde_json::from_str(old_json);
-        assert!(
-            result.is_err(),
-            "Old state without verification must fail to deserialize"
-        );
-    }
-
-    #[test]
-    fn test_self_heal_old_marker_format_rejected() {
-        let old_response = "Found a bug.\nSELF_HEAL: Build pipeline broken\nFixing.";
-
-        let heal_line = extract_self_heal_marker(old_response);
-        assert!(heal_line.is_some());
-
-        let parsed = parse_self_heal_line(&heal_line.unwrap());
-        assert!(
-            parsed.is_none(),
-            "Old format without | must be rejected by parse_self_heal_line"
-        );
-
-        let cleaned = strip_self_heal_markers(old_response);
-        assert!(!cleaned.contains("SELF_HEAL:"));
-        assert_eq!(cleaned, "Found a bug.\nFixing.");
-    }
-
-    #[test]
-    fn test_self_heal_verification_with_internal_pipes() {
-        let line =
-            "SELF_HEAL: DB error | run sqlite3 ~/.omega/memory.db 'SELECT count(*) | grep -v 0'";
-        let (desc, verif) = parse_self_heal_line(line).unwrap();
-        assert_eq!(desc, "DB error");
-        assert_eq!(
-            verif,
-            "run sqlite3 ~/.omega/memory.db 'SELECT count(*) | grep -v 0'"
-        );
-    }
-
-    #[test]
-    fn test_detect_repo_path() {
-        let result = detect_repo_path();
-        if let Some(ref path) = result {
-            assert!(
-                PathBuf::from(path).join("Cargo.toml").exists(),
-                "detected repo path should contain Cargo.toml"
-            );
-        }
-    }
-
-    #[test]
-    fn test_self_heal_follow_up_content() {
-        let desc = self_heal_follow_up("broken audit", "run cargo test");
-        assert!(desc.contains("Run this verification: run cargo test"));
-        assert!(desc.contains("SELF_HEAL: broken audit | run cargo test"));
     }
 
     // --- PERSONALITY ---
@@ -2142,6 +1816,150 @@ mod tests {
     fn test_strip_whatsapp_qr_marker() {
         let text = "Setting up.\nWHATSAPP_QR\nAll done.";
         assert_eq!(strip_whatsapp_qr_marker(text), "Setting up.\nAll done.");
+    }
+
+    // --- SKILL_IMPROVE ---
+
+    #[test]
+    fn test_extract_skill_improve() {
+        let text =
+            "I've updated the skill.\nSKILL_IMPROVE: google-workspace | Always search by both name and email when looking up contacts";
+        let result = extract_skill_improve(text);
+        assert_eq!(
+            result,
+            Some("SKILL_IMPROVE: google-workspace | Always search by both name and email when looking up contacts".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_skill_improve_none() {
+        assert!(extract_skill_improve("No skill improve here.").is_none());
+    }
+
+    #[test]
+    fn test_parse_skill_improve_line() {
+        let line = "SKILL_IMPROVE: google-workspace | Always search by both name and email";
+        let (skill, lesson) = parse_skill_improve_line(line).unwrap();
+        assert_eq!(skill, "google-workspace");
+        assert_eq!(lesson, "Always search by both name and email");
+    }
+
+    #[test]
+    fn test_parse_skill_improve_line_with_internal_pipes() {
+        let line = "SKILL_IMPROVE: playwright-mcp | Use page.waitForSelector('div | span') before clicking";
+        let (skill, lesson) = parse_skill_improve_line(line).unwrap();
+        assert_eq!(skill, "playwright-mcp");
+        assert_eq!(
+            lesson,
+            "Use page.waitForSelector('div | span') before clicking"
+        );
+    }
+
+    #[test]
+    fn test_parse_skill_improve_line_invalid() {
+        assert!(parse_skill_improve_line("SKILL_IMPROVE:").is_none());
+        assert!(parse_skill_improve_line("SKILL_IMPROVE: skill_only").is_none());
+        assert!(parse_skill_improve_line("SKILL_IMPROVE:  | lesson").is_none());
+        assert!(parse_skill_improve_line("SKILL_IMPROVE: skill |").is_none());
+        assert!(parse_skill_improve_line("not a skill improve line").is_none());
+    }
+
+    #[test]
+    fn test_strip_skill_improve() {
+        let text =
+            "Fixed the issue.\nSKILL_IMPROVE: google-workspace | Search by name and email\nDone.";
+        let result = strip_skill_improve(text);
+        assert_eq!(result, "Fixed the issue.\nDone.");
+    }
+
+    // --- BUG_REPORT ---
+
+    #[test]
+    fn test_extract_bug_report() {
+        let text =
+            "I can't read my heartbeat config.\nBUG_REPORT: Cannot read own heartbeat interval";
+        assert_eq!(
+            extract_bug_report(text),
+            Some("Cannot read own heartbeat interval".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_bug_report_inline() {
+        let text = "I noticed a gap. BUG_REPORT: No introspection for MCP connections";
+        assert_eq!(
+            extract_bug_report(text),
+            Some("No introspection for MCP connections".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_bug_report_none() {
+        assert!(extract_bug_report("Just a normal response.").is_none());
+    }
+
+    #[test]
+    fn test_extract_bug_report_empty() {
+        assert!(extract_bug_report("BUG_REPORT: ").is_none());
+    }
+
+    #[test]
+    fn test_strip_bug_report() {
+        let text = "I noticed an issue.\nBUG_REPORT: Cannot list active MCP connections\nDone.";
+        assert_eq!(strip_bug_report(text), "I noticed an issue.\nDone.");
+    }
+
+    #[test]
+    fn test_strip_bug_report_inline() {
+        let text = "There's a gap here. BUG_REPORT: No runtime config access";
+        assert_eq!(strip_bug_report(text), "There's a gap here.");
+    }
+
+    #[test]
+    fn test_append_bug_report_creates_file() {
+        let tmp = std::env::temp_dir().join("omega_test_bug_report_create");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        append_bug_report(tmp.to_str().unwrap(), "Cannot read heartbeat interval").unwrap();
+
+        let content = std::fs::read_to_string(tmp.join("BUG.md")).unwrap();
+        assert!(content.contains("# OMEGA Bug Reports"));
+        assert!(content.contains("- **Cannot read heartbeat interval**"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_append_bug_report_groups_by_date() {
+        let tmp = std::env::temp_dir().join("omega_test_bug_report_group");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        append_bug_report(tmp.to_str().unwrap(), "First bug").unwrap();
+        append_bug_report(tmp.to_str().unwrap(), "Second bug").unwrap();
+
+        let content = std::fs::read_to_string(tmp.join("BUG.md")).unwrap();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        // Only one date header for today.
+        assert_eq!(
+            content.matches(&format!("## {today}")).count(),
+            1,
+            "should have exactly one date header"
+        );
+        assert!(content.contains("- **First bug**"));
+        assert!(content.contains("- **Second bug**"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_strip_all_remaining_markers_includes_bug_report() {
+        let text = "Hello. BUG_REPORT: some limitation\nMore text.";
+        let result = strip_all_remaining_markers(text);
+        assert!(!result.contains("BUG_REPORT:"));
+        assert!(result.contains("Hello."));
+        assert!(result.contains("More text."));
     }
 
     // --- Classification context ---

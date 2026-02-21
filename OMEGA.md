@@ -2,7 +2,7 @@
 
 Omega is a personal AI agent that connects messaging platforms to AI providers. You message it on Telegram or WhatsApp, it thinks using Claude (or another AI), and replies — remembering your conversations, preferences, and scheduled tasks across sessions.
 
-But Omega is far more than a chat relay. It has its own native intelligence layer — background loops that monitor, summarize, and self-heal; a marker system that lets the AI trigger real-world side effects; autonomous model routing that picks the right brain for each task; a quantitative trading engine; and OS-level sandboxing. The AI provider is just one piece. Most of the magic happens in Rust, before and after the AI ever sees your message.
+But Omega is far more than a chat relay. It has its own native intelligence layer — background loops that monitor and summarize; a marker system that lets the AI trigger real-world side effects; autonomous model routing that picks the right brain for each task; autonomous skill improvement; a quantitative trading engine; and OS-level sandboxing. The AI provider is just one piece. Most of the magic happens in Rust, before and after the AI ever sees your message.
 
 This document explains how every piece fits together.
 
@@ -75,7 +75,7 @@ Before diving into the architecture, here's the key distinction: Omega is **not*
 |------|-------------|
 | **Summarizer** | Polls every 60s for idle conversations (30+ min). Auto-generates summaries + extracts facts as key:value pairs. This is how Omega builds long-term memory. |
 | **Scheduler** | Polls every 60s for due tasks. **Reminder** tasks deliver text to the user. **Action** tasks invoke the provider autonomously with full system prompt + MCP tools. |
-| **Heartbeat** | Periodic self-check (default 30 min, dynamic interval). Reads `~/.omega/HEARTBEAT.md` checklist, enriches with user facts + open limitations + self-audit instruction. Suppresses "HEARTBEAT_OK". Respects active hours. |
+| **Heartbeat** | Periodic self-check (default 30 min, dynamic interval). Reads `~/.omega/HEARTBEAT.md` checklist, enriches with user facts. Suppresses "HEARTBEAT_OK". Respects active hours. |
 | **Quant price feed** | When enabled via `/quant enable`, connects to IB Gateway via TWS API, streams real-time bars, processes each through the quant engine, stores latest signal for injection into user message context. |
 | **Graceful shutdown** | On SIGINT, summarizes all active conversations then stops channels cleanly. |
 
@@ -93,39 +93,13 @@ The AI emits text markers in its response. The gateway extracts them, performs t
 | `PROJECT_ACTIVATE: name` | Switches the user's active project context |
 | `PROJECT_DEACTIVATE` | Clears active project |
 | `LANG_SWITCH: language` | Updates user's preferred language |
-| `LIMITATION: title \| desc \| plan` | Stores capability gap in DB (deduped), alerts owner via Telegram, auto-adds to heartbeat |
-| `SELF_HEAL: desc \| verification` | Creates self-healing state file, schedules verification follow-up (2 min), max 10 iterations |
-| `SELF_HEAL_RESOLVED` | Deletes healing state file, notifies owner |
+| `SKILL_IMPROVE: skill \| lesson` | Appends lesson to skill's SKILL.md under `## Lessons Learned`, confirms to user |
 | `SILENT` | Suppresses response entirely (group chats) |
 | `WHATSAPP_QR` | Triggers WhatsApp QR pairing flow |
 
-### Self-Healing Protocol
+### Autonomous Skill Improvement
 
-When Omega detects a genuine infrastructure or code bug, it emits a `SELF_HEAL: description | verification test` marker. The gateway manages the entire lifecycle:
-
-```
-Bug detected → SELF_HEAL marker emitted
-    │
-    ▼
-Gateway creates ~/.omega/self-healing.json
-    (stores description + verification test + iteration count)
-    │
-    ▼
-Schedules follow-up action task (2 min delay)
-    (includes verification test + repo path hint)
-    │
-    ▼
-Follow-up runs → still broken? → increment iteration → reschedule
-    │                                    │
-    │                              (max 10 iterations → escalate to owner)
-    │
-    ▼
-Fixed! → AI emits SELF_HEAL_RESOLVED → gateway deletes state file → notifies owner
-```
-
-### Self-Introspection
-
-Omega autonomously detects its own capability gaps. When encountering something it cannot do but should, it emits a `LIMITATION: title | description | plan` marker. The gateway stores it in the `limitations` table (deduped by title), sends an immediate Telegram alert, and auto-adds it to the heartbeat checklist — making every heartbeat a self-reflection opportunity.
+When Omega makes a mistake while using a skill (wrong API parameter, stopped a search too early, missed an edge case), it fixes the problem immediately, then emits a `SKILL_IMPROVE: skill-name | lesson learned` marker. The gateway appends the lesson to the skill's `SKILL.md` under a `## Lessons Learned` section (created if missing). Future invocations of that skill automatically benefit from past mistakes — no external tracking needed.
 
 ### Proactive Self-Scheduling
 
@@ -234,8 +208,8 @@ You type a message on Telegram
     │                                                          │
     │ 15. MARKERS ──── Scan response for all markers:          │
     │                  SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_*,  │
-    │                  PROJECT_*, LANG_SWITCH, LIMITATION,      │
-    │                  SELF_HEAL, SELF_HEAL_RESOLVED, WHATSAPP  │
+    │                  PROJECT_*, LANG_SWITCH, SKILL_IMPROVE,   │
+    │                  CANCEL_TASK, UPDATE_TASK, WHATSAPP        │
     │                  Extract, act, strip from response.       │
     │                                                          │
     │ 16. STORE ────── Save exchange to SQLite                 │
@@ -350,7 +324,7 @@ SQLite-backed storage with WAL mode for everything Omega remembers.
 
 | File | Purpose |
 |------|---------|
-| `store.rs` | Conversation lifecycle, context building, facts, tasks, summaries, limitations |
+| `store.rs` | Conversation lifecycle, context building, facts, tasks, summaries |
 | `audit.rs` | Tamper-evident interaction log (channel, sender, I/O, provider, model, timing, status) |
 
 **Database tables (7 schema migrations):**
@@ -362,7 +336,6 @@ messages_fts ────── Full-text search index (SQLite FTS5) for cross-c
 facts ───────────── Key-value pairs about users (name, timezone, language, preferences...)
 summaries ───────── Compressed conversation summaries for long-term memory
 scheduled_tasks ─── Reminders and action tasks (one-shot + recurring)
-limitations ─────── Self-detected capability gaps (deduped by title)
 audit_log ───────── Every interaction recorded for security
 ```
 
@@ -388,7 +361,7 @@ audit_log ───────── Every interaction recorded for security
 4. Related messages found via FTS5 full-text search from any past conversation
 5. Your pending scheduled tasks
 6. Language preference + onboarding hints (graduated by fact count)
-7. Dynamic marker instructions (SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_*, LIMITATION, LANG_SWITCH)
+7. Dynamic marker instructions (SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_*, SKILL_IMPROVE, LANG_SWITCH)
 
 **Language detection:** Stop-word heuristic for 7 languages (Spanish, Portuguese, French, German, Italian, Dutch, Russian) + English default.
 
@@ -533,12 +506,9 @@ Every N minutes (default 30, adjustable via `HEARTBEAT_INTERVAL:` marker + `Arc<
 2. Reads `~/.omega/HEARTBEAT.md` checklist (skips entirely if file doesn't exist)
 3. Enriches the prompt with:
    - User facts and recent summaries
-   - Open limitations from the `limitations` table
-   - Self-audit instruction for autonomous gap detection
 4. Sends to AI for evaluation
 5. Suppresses "HEARTBEAT_OK" responses (silently logged)
 6. Alerts the user if something needs attention
-7. Processes LIMITATION markers from the response
 
 ```
 ~/.omega/HEARTBEAT.md
@@ -547,7 +517,6 @@ Every N minutes (default 30, adjustable via `HEARTBEAT_INTERVAL:` marker + `Arc<
 - Am I exercising regularly?
 - Am I drinking enough water?
 - Are there any system alerts?
-- [auto-added] LIMITATION: Cannot access calendar API
 ```
 
 The checklist is managed conversationally — say "keep an eye on my water intake" and Omega adds it via `HEARTBEAT_ADD:`. Say "stop monitoring water" and it's removed via `HEARTBEAT_REMOVE:`.
@@ -574,9 +543,7 @@ Omega uses a clean pattern to let the AI trigger side effects through its respon
 | `HEARTBEAT_INTERVAL: minutes` | "check every 15 minutes" | Changes heartbeat interval at runtime (1-1440) |
 | `PROJECT_ACTIVATE: name` | "let's work on my-app" | Switches active project context |
 | `PROJECT_DEACTIVATE` | "done with this project" | Clears active project |
-| `LIMITATION: title \| desc \| plan` | Self-detected capability gap | Stores + alerts owner + adds to heartbeat |
-| `SELF_HEAL: desc \| verification` | Self-detected code bug | Starts healing protocol (max 10 iterations) |
-| `SELF_HEAL_RESOLVED` | Bug confirmed fixed | Ends healing protocol, notifies owner |
+| `SKILL_IMPROVE: skill \| lesson` | Mistake detected using a skill | Appends lesson to skill's SKILL.md, confirms |
 | `SILENT` | Group chat, nothing to add | Response suppressed entirely |
 | `WHATSAPP_QR` | `/whatsapp` command | Triggers QR pairing flow |
 
@@ -683,7 +650,6 @@ The **self-check** (`src/selfcheck.rs`) runs at startup: verifies database acces
 ├── SYSTEM_PROMPT.md       ← AI personality and rules (editable, 3 sections: Identity/Soul/System)
 ├── WELCOME.toml           ← Welcome messages per language (editable)
 ├── HEARTBEAT.md           ← Monitoring checklist (editable, also managed via chat)
-├── self-healing.json      ← Self-healing state (created on anomaly, deleted on resolution)
 ├── workspace/             ← Sandbox working directory (current_dir for provider)
 │   ├── inbox/             ← Temporary storage for incoming image attachments
 │   └── .claude/           ← Temporary MCP settings (auto-cleaned)
@@ -757,5 +723,5 @@ omega/                     ← Repository root
 - **Background loops over cron jobs** — everything runs inside the same process
 - **OS-level sandbox** — real filesystem enforcement, not just prompt-based trust
 - **Autonomous model routing** — the AI picks its own brain size per task
-- **Self-healing loops** — Omega detects and fixes its own bugs
+- **Skill improvement** — Omega learns from its mistakes and updates its own skills
 - **Graceful degradation** — if memory fails, responses still work; if audit fails, messages still send

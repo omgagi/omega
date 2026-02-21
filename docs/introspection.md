@@ -1,116 +1,106 @@
-# Omega Self-Introspection: Autonomous Limitation Detection
+# Omega Self-Improvement: Autonomous Skill Learning
 
-## What Is Self-Introspection?
+## What Is Skill Improvement?
 
-Self-introspection is Omega's ability to detect and report its own capability gaps. When Omega encounters something it cannot do but should be able to (missing tools, unavailable services, missing integrations), it reports the limitation using a `LIMITATION:` marker. The gateway stores it with deduplication, sends an immediate Telegram alert, and auto-adds it to the heartbeat checklist for ongoing monitoring.
+Skill improvement is Omega's ability to learn from its own mistakes. When Omega makes an error while using a skill (e.g., stops a search too early, uses a wrong API parameter, misses an edge case), it fixes the problem immediately, then updates the skill's instructions so the same mistake never happens again.
 
 ## How It Works
 
 ### Detection
 
-The AI detects limitations during:
-1. **Normal conversations** — when asked to do something it can't
-2. **Heartbeat checks** — the heartbeat prompt includes a self-audit instruction
+The AI detects skill mistakes during normal operation:
+1. **Search returned no results** when results were expected — retry with a different approach
+2. **API call failed** — investigate and adapt the strategy
+3. **Output doesn't match expectations** — try alternative methods before giving up
 
-### The LIMITATION Marker
+### The SKILL_IMPROVE Marker
 
-Format: `LIMITATION: <title> | <description> | <proposed plan>`
+Format: `SKILL_IMPROVE: <skill-name> | <lesson learned>`
 
-Example: `LIMITATION: No email | Cannot send emails directly | Add SMTP provider integration`
+Example: `SKILL_IMPROVE: google-workspace | Always search contacts by both name and email address, not just name`
 
 ### Processing Pipeline
 
-When a LIMITATION marker is found:
+When a SKILL_IMPROVE marker is found:
 
-1. Parse the title, description, and proposed plan
-2. Store in the `limitations` DB table (INSERT OR IGNORE for dedup by title, case-insensitive)
-3. If new (not a duplicate):
-   - Send immediate Telegram alert to the owner via heartbeat channel
-   - Auto-add to `~/.omega/HEARTBEAT.md` as a critical item
-4. Strip the marker from the response before delivery
+1. Parse the skill name and lesson
+2. Locate `{data_dir}/skills/{skill_name}/SKILL.md`
+3. Read the file
+4. If a `## Lessons Learned` section exists, append the lesson under it
+5. If no such section exists, create it at the end of the file
+6. Write the updated file back
+7. Push a `SkillImproved` or `SkillImproveFailed` result for user confirmation
 
-### Heartbeat Integration
+### Confirmation
 
-The heartbeat loop enriches its prompt with:
-- All open limitations from the database
-- A self-audit instruction asking the AI to reflect on its capabilities
-
-This means every heartbeat cycle is also a self-audit opportunity.
-
-### Database
-
-Table: `limitations` (migration 006)
-
-- Deduplication via case-insensitive unique index on title
-- Status: 'open' (default) or 'resolved'
-- Fields: `id`, `title`, `description`, `proposed_plan`, `status`, `created_at`, `resolved_at`
-
-### Configuration
-
-No new configuration needed. Limitation alerts use the existing heartbeat channel config (Telegram + reply_target).
+The gateway sends a localized confirmation message after processing:
+- Success: `✓ Skill updated: google-workspace — Always search by both name and email`
+- Failure: `✗ Failed to update skill google-workspace: skill not found`
 
 ## Design Decisions
 
-### Why Deduplication?
+### Why Append to SKILL.md?
 
-Without dedup, the same limitation would be reported every time the AI encounters it, flooding the owner with alerts.
+The skill's instruction file is what gets injected into the AI's context. By appending lessons directly to the file, future invocations of the skill automatically benefit from past mistakes. No external tracking needed.
 
-### Why Auto-Add to Heartbeat?
+### Why a Dedicated Section?
 
-Ensures detected limitations are monitored every heartbeat cycle until resolved. The owner sees progress (or lack thereof) automatically.
+The `## Lessons Learned` section keeps lessons organized and separated from the skill's core instructions. It's easy to review, edit, or prune manually.
 
-### Why Immediate Alert?
+### Why Gateway-Managed?
 
-New limitations are significant events. The owner should know immediately, not wait for the next heartbeat.
+The gateway handles the file I/O, not the AI. This ensures atomic writes, proper error handling, and consistent confirmation messages. The AI only needs to emit the marker.
 
-## Resolving Limitations
+## The Behavior Loop
 
-When a limitation has been resolved (e.g., a provider integration is added), either:
-
-1. **Manual resolution** — Mark it as resolved in the database (sets `status='resolved'` and `resolved_at=now()`)
-2. **Automatic resolution** — The AI detects and reports the resolution during a heartbeat cycle
-
-Resolved limitations remain in the database for audit purposes but are no longer actively monitored.
+```
+AI uses a skill → something goes wrong
+    │
+    ▼
+AI detects the error (no results, unexpected output, API failure)
+    │
+    ▼
+AI retries with a different approach → succeeds
+    │
+    ▼
+AI emits SKILL_IMPROVE: skill-name | lesson learned
+    │
+    ▼
+Gateway appends lesson to skill's SKILL.md under ## Lessons Learned
+    │
+    ▼
+AI apologizes briefly, confirms the task is done
+    │
+    ▼
+Next time the skill is used, the lesson is in the AI's context → mistake never repeats
+```
 
 ## Examples
 
-### Example 1: Missing Email Provider
+### Example 1: Google Contacts Search
 
-During conversation:
 ```
-User: Can you send me an email reminder next week?
-Omega: I don't have email capabilities yet. LIMITATION: No email | Cannot send emails directly | Add SMTP provider integration
-```
-
-The gateway:
-- Stores the limitation with title "No email"
-- Alerts the owner: "New limitation detected: No email — Cannot send emails directly"
-- Adds to heartbeat checklist: `- [ ] Email integration (detected: No email)`
-
-### Example 2: Self-Audit During Heartbeat
-
-Heartbeat prompt includes:
-```
-## Self-Audit
-
-Reflect on what you cannot do:
-1. What integrations or tools are missing?
-2. What would add the most value?
-3. Any error patterns repeating?
-
-Use LIMITATION: format to report gaps you detect.
+User: Find John's phone number in my contacts
+Omega: [searches by name only, finds nothing]
+Omega: [detects mistake — should have searched by email too]
+Omega: [retries with broader search, finds John]
+Omega: Here's John's number: +1-555-0123
+SKILL_IMPROVE: google-workspace | Always search contacts by both name and email address — name-only search may miss contacts stored with display names different from the search query
 ```
 
-If Omega realizes it can't handle PDF editing:
-```
-LIMITATION: No PDF editing | Cannot modify PDF documents | Integrate PDF manipulation library
-```
+### Example 2: Web Scraping
 
-The limitation is stored and monitored from that point forward.
+```
+User: Get the price of AAPL from Yahoo Finance
+Omega: [first attempt hits a captcha page]
+Omega: [detects failure, tries alternative selector]
+Omega: AAPL is at $187.50
+SKILL_IMPROVE: playwright-mcp | Yahoo Finance may serve captcha pages — always check page title before extracting data, and retry with a fresh browser context if captcha detected
+```
 
 ## Self-Audit
 
-Beyond capability gaps, OMEGA monitors its own behavior for anomalies. The self-audit instruction in the system prompt tells OMEGA to flag immediately when:
+Beyond skill improvement, OMEGA monitors its own behavior for anomalies. The self-audit instruction in the system prompt tells OMEGA to flag immediately when:
 
 - Output doesn't match expectations
 - Claims can't be backed up with evidence
@@ -123,65 +113,3 @@ OMEGA has read access to its own audit trail at `~/.omega/memory.db`:
 - `facts` — user profile data
 
 When something doesn't add up, OMEGA can query these tables to verify its own behavior before reporting.
-
-## Self-Healing Protocol
-
-When OMEGA detects a genuine infrastructure or code bug, it emits a `SELF_HEAL: description | verification test` marker. The **gateway** (not the AI) manages the entire lifecycle:
-
-### Markers
-
-| Marker | Trigger | Gateway Action |
-|--------|---------|---------------|
-| `SELF_HEAL: description \| verification test` | AI detects anomaly | Create/update state (incl. verification), notify owner, schedule follow-up with verification |
-| `SELF_HEAL_RESOLVED` | AI confirms fix | Delete state file, notify owner |
-
-The verification test is a concrete, executable check that proves the fix works (e.g., "run cargo test and confirm zero failures", "read ~/.omega/omega.log and confirm no panic lines in last 50 entries"). Each follow-up task includes the verification test so OMEGA can actually confirm the fix rather than just re-reading code.
-
-### Gateway-Managed Lifecycle
-
-1. **AI emits** `SELF_HEAL: description | verification test` on its own line
-2. **Gateway reads** `~/.omega/self-healing.json` (or creates it with iteration 1, storing both description and verification)
-3. **Gateway increments** the iteration counter
-4. **If iteration ≤ 10**: writes state, notifies owner ("🔧 SELF-HEALING (N/10): ..."), schedules a verification task (2 min delay) that includes: "Run this verification: {test}. If it passes, emit SELF_HEAL_RESOLVED. If it fails, continue fixing."
-5. **If iteration > 10**: sends escalation alert ("🚨 SELF-HEALING ESCALATION"), preserves state file for owner review, does **not** schedule further actions
-6. **On resolution**: AI emits `SELF_HEAL_RESOLVED`, gateway deletes state file and notifies owner ("✅ Self-healing complete")
-
-The AI's responsibility during healing tasks is: read `~/.omega/self-healing.json` for context and the verification test, diagnose, fix, build+clippy until clean, restart service, update the attempts array, then run the verification test to confirm. The gateway handles everything else (iteration tracking, scheduling, escalation).
-
-### State Tracking
-
-All self-healing state is persisted in `~/.omega/self-healing.json`:
-
-```json
-{
-  "anomaly": "audit_log not recording model field",
-  "verification": "send a test message and confirm audit_log has non-null model field",
-  "iteration": 3,
-  "max_iterations": 10,
-  "started_at": "2026-02-18T19:00:00Z",
-  "attempts": [
-    "1: Added model fallback in provider — build passed, still not recording",
-    "2: Fixed audit entry to pass model from response — clippy failed, fixed, deployed",
-    "3: Verifying..."
-  ]
-}
-```
-
-The file is created on first `SELF_HEAL:` detection, updated after each iteration, and deleted on `SELF_HEAL_RESOLVED`. If max iterations are reached, the file is preserved for owner review.
-
-### Processing Locations
-
-`handle_message` (direct path), `execute_steps` (multi-step path), and `scheduler_loop` all process these markers via the unified `process_markers()` method, ensuring self-healing works whether triggered by a direct response, a multi-step plan step, or an action task response.
-
-### Repo Auto-Detection
-
-The gateway auto-detects the Omega source code repository path from the running binary location (`current_exe()` → up 3 directories → verify `Cargo.toml` exists). When detected, follow-up healing tasks include a hint with the source code path and the nix build command. This works across different developer machines without configuration.
-
-### Safety Guardrails
-
-- **Max 10 iterations** — enforced in gateway code, then human escalation
-- **Build + clippy gate** — the AI must build+clippy before deploying (prompt instruction)
-- **Repo hint** — follow-up tasks include the auto-detected source code path and nix build command
-- **State file** — `~/.omega/self-healing.json` tracks iteration count, anomaly, and attempt history across restarts
-- **Scope limit** — only for genuine infrastructure/code bugs, not feature requests or user tasks
-- **Code-enforced** — iteration limits and escalation are in gateway code, not dependent on AI compliance

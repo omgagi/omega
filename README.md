@@ -11,7 +11,7 @@ A personal AI agent infrastructure written in Rust. Omega connects to messaging 
 - **Smart model routing** -- Every message is classified by complexity. Simple tasks use a fast model (Sonnet); complex work is decomposed into steps and executed by a powerful model (Opus). Automatic, no user intervention.
 - **Real memory** -- SQLite-backed conversations, facts, summaries. Omega learns who you are across sessions.
 - **OS-level sandbox** -- Seatbelt (macOS) / Landlock (Linux) filesystem enforcement. Not just prompt-based.
-- **Self-healing** -- Detects infrastructure bugs, iterates on fixes with verification tests, escalates after 10 attempts.
+- **Skill improvement** -- Detects its own mistakes, fixes them immediately, and updates the skill's instructions so they never repeat.
 - **Quantitative trading** -- Built-in Kalman filter, HMM regime detection, Kelly sizing, IBKR TWS integration with bracket orders and circuit breakers.
 - **Runs locally** -- Your messages never touch third-party servers beyond the AI provider.
 
@@ -31,10 +31,9 @@ You (Telegram / WhatsApp)
   |  Audit     |      Memory (SQLite)         | Markers  |
   +-----------+      Facts, Summaries         +---------+
         |             Scheduled Tasks          SCHEDULE:
-        v             Audit Log                SELF_HEAL:
-  +----------+                                 LIMITATION:
-  | Channels |                                 PROJECT_ACTIVATE:
-  | Telegram |                                 LANG_SWITCH:
+        v             Audit Log                SKILL_IMPROVE:
+  +----------+                                 PROJECT_ACTIVATE:
+  | Channels |                                 ...
   | WhatsApp |                                 ...
   +----------+
 ```
@@ -46,7 +45,7 @@ Cargo workspace with 7 crates:
 | `omega-core` | Types, traits, config, error handling, prompt sanitization |
 | `omega-providers` | 6 AI backends with unified `Provider` trait + agentic tool loop (bash/read/write/edit) + MCP client |
 | `omega-channels` | Telegram (voice transcription, photo support) + WhatsApp (voice, images, groups, markdown) |
-| `omega-memory` | SQLite storage, conversation history, facts, scheduled tasks, audit log, limitations |
+| `omega-memory` | SQLite storage, conversation history, facts, scheduled tasks, audit log |
 | `omega-skills` | Skill loader with TOML/YAML frontmatter, project system, trigger-based MCP server activation |
 | `omega-sandbox` | Seatbelt (macOS) / Landlock (Linux) filesystem enforcement with 3-level isolation |
 | `omega-quant` | Standalone CLI -- Kalman filter, HMM, Kelly criterion, Merton allocation, IBKR TWS API |
@@ -81,7 +80,7 @@ Every message flows through a deterministic pipeline:
 4. **Context** -- Conversation history + user facts + active project + skills injected into system prompt.
 5. **Classify** -- Fast model (Sonnet) decides: simple task = direct response, complex work = step-by-step plan.
 6. **Route** -- Simple tasks handled by Sonnet. Complex tasks decomposed and executed by Opus with progress updates.
-7. **Markers** -- AI emits protocol markers (`SCHEDULE:`, `SELF_HEAL:`, `LIMITATION:`, etc.) that the gateway processes and strips before delivery.
+7. **Markers** -- AI emits protocol markers (`SCHEDULE:`, `SKILL_IMPROVE:`, etc.) that the gateway processes and strips before delivery.
 8. **Store** -- Exchange saved, conversation updated, facts extracted.
 9. **Audit** -- Full interaction logged with model, tokens, processing time.
 10. **Respond** -- Clean message sent back to user.
@@ -102,8 +101,7 @@ The AI communicates with the gateway through protocol markers emitted in respons
 | `SCHEDULE_ACTION: desc \| datetime \| repeat` | Schedule an autonomous action |
 | `PROJECT_ACTIVATE: name` | Activate a project context |
 | `LANG_SWITCH: language` | Switch conversation language |
-| `LIMITATION: title \| desc \| plan` | Report a capability gap |
-| `SELF_HEAL: desc \| verification` | Initiate self-healing protocol |
+| `SKILL_IMPROVE: skill \| lesson` | Update skill with learned lesson |
 | `HEARTBEAT_ADD: item` | Add item to monitoring checklist |
 
 All markers are extracted, processed, and stripped before the response reaches the user.

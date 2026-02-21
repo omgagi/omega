@@ -1,7 +1,7 @@
 # Specification: src/markers.rs
 
 ## Purpose
-Centralized marker extraction, parsing, and stripping for the gateway protocol. All system markers emitted by the AI (SCHEDULE:, LANG_SWITCH:, SELF_HEAL:, LIMITATION:, etc.) are processed here. This module was extracted from gateway.rs to improve maintainability and testability.
+Centralized marker extraction, parsing, and stripping for the gateway protocol. All system markers emitted by the AI (SCHEDULE:, LANG_SWITCH:, SKILL_IMPROVE:, etc.) are processed here. This module was extracted from gateway.rs to improve maintainability and testability.
 
 ## Functions (40+)
 
@@ -23,14 +23,8 @@ Each marker type has extract/parse/strip/has functions:
 - **PROJECT_ACTIVATE/DEACTIVATE**: `extract_project_activate`, `has_project_deactivate`, `strip_project_markers`
 - **WHATSAPP_QR**: `has_whatsapp_qr_marker`, `strip_whatsapp_qr_marker`
 - **HEARTBEAT_ADD/REMOVE/INTERVAL**: `extract_heartbeat_markers`, `strip_heartbeat_markers`, `apply_heartbeat_changes`
-- **LIMITATION**: `extract_limitation_marker`, `parse_limitation_line`, `strip_limitation_markers`
-- **SELF_HEAL**: `extract_self_heal_marker`, `parse_self_heal_line`, `has_self_heal_resolved_marker`, `strip_self_heal_markers`
-
-### Self-Healing State
-- `SelfHealingState` struct (anomaly, verification, iteration, max_iterations, started_at, attempts)
-- `self_healing_path()`, `read_self_healing_state()`, `write_self_healing_state()`, `delete_self_healing_state()`
-- `detect_repo_path()` -- Auto-detect repo from binary location
-- `self_heal_follow_up()` -- Build follow-up task description
+- **SKILL_IMPROVE**: `extract_skill_improve`, `parse_skill_improve_line`, `strip_skill_improve`
+- **BUG_REPORT**: `extract_bug_report`, `strip_bug_report`, `append_bug_report`
 
 ### Classification Helpers
 - `build_classification_context()` -- Build context string for complexity classifier
@@ -47,8 +41,7 @@ Each marker type has extract/parse/strip/has functions:
 
 ## Types
 - `HeartbeatAction` enum: `Add(String)`, `Remove(String)`, `SetInterval(u64)`
-- `SelfHealingState` struct (serializable to JSON)
 - `InboxGuard` struct -- RAII guard wrapping `Vec<PathBuf>`, calls `cleanup_inbox_images()` on Drop
 
 ## Tests
-~100 tests covering all marker types, edge cases, inline markers, heartbeat file operations, workspace snapshots, classification parsing, self-healing flow simulation, InboxGuard RAII cleanup, zero-byte attachment rejection.
+~90 tests covering all marker types, edge cases, inline markers, heartbeat file operations, workspace snapshots, classification parsing, skill improvement, bug reporting, InboxGuard RAII cleanup, zero-byte attachment rejection.

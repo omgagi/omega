@@ -30,6 +30,14 @@ pub enum MarkerResult {
     TaskUpdated { id_prefix: String },
     /// Task update failed (no match or DB error).
     TaskUpdateFailed { id_prefix: String, reason: String },
+    /// Skill was successfully improved (lesson appended to SKILL.md).
+    SkillImproved { skill_name: String, lesson: String },
+    /// Skill improvement failed (skill not found, write error, etc.).
+    SkillImproveFailed { skill_name: String, reason: String },
+    /// Bug report was successfully logged to BUG.md.
+    BugReported { description: String },
+    /// Bug report logging failed.
+    BugReportFailed { description: String, reason: String },
 }
 
 /// Check if two task descriptions are semantically similar using word overlap.
@@ -248,6 +256,37 @@ pub fn format_task_confirmation(
         }
     }
 
+    // Skill improvement results
+    for r in results {
+        match r {
+            MarkerResult::SkillImproved { skill_name, lesson } => {
+                parts.push(format!(
+                    "{} {skill_name} — {lesson}",
+                    i18n::t("skill_improved", lang),
+                ));
+            }
+            MarkerResult::SkillImproveFailed { skill_name, reason } => {
+                parts.push(format!(
+                    "{} {skill_name}: {reason}",
+                    i18n::t("skill_improve_failed", lang),
+                ));
+            }
+            MarkerResult::BugReported { description } => {
+                parts.push(format!("{} {description}", i18n::t("bug_reported", lang),));
+            }
+            MarkerResult::BugReportFailed {
+                description,
+                reason,
+            } => {
+                parts.push(format!(
+                    "{} {description}: {reason}",
+                    i18n::t("bug_report_failed", lang),
+                ));
+            }
+            _ => {}
+        }
+    }
+
     if parts.is_empty() {
         None
     } else {
@@ -446,6 +485,49 @@ mod tests {
             !msg.contains("Cancelled"),
             "cancels should be suppressed when creates are present"
         );
+    }
+
+    #[test]
+    fn test_format_task_confirmation_skill_improved() {
+        let results = vec![MarkerResult::SkillImproved {
+            skill_name: "google-workspace".to_string(),
+            lesson: "Always search by name and email".to_string(),
+        }];
+        let msg = format_task_confirmation(&results, &[], "English").unwrap();
+        assert!(msg.contains("google-workspace"));
+        assert!(msg.contains("Always search by name and email"));
+    }
+
+    #[test]
+    fn test_format_task_confirmation_skill_improve_failed() {
+        let results = vec![MarkerResult::SkillImproveFailed {
+            skill_name: "nonexistent".to_string(),
+            reason: "skill not found".to_string(),
+        }];
+        let msg = format_task_confirmation(&results, &[], "English").unwrap();
+        assert!(msg.contains("nonexistent"));
+        assert!(msg.contains("skill not found"));
+    }
+
+    #[test]
+    fn test_format_task_confirmation_bug_reported() {
+        let results = vec![MarkerResult::BugReported {
+            description: "Cannot read own heartbeat interval".to_string(),
+        }];
+        let msg = format_task_confirmation(&results, &[], "English").unwrap();
+        assert!(msg.contains("Cannot read own heartbeat interval"));
+        assert!(msg.contains("Bug logged"));
+    }
+
+    #[test]
+    fn test_format_task_confirmation_bug_report_failed() {
+        let results = vec![MarkerResult::BugReportFailed {
+            description: "Some limitation".to_string(),
+            reason: "write error".to_string(),
+        }];
+        let msg = format_task_confirmation(&results, &[], "English").unwrap();
+        assert!(msg.contains("Some limitation"));
+        assert!(msg.contains("write error"));
     }
 
     #[test]

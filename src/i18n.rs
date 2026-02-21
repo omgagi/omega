@@ -626,6 +626,50 @@ pub fn t(key: &str, lang: &str) -> &'static str {
             _ => "✗ Failed to update task",
         },
 
+        // --- Skill improvement ---
+        "skill_improved" => match lang {
+            "Spanish" => "✓ Skill actualizado:",
+            "Portuguese" => "✓ Skill atualizado:",
+            "French" => "✓ Skill mis à jour:",
+            "German" => "✓ Skill aktualisiert:",
+            "Italian" => "✓ Skill aggiornato:",
+            "Dutch" => "✓ Skill bijgewerkt:",
+            "Russian" => "✓ Навык обновлён:",
+            _ => "✓ Skill updated:",
+        },
+        "skill_improve_failed" => match lang {
+            "Spanish" => "✗ Error al actualizar skill",
+            "Portuguese" => "✗ Falha ao atualizar skill",
+            "French" => "✗ Échec de la mise à jour du skill",
+            "German" => "✗ Skill konnte nicht aktualisiert werden",
+            "Italian" => "✗ Impossibile aggiornare skill",
+            "Dutch" => "✗ Skill bijwerken mislukt",
+            "Russian" => "✗ Не удалось обновить навык",
+            _ => "✗ Failed to update skill",
+        },
+
+        // --- Bug report ---
+        "bug_reported" => match lang {
+            "Spanish" => "✓ Bug registrado:",
+            "Portuguese" => "✓ Bug registrado:",
+            "French" => "✓ Bug enregistré:",
+            "German" => "✓ Bug protokolliert:",
+            "Italian" => "✓ Bug registrato:",
+            "Dutch" => "✓ Bug gelogd:",
+            "Russian" => "✓ Баг записан:",
+            _ => "✓ Bug logged:",
+        },
+        "bug_report_failed" => match lang {
+            "Spanish" => "✗ Error al registrar bug",
+            "Portuguese" => "✗ Falha ao registrar bug",
+            "French" => "✗ Échec de l'enregistrement du bug",
+            "German" => "✗ Bug konnte nicht protokolliert werden",
+            "Italian" => "✗ Impossibile registrare bug",
+            "Dutch" => "✗ Bug loggen mislukt",
+            "Russian" => "✗ Не удалось записать баг",
+            _ => "✗ Failed to log bug",
+        },
+
         _ => "???",
     }
 }
@@ -877,6 +921,10 @@ mod tests {
             "task_updated_confirmed",
             "task_cancel_failed",
             "task_update_failed",
+            "skill_improved",
+            "skill_improve_failed",
+            "bug_reported",
+            "bug_report_failed",
         ];
         for key in keys {
             let val = t(key, "English");

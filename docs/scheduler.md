@@ -152,7 +152,7 @@ Action tasks are a powerful extension of the scheduler. While regular reminder t
 |--------|----------|--------|
 | When due | Sends a text message to you | Invokes the provider with the task description as a prompt |
 | Tool access | None (just a message) | Full tool access + MCP servers |
-| Follow-up | One and done | Can emit further SCHEDULE, SCHEDULE_ACTION, HEARTBEAT, and LIMITATION markers |
+| Follow-up | One and done | Can emit further SCHEDULE, SCHEDULE_ACTION, HEARTBEAT, and SKILL_IMPROVE markers |
 | Badge in `/tasks` | (none) | `[action]` |
 
 ### The `SCHEDULE_ACTION:` Marker
@@ -179,7 +179,7 @@ When the scheduler loop finds a due action task:
    - `SCHEDULE:` -- Creates new reminder tasks (chaining).
    - `SCHEDULE_ACTION:` -- Creates new action tasks (recursive autonomous scheduling).
    - `HEARTBEAT_ADD:` / `HEARTBEAT_REMOVE:` / `HEARTBEAT_INTERVAL:` -- Modifies the monitoring checklist or heartbeat interval.
-   - `LIMITATION:` -- Records self-detected capability gaps.
+   - `SKILL_IMPROVE:` -- Records skill improvement suggestions.
    - `CANCEL_TASK:` -- Cancels pending tasks by ID prefix (all markers processed).
    - `UPDATE_TASK:` -- Updates pending task fields by ID prefix (all markers processed).
 3. **Delivers the result** -- The provider's response (with markers stripped) is sent to the user through the original channel.

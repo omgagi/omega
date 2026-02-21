@@ -203,7 +203,6 @@ impl Gateway {
             let sched_prompts = self.prompts.clone();
             let sched_model = self.model_complex.clone();
             let sched_sandbox = self.sandbox_prompt.clone();
-            let sched_hb_config = self.heartbeat_config.clone();
             let sched_hb_interval = self.heartbeat_interval.clone();
             Some(tokio::spawn(async move {
                 Self::scheduler_loop(
@@ -215,7 +214,6 @@ impl Gateway {
                     sched_prompts,
                     sched_model,
                     sched_sandbox,
-                    sched_hb_config,
                     sched_hb_interval,
                 )
                 .await;
@@ -364,7 +362,6 @@ impl Gateway {
         prompts: Prompts,
         model_complex: String,
         sandbox_prompt: Option<String>,
-        heartbeat_config: HeartbeatConfig,
         heartbeat_interval: Arc<AtomicU64>,
     ) {
         loop {
@@ -478,189 +475,6 @@ impl Gateway {
                                             }
                                         }
                                         text = strip_heartbeat_markers(&text);
-                                    }
-
-                                    // Process LIMITATION markers.
-                                    if let Some(lim_line) = extract_limitation_marker(&text) {
-                                        if let Some((title, desc, plan)) =
-                                            parse_limitation_line(&lim_line)
-                                        {
-                                            match store.store_limitation(&title, &desc, &plan).await
-                                            {
-                                                Ok(true) => {
-                                                    info!("action task: new limitation: {title}");
-                                                    if let Some(ch) =
-                                                        channels.get(&heartbeat_config.channel)
-                                                    {
-                                                        let alert = format!(
-                                                            "LIMITATION DETECTED: {title}\n{desc}\n\nProposed fix: {plan}"
-                                                        );
-                                                        let msg = OutgoingMessage {
-                                                            text: alert,
-                                                            metadata: MessageMetadata::default(),
-                                                            reply_target: Some(
-                                                                heartbeat_config
-                                                                    .reply_target
-                                                                    .clone(),
-                                                            ),
-                                                        };
-                                                        let _ = ch.send(msg).await;
-                                                    }
-                                                    apply_heartbeat_changes(&[
-                                                        HeartbeatAction::Add(format!(
-                                                            "CRITICAL: {title} — {desc}"
-                                                        )),
-                                                    ]);
-                                                }
-                                                Ok(false) => info!(
-                                                    "action task: duplicate limitation: {title}"
-                                                ),
-                                                Err(e) => error!(
-                                                    "action task: failed to store limitation: {e}"
-                                                ),
-                                            }
-                                        }
-                                        text = strip_limitation_markers(&text);
-                                    }
-
-                                    // Process SELF_HEAL markers.
-                                    if let Some(heal_line) = extract_self_heal_marker(&text) {
-                                        if let Some((heal_desc, heal_verif)) =
-                                            parse_self_heal_line(&heal_line)
-                                        {
-                                            let mut state = read_self_healing_state()
-                                                .unwrap_or_else(|| SelfHealingState {
-                                                    anomaly: heal_desc.clone(),
-                                                    verification: heal_verif.clone(),
-                                                    iteration: 0,
-                                                    max_iterations: 10,
-                                                    started_at: chrono::Utc::now().to_rfc3339(),
-                                                    attempts: Vec::new(),
-                                                });
-                                            state.iteration += 1;
-
-                                            if state.iteration > state.max_iterations {
-                                                let alert = format!(
-                                                    "🚨 SELF-HEALING ESCALATION\n\n\
-                                                     Anomaly: {}\n\
-                                                     Iterations: {}/{}\n\
-                                                     Started: {}\n\n\
-                                                     Attempts:\n{}\n\n\
-                                                     Human intervention required.",
-                                                    state.anomaly,
-                                                    state.iteration,
-                                                    state.max_iterations,
-                                                    state.started_at,
-                                                    state
-                                                        .attempts
-                                                        .iter()
-                                                        .enumerate()
-                                                        .map(|(i, a)| format!("{}. {a}", i + 1))
-                                                        .collect::<Vec<_>>()
-                                                        .join("\n")
-                                                );
-                                                if let Some(ch) =
-                                                    channels.get(&heartbeat_config.channel)
-                                                {
-                                                    let msg = OutgoingMessage {
-                                                        text: alert,
-                                                        metadata: MessageMetadata::default(),
-                                                        reply_target: Some(
-                                                            heartbeat_config.reply_target.clone(),
-                                                        ),
-                                                    };
-                                                    let _ = ch.send(msg).await;
-                                                }
-                                                if let Err(e) = write_self_healing_state(&state) {
-                                                    error!("self-heal: failed to write state: {e}");
-                                                }
-                                                info!(
-                                                    "self-heal: escalated after {} iterations",
-                                                    state.iteration
-                                                );
-                                            } else {
-                                                if let Err(e) = write_self_healing_state(&state) {
-                                                    error!("self-heal: failed to write state: {e}");
-                                                }
-                                                let alert = format!(
-                                                    "🔧 SELF-HEALING ({}/{}): {}",
-                                                    state.iteration,
-                                                    state.max_iterations,
-                                                    state.anomaly
-                                                );
-                                                if let Some(ch) =
-                                                    channels.get(&heartbeat_config.channel)
-                                                {
-                                                    let msg = OutgoingMessage {
-                                                        text: alert,
-                                                        metadata: MessageMetadata::default(),
-                                                        reply_target: Some(
-                                                            heartbeat_config.reply_target.clone(),
-                                                        ),
-                                                    };
-                                                    let _ = ch.send(msg).await;
-                                                }
-                                                let due_at = (chrono::Utc::now()
-                                                    + chrono::Duration::minutes(2))
-                                                .to_rfc3339();
-                                                let next_desc = self_heal_follow_up(
-                                                    &state.anomaly,
-                                                    &state.verification,
-                                                );
-                                                match store
-                                                    .create_task(
-                                                        channel_name,
-                                                        "",
-                                                        reply_target,
-                                                        &next_desc,
-                                                        &due_at,
-                                                        None,
-                                                        "action",
-                                                    )
-                                                    .await
-                                                {
-                                                    Ok(new_id) => info!(
-                                                        "self-heal: scheduled verification \
-                                                         task {new_id} (iteration {})",
-                                                        state.iteration
-                                                    ),
-                                                    Err(e) => error!(
-                                                        "self-heal: failed to schedule \
-                                                         verification: {e}"
-                                                    ),
-                                                }
-                                            }
-                                        }
-                                        text = strip_self_heal_markers(&text);
-                                    }
-
-                                    // Process SELF_HEAL_RESOLVED marker.
-                                    if has_self_heal_resolved_marker(&text) {
-                                        match delete_self_healing_state() {
-                                            Ok(()) => {
-                                                info!(
-                                                    "self-heal: anomaly resolved (via scheduler)"
-                                                );
-                                                if let Some(ch) =
-                                                    channels.get(&heartbeat_config.channel)
-                                                {
-                                                    let msg = OutgoingMessage {
-                                                        text: "✅ Self-healing complete — anomaly resolved.".to_string(),
-                                                        metadata: MessageMetadata::default(),
-                                                        reply_target: Some(
-                                                            heartbeat_config.reply_target.clone(),
-                                                        ),
-                                                    };
-                                                    let _ = ch.send(msg).await;
-                                                }
-                                            }
-                                            Err(e) => {
-                                                error!(
-                                                    "self-heal: failed to delete state file: {e}"
-                                                );
-                                            }
-                                        }
-                                        text = strip_self_heal_markers(&text);
                                     }
 
                                     // Process CANCEL_TASK markers from action response.
@@ -828,73 +642,19 @@ impl Gateway {
                 }
             }
 
-            // Inject known open limitations.
-            if let Ok(limitations) = memory.get_open_limitations().await {
-                if !limitations.is_empty() {
-                    prompt.push_str("\n\nKnown open limitations (previously detected):");
-                    for (title, desc, plan) in &limitations {
-                        prompt.push_str(&format!("\n- {title}: {desc} (plan: {plan})"));
-                    }
-                }
-            }
-
-            // Self-audit instruction.
-            prompt.push_str(
-                "\n\nBeyond the checklist, reflect on your own capabilities. \
-                 If you detect a NEW limitation (something you CANNOT do but SHOULD be able to), \
-                 include LIMITATION: <title> | <description> | <plan> on its own line.",
-            );
-
             let ctx = Context::new(&prompt);
             match provider.complete(&ctx).await {
                 Ok(resp) => {
-                    // Process limitation markers from heartbeat response.
-                    if let Some(lim_line) = extract_limitation_marker(&resp.text) {
-                        if let Some((title, desc, plan)) = parse_limitation_line(&lim_line) {
-                            match memory.store_limitation(&title, &desc, &plan).await {
-                                Ok(true) => {
-                                    info!("heartbeat: new limitation detected: {title}");
-                                    if let Some(ch) = channels.get(&config.channel) {
-                                        let alert = format!(
-                                            "LIMITATION DETECTED: {title}\n{desc}\n\nProposed fix: {plan}"
-                                        );
-                                        let msg = OutgoingMessage {
-                                            text: alert,
-                                            metadata: MessageMetadata::default(),
-                                            reply_target: Some(config.reply_target.clone()),
-                                        };
-                                        if let Err(e) = ch.send(msg).await {
-                                            error!(
-                                                "heartbeat: failed to send limitation alert: {e}"
-                                            );
-                                        }
-                                    }
-                                    apply_heartbeat_changes(&[HeartbeatAction::Add(format!(
-                                        "CRITICAL: {title} — {desc}"
-                                    ))]);
-                                }
-                                Ok(false) => {
-                                    info!("heartbeat: duplicate limitation: {title}");
-                                }
-                                Err(e) => {
-                                    error!("heartbeat: failed to store limitation: {e}");
-                                }
-                            }
-                        }
-                    }
-
                     let cleaned: String = resp
                         .text
                         .chars()
                         .filter(|c| *c != '*' && *c != '`')
                         .collect();
-                    let cleaned = strip_limitation_markers(&cleaned);
                     if cleaned.trim().contains("HEARTBEAT_OK") {
                         info!("heartbeat: OK");
                     } else if let Some(ch) = channels.get(&config.channel) {
-                        let text = strip_limitation_markers(&resp.text);
                         let msg = OutgoingMessage {
-                            text,
+                            text: resp.text.clone(),
                             metadata: MessageMetadata::default(),
                             reply_target: Some(config.reply_target.clone()),
                         };
@@ -1921,8 +1681,8 @@ impl Gateway {
     /// Extract and process all markers from a provider response text.
     ///
     /// Handles: SCHEDULE, SCHEDULE_ACTION, PROJECT_ACTIVATE/DEACTIVATE,
-    /// WHATSAPP_QR, LANG_SWITCH, HEARTBEAT_ADD/REMOVE, LIMITATION,
-    /// SELF_HEAL, SELF_HEAL_RESOLVED. Strips processed markers from the text.
+    /// WHATSAPP_QR, LANG_SWITCH, HEARTBEAT_ADD/REMOVE, SKILL_IMPROVE, BUG_REPORT.
+    /// Strips processed markers from the text.
     async fn process_markers(
         &self,
         incoming: &IncomingMessage,
@@ -2250,157 +2010,83 @@ impl Gateway {
             *text = strip_heartbeat_markers(text);
         }
 
-        // LIMITATION
-        if let Some(limitation_line) = extract_limitation_marker(text) {
-            if let Some((title, description, plan)) = parse_limitation_line(&limitation_line) {
-                match self
-                    .memory
-                    .store_limitation(&title, &description, &plan)
-                    .await
-                {
-                    Ok(true) => {
-                        info!("limitation detected (new): {title}");
-                        let alert = format!(
-                            "LIMITATION DETECTED: {title}\n{description}\n\nProposed fix: {plan}"
-                        );
-                        if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
-                            let msg = OutgoingMessage {
-                                text: alert,
-                                metadata: MessageMetadata::default(),
-                                reply_target: Some(self.heartbeat_config.reply_target.clone()),
-                            };
-                            if let Err(e) = ch.send(msg).await {
-                                error!("limitation: failed to send alert: {e}");
+        // SKILL_IMPROVE
+        if let Some(improve_line) = extract_skill_improve(text) {
+            if let Some((skill_name, lesson)) = parse_skill_improve_line(&improve_line) {
+                let data_dir = shellexpand(&self.data_dir);
+                let skill_path =
+                    PathBuf::from(&data_dir).join(format!("skills/{skill_name}/SKILL.md"));
+                if skill_path.exists() {
+                    match std::fs::read_to_string(&skill_path) {
+                        Ok(mut content) => {
+                            // Append under "## Lessons Learned" section.
+                            if let Some(pos) = content.find("## Lessons Learned") {
+                                // Find end of the "## Lessons Learned" line.
+                                let insert_pos = content[pos..]
+                                    .find('\n')
+                                    .map(|i| pos + i)
+                                    .unwrap_or(content.len());
+                                content.insert_str(insert_pos, &format!("\n- {lesson}"));
+                            } else {
+                                content.push_str(&format!("\n\n## Lessons Learned\n- {lesson}\n"));
+                            }
+                            match std::fs::write(&skill_path, &content) {
+                                Ok(()) => {
+                                    info!("skill improved: {skill_name} — {lesson}");
+                                    marker_results
+                                        .push(MarkerResult::SkillImproved { skill_name, lesson });
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "skill improve: failed to write {}: {e}",
+                                        skill_path.display()
+                                    );
+                                    marker_results.push(MarkerResult::SkillImproveFailed {
+                                        skill_name,
+                                        reason: e.to_string(),
+                                    });
+                                }
                             }
                         }
-                        apply_heartbeat_changes(&[HeartbeatAction::Add(format!(
-                            "CRITICAL: {title} — {description}"
-                        ))]);
-                    }
-                    Ok(false) => info!("limitation detected (duplicate): {title}"),
-                    Err(e) => error!("failed to store limitation: {e}"),
-                }
-            }
-            *text = strip_limitation_markers(text);
-        }
-
-        // SELF_HEAL
-        if let Some(heal_line) = extract_self_heal_marker(text) {
-            if let Some((description, verification)) = parse_self_heal_line(&heal_line) {
-                let mut state = read_self_healing_state().unwrap_or_else(|| SelfHealingState {
-                    anomaly: description.clone(),
-                    verification: verification.clone(),
-                    iteration: 0,
-                    max_iterations: 10,
-                    started_at: chrono::Utc::now().to_rfc3339(),
-                    attempts: Vec::new(),
-                });
-                state.iteration += 1;
-
-                if state.iteration > state.max_iterations {
-                    let alert = format!(
-                        "🚨 SELF-HEALING ESCALATION\n\n\
-                         Anomaly: {}\n\
-                         Iterations: {}/{}\n\
-                         Started: {}\n\n\
-                         Attempts:\n{}\n\n\
-                         Human intervention required.",
-                        state.anomaly,
-                        state.iteration,
-                        state.max_iterations,
-                        state.started_at,
-                        state
-                            .attempts
-                            .iter()
-                            .enumerate()
-                            .map(|(i, a)| format!("{}. {a}", i + 1))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    );
-                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
-                        let msg = OutgoingMessage {
-                            text: alert,
-                            metadata: MessageMetadata::default(),
-                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
-                        };
-                        if let Err(e) = ch.send(msg).await {
-                            error!("self-heal: failed to send escalation: {e}");
-                        }
-                    }
-                    if let Err(e) = write_self_healing_state(&state) {
-                        error!("self-heal: failed to write state: {e}");
-                    }
-                    info!(
-                        "self-heal: escalated after {} iterations: {}",
-                        state.iteration, state.anomaly
-                    );
-                } else {
-                    if let Err(e) = write_self_healing_state(&state) {
-                        error!("self-heal: failed to write state: {e}");
-                    }
-                    let alert = format!(
-                        "🔧 SELF-HEALING ({}/{}): {}",
-                        state.iteration, state.max_iterations, state.anomaly
-                    );
-                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
-                        let msg = OutgoingMessage {
-                            text: alert,
-                            metadata: MessageMetadata::default(),
-                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
-                        };
-                        if let Err(e) = ch.send(msg).await {
-                            error!("self-heal: failed to send notification: {e}");
-                        }
-                    }
-                    let due_at = (chrono::Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
-                    let heal_desc = self_heal_follow_up(&state.anomaly, &state.verification);
-                    let reply_target = incoming.reply_target.as_deref().unwrap_or("");
-                    match self
-                        .memory
-                        .create_task(
-                            &incoming.channel,
-                            &incoming.sender_id,
-                            reply_target,
-                            &heal_desc,
-                            &due_at,
-                            None,
-                            "action",
-                        )
-                        .await
-                    {
-                        Ok(id) => {
-                            info!(
-                                "self-heal: scheduled verification task {id} (iteration {})",
-                                state.iteration
+                        Err(e) => {
+                            error!(
+                                "skill improve: failed to read {}: {e}",
+                                skill_path.display()
                             );
+                            marker_results.push(MarkerResult::SkillImproveFailed {
+                                skill_name,
+                                reason: e.to_string(),
+                            });
                         }
-                        Err(e) => error!("self-heal: failed to schedule verification: {e}"),
                     }
+                } else {
+                    warn!("skill improve: skill not found: {skill_name}");
+                    marker_results.push(MarkerResult::SkillImproveFailed {
+                        skill_name,
+                        reason: "skill not found".to_string(),
+                    });
                 }
             }
-            *text = strip_self_heal_markers(text);
+            *text = strip_skill_improve(text);
         }
 
-        // SELF_HEAL_RESOLVED
-        if has_self_heal_resolved_marker(text) {
-            match delete_self_healing_state() {
+        // BUG_REPORT
+        if let Some(description) = extract_bug_report(text) {
+            let data_dir = shellexpand(&self.data_dir);
+            match append_bug_report(&data_dir, &description) {
                 Ok(()) => {
-                    info!("self-heal: anomaly resolved, state file deleted");
-                    let alert = "✅ Self-healing complete — anomaly resolved.".to_string();
-                    if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
-                        let msg = OutgoingMessage {
-                            text: alert,
-                            metadata: MessageMetadata::default(),
-                            reply_target: Some(self.heartbeat_config.reply_target.clone()),
-                        };
-                        if let Err(e) = ch.send(msg).await {
-                            error!("self-heal: failed to send resolution notice: {e}");
-                        }
-                    }
+                    info!("bug reported: {description}");
+                    marker_results.push(MarkerResult::BugReported { description });
                 }
-                Err(e) => error!("self-heal: failed to delete state file: {e}"),
+                Err(e) => {
+                    error!("bug report: failed to write BUG.md: {e}");
+                    marker_results.push(MarkerResult::BugReportFailed {
+                        description,
+                        reason: e,
+                    });
+                }
             }
-            *text = strip_self_heal_markers(text);
+            *text = strip_bug_report(text);
         }
 
         // Safety net: strip any markers still remaining (catches inline markers
