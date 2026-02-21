@@ -411,7 +411,12 @@ pub struct Gateway {
 - This gives the provider awareness of what items are already being monitored, enabling it to avoid duplicates and to confirm removals.
 - When not in a trading project, the checklist is omitted to prevent trading context from polluting casual conversations.
 
-**Stage 4e: Sandbox Prompt Injection**
+**Stage 4e: Heartbeat Pulse Injection**
+- When `heartbeat_config.enabled` is true, injects the current heartbeat interval (from the shared `AtomicU64`) into the system prompt as a "Heartbeat pulse: every N minutes" line.
+- This gives OMEGA awareness of its own heartbeat interval, enabling it to report the value when asked and change it via `HEARTBEAT_INTERVAL:` marker.
+- Not gated behind `is_trading_project` — the interval is relevant regardless of active project.
+
+**Stage 4f: Sandbox Prompt Injection**
 - If `self.sandbox_prompt` is `Some(constraint)`, prepends the sandbox constraint text to the system prompt.
 - This injects mode-specific instructions (e.g., "You are running in SANDBOX mode. Only operate within the workspace directory..." for sandbox mode, or "You are running in READ-ONLY mode..." for rx mode).
 - In `rwx` mode, `sandbox_prompt` is `None` and no constraint is injected.
@@ -1123,7 +1128,7 @@ All interactions are logged to SQLite with:
 18. Group chat rules are injected into the system prompt when `incoming.is_group` is `true`.
 19. Heartbeat loop skips API calls entirely when no checklist file (`~/.omega/HEARTBEAT.md`) is configured.
 20. Heartbeat prompt is enriched with user facts and recent conversation summaries from memory.
-21. HEARTBEAT_ADD:, HEARTBEAT_REMOVE:, and HEARTBEAT_INTERVAL: markers are stripped from the response before sending to the user. Adds are appended to `~/.omega/HEARTBEAT.md`; removes use case-insensitive partial matching and never remove comment lines. HEARTBEAT_INTERVAL: updates the shared `AtomicU64` interval (valid range: 1–1440 minutes) and sends a confirmation notification to the owner via the heartbeat channel.
+21. HEARTBEAT_ADD:, HEARTBEAT_REMOVE:, and HEARTBEAT_INTERVAL: markers are stripped from the response before sending to the user. Adds are appended to `~/.omega/HEARTBEAT.md`; removes use case-insensitive partial matching and never remove comment lines. HEARTBEAT_INTERVAL: updates the shared `AtomicU64` interval (valid range: 1–1440 minutes) and sends a localized confirmation notification (via `i18n::heartbeat_interval_updated()`) to the owner via the heartbeat channel.
 22. The current heartbeat checklist is injected into the system prompt only when the active project is trading-related (name contains "trad", "quant", "binance", "crypto", or "market"). This prevents trading context from polluting casual conversations.
 23. When `sandbox_prompt` is `Some`, the sandbox constraint text is prepended to the system prompt before context building.
 24. The startup log includes the active sandbox mode for operational visibility.

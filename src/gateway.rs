@@ -4,6 +4,7 @@
 //! background conversation summarization, and graceful shutdown.
 
 use crate::commands;
+use crate::i18n;
 use crate::markers::*;
 use crate::task_confirmation::{self, MarkerResult};
 use omega_channels::whatsapp;
@@ -1095,6 +1096,14 @@ impl Gateway {
                 }
             }
 
+            // Heartbeat pulse — so the AI knows the current interval.
+            if self.heartbeat_config.enabled {
+                let mins = self.heartbeat_interval.load(Ordering::Relaxed);
+                prompt.push_str(&format!(
+                    "\n\nHeartbeat pulse: every {mins} minutes. You can report this when asked and change it with HEARTBEAT_INTERVAL: <1-1440>."
+                ));
+            }
+
             // Sandbox mode constraint.
             if let Some(ref constraint) = self.sandbox_prompt {
                 prompt.push_str("\n\n");
@@ -1993,10 +2002,17 @@ impl Gateway {
                     HeartbeatAction::SetInterval(mins) => {
                         self.heartbeat_interval.store(*mins, Ordering::Relaxed);
                         info!("heartbeat: interval changed to {mins} minutes");
-                        // Notify owner via heartbeat channel.
+                        // Notify owner via heartbeat channel (localized).
                         if let Some(ch) = self.channels.get(&self.heartbeat_config.channel) {
+                            let lang = self
+                                .memory
+                                .get_fact(&incoming.sender_id, "preferred_language")
+                                .await
+                                .ok()
+                                .flatten()
+                                .unwrap_or_else(|| "English".to_string());
                             let msg = OutgoingMessage {
-                                text: format!("⏱️ Heartbeat interval updated to {mins} minutes."),
+                                text: i18n::heartbeat_interval_updated(&lang, *mins),
                                 metadata: MessageMetadata::default(),
                                 reply_target: Some(self.heartbeat_config.reply_target.clone()),
                             };

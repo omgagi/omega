@@ -867,6 +867,20 @@ pub fn task_save_failed(lang: &str, n: usize) -> String {
     }
 }
 
+/// Format the heartbeat interval updated notification.
+pub fn heartbeat_interval_updated(lang: &str, mins: u64) -> String {
+    match lang {
+        "Spanish" => format!("⏱️ Intervalo de pulso actualizado a {mins} minutos."),
+        "Portuguese" => format!("⏱️ Intervalo de pulso atualizado para {mins} minutos."),
+        "French" => format!("⏱️ Intervalle de pouls mis à jour à {mins} minutes."),
+        "German" => format!("⏱️ Pulsintervall auf {mins} Minuten aktualisiert."),
+        "Italian" => format!("⏱️ Intervallo del battito aggiornato a {mins} minuti."),
+        "Dutch" => format!("⏱️ Hartslag-interval bijgewerkt naar {mins} minuten."),
+        "Russian" => format!("⏱️ Интервал пульса обновлён до {mins} минут."),
+        _ => format!("⏱️ Heartbeat interval updated to {mins} minutes."),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1008,6 +1022,11 @@ mod tests {
         // tasks_updated_confirmed
         assert!(tasks_updated_confirmed("English", 3).contains("3 tasks"));
         assert!(tasks_updated_confirmed("Spanish", 2).contains("2 tareas"));
+
+        // heartbeat_interval_updated
+        assert!(heartbeat_interval_updated("English", 15).contains("15 minutes"));
+        assert!(heartbeat_interval_updated("Spanish", 30).contains("30 minutos"));
+        assert!(heartbeat_interval_updated("Russian", 5).contains("5 минут"));
     }
 
     #[test]

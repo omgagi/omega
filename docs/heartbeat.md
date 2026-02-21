@@ -113,6 +113,15 @@ Ask Omega to stop monitoring:
 
 Omega will emit a `HEARTBEAT_REMOVE:` marker. The gateway uses case-insensitive partial matching to find and remove the item. Comment lines (starting with `#`) are never removed.
 
+### Querying the Interval
+
+OMEGA knows its current heartbeat pulse — the interval is injected into its context when heartbeat is enabled. You can ask naturally:
+
+- "What's your heartbeat pulse?"
+- "How often do you check in?"
+
+OMEGA will report the current value directly.
+
 ### Changing the Interval
 
 You can dynamically change how often the heartbeat checks in through conversation:
@@ -121,7 +130,7 @@ You can dynamically change how often the heartbeat checks in through conversatio
 - "Make the heartbeat run hourly"
 - "Set the heartbeat interval to 5 minutes"
 
-Omega will emit a `HEARTBEAT_INTERVAL:` marker with the new value (in minutes, 1–1440). The gateway updates the interval atomically — the very next heartbeat cycle will use the new value. No restart required.
+Omega will emit a `HEARTBEAT_INTERVAL:` marker with the new value (in minutes, 1–1440). The gateway updates the interval atomically — the very next heartbeat cycle will use the new value. No restart required. The confirmation notification is localized to the user's preferred language.
 
 The interval is held in memory and resets to the configured `interval_minutes` on service restart. To make a permanent change, update `config.toml`.
 
