@@ -33,14 +33,16 @@ Formats a human-readable confirmation message from marker results. Returns `None
 **Output format:**
 - Single task created: `✓ Scheduled: {desc} — {due_at} ({repeat})`
 - Multiple tasks created: `✓ Scheduled {n} tasks:` + bulleted list
-- Single task cancelled: `✓ Cancelled: [{id_prefix}]`
-- Multiple tasks cancelled: `✓ Cancelled {n} tasks:` + bulleted list of `[{id}]`
-- Single task updated: `✓ Updated: [{id_prefix}]`
-- Multiple tasks updated: `✓ Updated {n} tasks:` + bulleted list of `[{id}]`
+- Single task cancelled: `✓ Cancelled: [{id_prefix}]` (standalone only)
+- Multiple tasks cancelled: `✓ Cancelled {n} tasks:` + bulleted list of `[{id}]` (standalone only)
+- Single task updated: `✓ Updated: [{id_prefix}]` (standalone only)
+- Multiple tasks updated: `✓ Updated {n} tasks:` + bulleted list of `[{id}]` (standalone only)
 - Similar warning: `⚠ Similar task exists: "{desc}" — {due_at}`
 - Creation failure: `✗ Failed to save {n} task(s). Please try again.`
-- Cancel failure: `✗ Failed to cancel [{id}]: {reason}` (per-task)
-- Update failure: `✗ Failed to update [{id}]: {reason}` (per-task)
+- Cancel failure: `✗ Failed to cancel [{id}]: {reason}` (standalone only)
+- Update failure: `✗ Failed to update [{id}]: {reason}` (standalone only)
+
+**Implicit replacement suppression:** When creates and cancels/updates appear in the same batch, cancel/update sections are suppressed. The AI auto-replaces similar tasks (cancel old + create new), which is an implementation detail — only the created tasks are shown to the user.
 
 All strings are localized via `i18n::t()` and format helpers: `i18n::tasks_confirmed()`, `i18n::tasks_cancelled_confirmed()`, `i18n::tasks_updated_confirmed()`, `i18n::task_save_failed()`.
 
@@ -69,5 +71,5 @@ All strings are localized via `i18n::t()` and format helpers: `i18n::tasks_confi
 | `test_format_task_confirmation_multiple_cancelled` | Multiple cancellations show count + list |
 | `test_format_task_confirmation_cancel_failed` | Cancel failure shows id and reason |
 | `test_format_task_confirmation_single_updated` | Single updated task formats with id |
-| `test_format_task_confirmation_mixed` | Mixed create + cancel results format correctly |
+| `test_format_task_confirmation_mixed_suppresses_cancels` | When creates present, cancel confirmations are suppressed |
 | `test_significant_words` | Word extraction filters correctly |

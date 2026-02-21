@@ -831,17 +831,35 @@ impl Store {
 
     /// Cancel a task by ID prefix (must match sender).
     pub async fn cancel_task(&self, id_prefix: &str, sender_id: &str) -> Result<bool, OmegaError> {
+        let prefix = format!("{id_prefix}%");
+
+        // Try to cancel pending tasks first.
         let result = sqlx::query(
             "UPDATE scheduled_tasks SET status = 'cancelled' \
              WHERE id LIKE ? AND sender_id = ? AND status = 'pending'",
         )
-        .bind(format!("{id_prefix}%"))
+        .bind(&prefix)
         .bind(sender_id)
         .execute(&self.pool)
         .await
         .map_err(|e| OmegaError::Memory(format!("cancel task failed: {e}")))?;
 
-        Ok(result.rows_affected() > 0)
+        if result.rows_affected() > 0 {
+            return Ok(true);
+        }
+
+        // Idempotent: if already cancelled, treat as success.
+        let already: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM scheduled_tasks \
+             WHERE id LIKE ? AND sender_id = ? AND status = 'cancelled'",
+        )
+        .bind(&prefix)
+        .bind(sender_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("cancel task check failed: {e}")))?;
+
+        Ok(already.0 > 0)
     }
 
     /// Update fields of a pending task by ID prefix (must match sender).

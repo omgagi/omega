@@ -1003,7 +1003,7 @@ ORDER BY due_at ASC
 
 #### `async fn cancel_task(&self, id_prefix: &str, sender_id: &str) -> Result<bool, OmegaError>`
 
-**Purpose:** Cancel a task by ID prefix. The task must belong to the specified sender and be in pending status.
+**Purpose:** Cancel a task by ID prefix. Idempotent — returns `true` if the task was cancelled or was already cancelled.
 
 **Parameters:**
 
@@ -1012,13 +1012,21 @@ ORDER BY due_at ASC
 | `id_prefix` | `&str` | The beginning of the task UUID (e.g., first 8 characters). |
 | `sender_id` | `&str` | The user requesting cancellation (ownership check). |
 
-**Returns:** `Result<bool, OmegaError>` -- `true` if a task was cancelled, `false` if no matching task found.
+**Returns:** `Result<bool, OmegaError>` -- `true` if a task was cancelled or already cancelled, `false` if no matching task found.
 
-**SQL:**
+**Logic:**
+1. Try to update pending tasks to cancelled:
 ```sql
 UPDATE scheduled_tasks SET status = 'cancelled'
 WHERE id LIKE ? AND sender_id = ? AND status = 'pending'
 ```
+2. If `rows_affected > 0`, return `true`.
+3. Otherwise, check if already cancelled (idempotent):
+```sql
+SELECT COUNT(*) FROM scheduled_tasks
+WHERE id LIKE ? AND sender_id = ? AND status = 'cancelled'
+```
+4. If count > 0, return `true` (intent already fulfilled). Otherwise `false`.
 
 **Bind parameters:** `id_prefix` is bound as `"{id_prefix}%"` for prefix matching via `LIKE`.
 

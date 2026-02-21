@@ -178,37 +178,43 @@ pub fn format_task_confirmation(
         }
     }
 
-    // Cancelled section
-    match cancelled.len() {
-        0 => {}
-        1 => parts.push(format!(
-            "{} [{}]",
-            i18n::t("task_cancelled_confirmed", lang),
-            cancelled[0]
-        )),
-        n => {
-            let mut lines = vec![i18n::tasks_cancelled_confirmed(lang, n)];
-            for id in &cancelled {
-                lines.push(format!("  • [{id}]"));
-            }
-            parts.push(lines.join("\n"));
-        }
-    }
+    // Cancelled/Updated sections — only show when standalone (no creates in same batch).
+    // When creates are present, cancellations are implicit replacements, not user-requested.
+    let has_creates = !created.is_empty();
 
-    // Updated section
-    match updated.len() {
-        0 => {}
-        1 => parts.push(format!(
-            "{} [{}]",
-            i18n::t("task_updated_confirmed", lang),
-            updated[0]
-        )),
-        n => {
-            let mut lines = vec![i18n::tasks_updated_confirmed(lang, n)];
-            for id in &updated {
-                lines.push(format!("  • [{id}]"));
+    if !has_creates {
+        // Cancelled section
+        match cancelled.len() {
+            0 => {}
+            1 => parts.push(format!(
+                "{} [{}]",
+                i18n::t("task_cancelled_confirmed", lang),
+                cancelled[0]
+            )),
+            n => {
+                let mut lines = vec![i18n::tasks_cancelled_confirmed(lang, n)];
+                for id in &cancelled {
+                    lines.push(format!("  • [{id}]"));
+                }
+                parts.push(lines.join("\n"));
             }
-            parts.push(lines.join("\n"));
+        }
+
+        // Updated section
+        match updated.len() {
+            0 => {}
+            1 => parts.push(format!(
+                "{} [{}]",
+                i18n::t("task_updated_confirmed", lang),
+                updated[0]
+            )),
+            n => {
+                let mut lines = vec![i18n::tasks_updated_confirmed(lang, n)];
+                for id in &updated {
+                    lines.push(format!("  • [{id}]"));
+                }
+                parts.push(lines.join("\n"));
+            }
         }
     }
 
@@ -225,20 +231,21 @@ pub fn format_task_confirmation(
         parts.push(i18n::task_save_failed(lang, failed_count));
     }
 
-    // Cancel failure section
-    for (id, reason) in &cancel_failed {
-        parts.push(format!(
-            "{} [{id}]: {reason}",
-            i18n::t("task_cancel_failed", lang),
-        ));
-    }
+    // Cancel/Update failure sections — only show when standalone (no creates).
+    if !has_creates {
+        for (id, reason) in &cancel_failed {
+            parts.push(format!(
+                "{} [{id}]: {reason}",
+                i18n::t("task_cancel_failed", lang),
+            ));
+        }
 
-    // Update failure section
-    for (id, reason) in &update_failed {
-        parts.push(format!(
-            "{} [{id}]: {reason}",
-            i18n::t("task_update_failed", lang),
-        ));
+        for (id, reason) in &update_failed {
+            parts.push(format!(
+                "{} [{id}]: {reason}",
+                i18n::t("task_update_failed", lang),
+            ));
+        }
     }
 
     if parts.is_empty() {
@@ -417,7 +424,8 @@ mod tests {
     }
 
     #[test]
-    fn test_format_task_confirmation_mixed() {
+    fn test_format_task_confirmation_mixed_suppresses_cancels() {
+        // When creates and cancels happen together, cancels are implicit replacements.
         let results = vec![
             MarkerResult::TaskCreated {
                 description: "New task".to_string(),
@@ -434,7 +442,10 @@ mod tests {
         ];
         let msg = format_task_confirmation(&results, &[], "English").unwrap();
         assert!(msg.contains("Scheduled"));
-        assert!(msg.contains("Cancelled 2 tasks"));
+        assert!(
+            !msg.contains("Cancelled"),
+            "cancels should be suppressed when creates are present"
+        );
     }
 
     #[test]
