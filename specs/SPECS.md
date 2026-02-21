@@ -20,6 +20,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [binary-init.md](binary-init.md) — Interactive setup wizard
 - [binary-selfcheck.md](binary-selfcheck.md) — Startup health checks
 - [binary-service.md](binary-service.md) — OS-aware service management (macOS LaunchAgent / Linux systemd)
+- [src-claudemd-rs.md](src-claudemd-rs.md) — Workspace CLAUDE.md maintenance (init + periodic refresh via claude CLI subprocess)
 
 ### Milestone 3: omega-core
 - [core-lib.md](core-lib.md) — Core crate overview, module re-exports
@@ -74,7 +75,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 │                   omega (binary)                 │
 │  main.rs → gateway.rs → commands.rs             │
 │              markers.rs  task_confirmation.rs    │
-│              init.rs    selfcheck.rs             │
+│              claudemd.rs init.rs  selfcheck.rs   │
 │              service.rs  i18n.rs                 │
 ├─────────────────────────────────────────────────┤
 │  omega-core     │ omega-providers │ omega-channels│
@@ -103,4 +104,5 @@ Background:
   Scheduler: poll due_tasks → channel.send(reminder) → complete_task
   Heartbeat: provider.complete(check-in) → suppress HEARTBEAT_OK / channel.send(alert)
   Summarizer: find idle convos → summarize → close
+  CLAUDE.md: ensure on startup → refresh every 24h (claude -p subprocess)
 ```

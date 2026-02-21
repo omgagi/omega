@@ -1,3 +1,4 @@
+mod claudemd;
 mod commands;
 mod gateway;
 mod i18n;
@@ -216,6 +217,7 @@ async fn main() -> anyhow::Result<()> {
                 sandbox_prompt,
                 model_fast,
                 model_complex,
+                sandbox_mode,
             ));
             gw.run().await?;
         }

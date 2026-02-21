@@ -338,6 +338,7 @@ Progressive onboarding: Stage-based system tracked by an `onboarding_stage` fact
 Background loops (spawned in `gateway::run()`):
 - **Scheduler**: polls `scheduled_tasks` table every 60s, delivers due reminders via channel, executes action tasks via provider with full tool/MCP access
 - **Heartbeat**: clock-aligned periodic context-aware provider check-in (default 30min, fires at clean boundaries like :00/:30, dynamic via `HEARTBEAT_INTERVAL:` marker + `Arc<AtomicU64>`), enriched with user facts + recent summaries, full Identity/Soul/System prompt attached (same as scheduler action tasks), skips when no `~/.omega/HEARTBEAT.md` checklist is configured, suppresses `HEARTBEAT_OK`, alerts otherwise. Current interval is injected into the system prompt so OMEGA can report it when asked. Interval-change notifications are localized via `i18n::heartbeat_interval_updated()`.
+- **CLAUDE.md maintenance** (`src/claudemd.rs`): On startup, if provider is `claude-code` and `~/.omega/workspace/CLAUDE.md` doesn't exist, spawns `claude -p` to create it (explores workspace, skills, projects). Background loop refreshes it every 24 hours. Direct subprocess call (not Provider trait). Non-fatal — warnings on failure, never blocks startup.
 
 Proactive self-scheduling: After every action it takes, the AI evaluates: "Does this need follow-up?" If yes, it uses SCHEDULE (for time-based checks) or HEARTBEAT_ADD (for ongoing monitoring) autonomously — no user request needed. This applies universally to any context, not just specific domains. The Identity section and injected marker instructions both reinforce this: an autonomous agent closes its own loops.
 
@@ -393,6 +394,7 @@ cargo build --release        # Optimized binary
 - Skills: `~/.omega/skills/*/SKILL.md` (auto-deployed on first run, TOML or YAML frontmatter + instructions, scanned at startup)
 - Projects: `~/.omega/projects/*/ROLE.md` (user-created or AI-created, directory name = project name, hot-reloaded per message)
 - Workspace: `~/.omega/workspace/` (sandbox working directory, created on startup)
+- Workspace CLAUDE.md: `~/.omega/workspace/CLAUDE.md` (auto-created by `claudemd.rs` on first run via `claude -p`, refreshed every 24h — gives Claude Code subprocess persistent workspace context)
 - Inbox: `~/.omega/workspace/inbox/` (temporary storage for incoming image attachments, auto-cleaned after provider response)
 - Heartbeat checklist: `~/.omega/HEARTBEAT.md` (optional, read by heartbeat loop)
 - Bug reports: `~/.omega/BUG.md` (auto-created by BUG_REPORT: marker, date-grouped entries)

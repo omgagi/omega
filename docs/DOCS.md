@@ -43,6 +43,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [scheduler.md](scheduler.md) — Task queue: reminders, recurring tasks, natural language scheduling
 - [heartbeat.md](heartbeat.md) — Periodic AI check-ins, health monitoring, alert suppression
 - [introspection.md](introspection.md) — Autonomous skill improvement (SKILL_IMPROVE marker, lesson appending to SKILL.md), self-audit (anomaly flagging + audit DB access)
+- [claudemd.md](claudemd.md) — Workspace CLAUDE.md maintenance (auto-creation and periodic refresh for Claude Code subprocess context)
 
 ### Commands
 - [commands.md](commands.md) — Bot command reference (/status, /memory, /history, /facts, /forget, /tasks, /cancel, /skills, /purge, /projects, /project, /help)

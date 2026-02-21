@@ -99,6 +99,8 @@ pub struct Gateway {
     active_senders: Mutex<HashMap<String, Vec<IncomingMessage>>>,
     /// Shared heartbeat interval (minutes) — updated at runtime via `HEARTBEAT_INTERVAL:` marker.
     heartbeat_interval: Arc<AtomicU64>,
+    /// Sandbox mode enum — needed for direct subprocess calls (CLAUDE.md maintenance).
+    sandbox_mode_enum: omega_core::config::SandboxMode,
 }
 
 impl Gateway {
@@ -119,6 +121,7 @@ impl Gateway {
         sandbox_prompt: Option<String>,
         model_fast: String,
         model_complex: String,
+        sandbox_mode_enum: omega_core::config::SandboxMode,
     ) -> Self {
         let audit = AuditLogger::new(memory.pool().clone());
         let heartbeat_interval = Arc::new(AtomicU64::new(heartbeat_config.interval_minutes));
@@ -141,6 +144,7 @@ impl Gateway {
             model_complex,
             active_senders: Mutex::new(HashMap::new()),
             heartbeat_interval,
+            sandbox_mode_enum,
         }
     }
 
@@ -160,6 +164,16 @@ impl Gateway {
 
         // Purge orphaned inbox files from previous runs.
         purge_inbox(&self.data_dir);
+
+        // Ensure workspace CLAUDE.md exists (Claude Code provider only).
+        if self.provider.name() == "claude-code" {
+            let workspace = PathBuf::from(shellexpand(&self.data_dir)).join("workspace");
+            let data_dir = PathBuf::from(shellexpand(&self.data_dir));
+            let sm = self.sandbox_mode_enum;
+            tokio::spawn(async move {
+                crate::claudemd::ensure_claudemd(&workspace, &data_dir, sm).await;
+            });
+        }
 
         let (tx, mut rx) = mpsc::channel::<IncomingMessage>(256);
 
@@ -248,6 +262,18 @@ impl Gateway {
             None
         };
 
+        // Spawn CLAUDE.md maintenance loop (Claude Code provider only, 24h interval).
+        let claudemd_handle = if self.provider.name() == "claude-code" {
+            let ws = PathBuf::from(shellexpand(&self.data_dir)).join("workspace");
+            let dd = PathBuf::from(shellexpand(&self.data_dir));
+            let sm = self.sandbox_mode_enum;
+            Some(tokio::spawn(async move {
+                crate::claudemd::claudemd_loop(ws, dd, sm, 24).await;
+            }))
+        } else {
+            None
+        };
+
         // Main event loop with graceful shutdown.
         loop {
             tokio::select! {
@@ -265,7 +291,8 @@ impl Gateway {
         }
 
         // Graceful shutdown.
-        self.shutdown(&bg_handle, &sched_handle, &hb_handle).await;
+        self.shutdown(&bg_handle, &sched_handle, &hb_handle, &claudemd_handle)
+            .await;
         Ok(())
     }
 
@@ -825,6 +852,7 @@ impl Gateway {
         bg_handle: &tokio::task::JoinHandle<()>,
         sched_handle: &Option<tokio::task::JoinHandle<()>>,
         hb_handle: &Option<tokio::task::JoinHandle<()>>,
+        claudemd_handle: &Option<tokio::task::JoinHandle<()>>,
     ) {
         info!("Shutting down...");
 
@@ -834,6 +862,9 @@ impl Gateway {
             h.abort();
         }
         if let Some(h) = hb_handle {
+            h.abort();
+        }
+        if let Some(h) = claudemd_handle {
             h.abort();
         }
 

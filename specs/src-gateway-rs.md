@@ -42,6 +42,7 @@ pub struct Gateway {
     uptime: Instant,                           // Server start time
     active_senders: Mutex<HashMap<String, Vec<IncomingMessage>>>,  // Per-sender message buffer for non-blocking dispatch
     heartbeat_interval: Arc<AtomicU64>,        // Dynamic heartbeat interval (minutes), updated via HEARTBEAT_INTERVAL: marker
+    sandbox_mode_enum: SandboxMode,              // Sandbox mode enum for direct subprocess calls (CLAUDE.md maintenance)
 }
 ```
 
@@ -62,12 +63,13 @@ pub struct Gateway {
 - `uptime`: Tracks server start time for uptime calculations in commands.
 - `active_senders`: A `Mutex<HashMap<String, Vec<IncomingMessage>>>` that tracks which senders currently have an active provider call in flight. When a new message arrives for a sender that is already being processed, the message is buffered here. After the active call completes, buffered messages are dispatched in order.
 - `heartbeat_interval`: An `Arc<AtomicU64>` holding the current heartbeat interval in minutes. Initialized from `heartbeat_config.interval_minutes` and shared with the heartbeat loop and scheduler loop. Updated at runtime via `HEARTBEAT_INTERVAL:` markers. Resets to config value on restart.
+- `sandbox_mode_enum`: The `SandboxMode` enum value (Copy). Stored separately from the display string `sandbox_mode` so that direct subprocess calls (e.g., CLAUDE.md maintenance) can use `omega_sandbox::sandboxed_command()` with the actual enum.
 
 ## Functions
 
 ### Public Methods
 
-#### `new(provider, channels, memory, auth_config, channel_config, heartbeat_config, scheduler_config, prompts, sandbox_mode, sandbox_prompt, model_fast, model_complex) -> Self`
+#### `new(provider, channels, memory, auth_config, channel_config, heartbeat_config, scheduler_config, prompts, sandbox_mode, sandbox_prompt, model_fast, model_complex, sandbox_mode_enum) -> Self`
 **Purpose:** Construct a new gateway instance.
 
 **Parameters:**
@@ -83,6 +85,7 @@ pub struct Gateway {
 - `sandbox_prompt: Option<String>` - Optional sandbox constraint text for system prompt injection.
 - `model_fast: String` - Model identifier for DIRECT/simple messages (from `ClaudeCodeConfig.model`).
 - `model_complex: String` - Model identifier for multi-step/complex messages (from `ClaudeCodeConfig.model_complex`).
+- `sandbox_mode_enum: SandboxMode` - Sandbox mode enum for direct subprocess calls (CLAUDE.md maintenance).
 
 **Returns:** New `Gateway` instance.
 
@@ -105,6 +108,7 @@ pub struct Gateway {
 **Logic:**
 1. Log gateway initialization with provider name, channel names, auth status, and sandbox mode.
 1b. Purge orphaned inbox files from previous runs via `purge_inbox(&self.data_dir)`.
+1c. If provider is `"claude-code"`, spawn `crate::claudemd::ensure_claudemd()` as a background task to create `~/.omega/workspace/CLAUDE.md` if missing.
 2. Create an mpsc channel with capacity 256 for incoming messages.
 3. For each registered channel:
    - Call `channel.start()` to get a receiver for that channel's messages.
@@ -114,11 +118,12 @@ pub struct Gateway {
 5. Spawn a background summarization task via `tokio::spawn(background_summarizer())`.
 6. If `scheduler_config.enabled`, spawn `scheduler_loop()` via `tokio::spawn()`. Store handle as `Option<JoinHandle<()>>`.
 7. If `heartbeat_config.enabled`, spawn `heartbeat_loop()` via `tokio::spawn()`. Store handle as `Option<JoinHandle<()>>`.
+7b. If provider is `"claude-code"`, spawn `crate::claudemd::claudemd_loop()` with 24-hour interval. Store handle as `Option<JoinHandle<()>>`.
 8. Enter the main event loop using `tokio::select!`:
    - Wait for incoming messages via `rx.recv()` and call `dispatch_message()`.
    - Wait for Ctrl+C signal via `tokio::signal::ctrl_c()`.
    - On shutdown signal, break from loop.
-9. Call `shutdown(bg_handle, sched_handle, hb_handle)` for graceful cleanup.
+9. Call `shutdown(bg_handle, sched_handle, hb_handle, claudemd_handle)` for graceful cleanup.
 10. Return Ok(()).
 
 **Async Patterns:**
@@ -280,13 +285,14 @@ pub struct Gateway {
 - Database query errors are suppressed via `.ok().flatten()`.
 - Returns top-level error on `close_conversation()` failure.
 
-#### `async fn shutdown(&self, bg_handle: &JoinHandle<()>, sched_handle: &Option<JoinHandle<()>>, hb_handle: &Option<JoinHandle<()>>)`
+#### `async fn shutdown(&self, bg_handle: &JoinHandle<()>, sched_handle: &Option<JoinHandle<()>>, hb_handle: &Option<JoinHandle<()>>, claudemd_handle: &Option<JoinHandle<()>>)`
 **Purpose:** Gracefully shut down the gateway.
 
 **Parameters:**
 - `bg_handle: &tokio::task::JoinHandle<()>` - Handle to the background summarizer task.
 - `sched_handle: &Option<tokio::task::JoinHandle<()>>` - Optional handle to the scheduler loop task.
 - `hb_handle: &Option<tokio::task::JoinHandle<()>>` - Optional handle to the heartbeat loop task.
+- `claudemd_handle: &Option<tokio::task::JoinHandle<()>>` - Optional handle to the CLAUDE.md maintenance loop task.
 
 **Returns:** None (void).
 
@@ -295,6 +301,7 @@ pub struct Gateway {
 2. Abort the background summarizer task via `bg_handle.abort()`.
 3. If `sched_handle` is `Some`, abort the scheduler task.
 4. If `hb_handle` is `Some`, abort the heartbeat task.
+4b. If `claudemd_handle` is `Some`, abort the CLAUDE.md maintenance task.
 5. Find all active conversations via `store.find_all_active_conversations()`.
 6. For each active conversation, call `summarize_conversation()` to summarize before closing.
 7. Log warnings for summarization errors but continue.
@@ -970,6 +977,7 @@ pub struct Gateway {
 - **Background summarizer:** Runs in a dedicated `tokio::spawn()` task.
 - **Scheduler loop:** Conditionally runs in a dedicated `tokio::spawn()` task (when `scheduler_config.enabled`).
 - **Heartbeat loop:** Conditionally runs in a dedicated `tokio::spawn()` task (when `heartbeat_config.enabled`).
+- **CLAUDE.md maintenance:** Conditionally runs in a dedicated `tokio::spawn()` task (when provider is `"claude-code"`). On startup, `ensure_claudemd` is spawned as a one-shot task. `claudemd_loop` runs every 24 hours.
 - **Typing repeater:** For each message, a separate `tokio::spawn()` task repeats typing every 5 seconds.
 - **Provider task:** For each message, `provider.complete()` is spawned via `tokio::spawn()` to run in the background.
 - **Status updater:** For each message, a delayed status updater task is spawned that sends a localized first nudge after 15 seconds, then periodic localized "Still working..." messages every 120 seconds; aborted when the provider result arrives. If the provider responds within 15 seconds, no status message is sent. Messages are localized to the user's `preferred_language` fact via `status_messages()`.
@@ -981,7 +989,7 @@ pub struct Gateway {
 
 ### Shutdown Coordination
 - **Signal handling:** `tokio::signal::ctrl_c()` breaks the main loop.
-- **Task abortion:** Background summarizer is aborted via `bg_handle.abort()`. Scheduler and heartbeat handles are aborted if present.
+- **Task abortion:** Background summarizer is aborted via `bg_handle.abort()`. Scheduler, heartbeat, and CLAUDE.md maintenance handles are aborted if present.
 - **Channel stopping:** Each channel's `stop()` method is called.
 - **Graceful conversation closure:** All active conversations are summarized before shutdown completes.
 

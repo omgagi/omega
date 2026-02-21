@@ -17,6 +17,7 @@ The main entry point for the Omega binary. Orchestrates CLI argument parsing, ro
 - **std::collections::HashMap** — Channel registry
 
 ## Imports
+- `crate::claudemd` — Workspace CLAUDE.md maintenance (init + periodic refresh)
 - `crate::commands` — Command handlers submodule
 - `crate::gateway` — Event loop gateway
 - `crate::init` — Interactive setup wizard
