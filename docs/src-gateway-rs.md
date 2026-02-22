@@ -841,7 +841,9 @@ The scheduler is a background task that delivers due tasks to users. It is spawn
 Every `poll_interval_secs` seconds (default: 60), the scheduler:
 
 1. **Poll** -- Calls `store.get_due_tasks()` to find all tasks where `status = 'pending'` and `due_at <= now`.
-2. **Deliver** -- For each due task, sends a message via the task's channel: `"Reminder: {description}"`.
+2. **Deliver** -- For each due task:
+   - **Reminder tasks:** Sends a message via the task's channel: `"Reminder: {description}"`.
+   - **Action tasks:** Executes the task via the AI provider with full tool/MCP access, processes response markers (SCHEDULE, SCHEDULE_ACTION, CANCEL_TASK, UPDATE_TASK, REWARD, LESSON), and delivers the response text to the user.
 3. **Complete** -- Calls `store.complete_task()` which either:
    - Marks the task as `'delivered'` if it is a one-shot task (`repeat` is `NULL` or `"once"`).
    - Advances `due_at` to the next occurrence if the task is recurring (daily, weekly, monthly, weekdays).

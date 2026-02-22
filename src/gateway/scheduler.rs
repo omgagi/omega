@@ -268,6 +268,48 @@ impl Gateway {
                                     }
                                     text = strip_update_task(&text);
 
+                                    // Process REWARD markers from action response.
+                                    for reward_line in extract_all_rewards(&text) {
+                                        if let Some((score, domain, lesson)) =
+                                            parse_reward_line(&reward_line)
+                                        {
+                                            match store
+                                                .store_outcome(
+                                                    sender_id, &domain, score, &lesson, "action",
+                                                )
+                                                .await
+                                            {
+                                                Ok(()) => info!(
+                                                    "action task outcome: {score:+} | {domain} | {lesson}"
+                                                ),
+                                                Err(e) => error!(
+                                                    "action task: failed to store outcome: {e}"
+                                                ),
+                                            }
+                                        }
+                                    }
+                                    text = strip_reward_markers(&text);
+
+                                    // Process LESSON markers from action response.
+                                    for lesson_line in extract_all_lessons(&text) {
+                                        if let Some((domain, rule)) =
+                                            parse_lesson_line(&lesson_line)
+                                        {
+                                            match store
+                                                .store_lesson(sender_id, &domain, &rule)
+                                                .await
+                                            {
+                                                Ok(()) => info!(
+                                                    "action task lesson: {domain} | {rule}"
+                                                ),
+                                                Err(e) => error!(
+                                                    "action task: failed to store lesson: {e}"
+                                                ),
+                                            }
+                                        }
+                                    }
+                                    text = strip_lesson_markers(&text);
+
                                     // Determine audit status and handle outcome.
                                     let (audit_status, action_ok) = match &outcome {
                                         Some(ActionOutcome::Success) => (AuditStatus::Ok, true),

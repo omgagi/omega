@@ -276,7 +276,7 @@ If sandbox: + sandbox constraint (unchanged)
      d. Inject `ACTION_OUTCOME:` verification instruction into system prompt.
      e. Invoke provider with full tool/MCP access.
      d. Parse `ACTION_OUTCOME:` marker from response (`Success`, `Failed(reason)`, or missing).
-     e. Process response markers (SCHEDULE, SCHEDULE_ACTION, CANCEL_TASK, UPDATE_TASK, HEARTBEAT).
+     e. Process response markers (SCHEDULE, SCHEDULE_ACTION, CANCEL_TASK, UPDATE_TASK, REWARD, LESSON, HEARTBEAT).
      f. Write audit log entry with `[ACTION]` prefix, elapsed time, status.
      g. On success (or missing marker — backward compat): call `complete_task()`, send response.
      h. On failure: call `fail_task()` (up to `MAX_ACTION_RETRIES=3` retries, 2-minute delay), notify user.

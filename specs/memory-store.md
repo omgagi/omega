@@ -1262,7 +1262,7 @@ SELECT sender_id FROM facts WHERE key = 'welcomed' AND sender_id != ? LIMIT 1
 INSERT INTO outcomes (id, sender_id, domain, score, lesson, source) VALUES (?, ?, ?, ?, ?, ?)
 ```
 
-**Called by:** `gateway/process_markers.rs` (source=`"conversation"`), `gateway/heartbeat.rs` (source=`"heartbeat"`).
+**Called by:** `gateway/process_markers.rs` (source=`"conversation"`), `gateway/heartbeat.rs` (source=`"heartbeat"`), `gateway/scheduler.rs` (source=`"action"`).
 
 ---
 
@@ -1336,7 +1336,7 @@ ON CONFLICT(sender_id, domain) DO UPDATE SET
   updated_at = datetime('now')
 ```
 
-**Called by:** `gateway/process_markers.rs` and `gateway/heartbeat.rs` (LESSON marker processing).
+**Called by:** `gateway/process_markers.rs`, `gateway/heartbeat.rs`, and `gateway/scheduler.rs` (LESSON marker processing).
 
 ---
 
