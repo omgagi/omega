@@ -1,0 +1,86 @@
+//! Message storage and full-text search.
+
+use super::Store;
+use omega_core::{
+    error::OmegaError,
+    message::{IncomingMessage, OutgoingMessage},
+};
+use uuid::Uuid;
+
+impl Store {
+    /// Store a user message and assistant response.
+    pub async fn store_exchange(
+        &self,
+        incoming: &IncomingMessage,
+        response: &OutgoingMessage,
+    ) -> Result<(), OmegaError> {
+        let conv_id = self
+            .get_or_create_conversation(&incoming.channel, &incoming.sender_id)
+            .await?;
+
+        // Store user message.
+        let user_id = Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO messages (id, conversation_id, role, content) VALUES (?, ?, 'user', ?)",
+        )
+        .bind(&user_id)
+        .bind(&conv_id)
+        .bind(&incoming.text)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("insert failed: {e}")))?;
+
+        // Store assistant response.
+        let asst_id = Uuid::new_v4().to_string();
+        let metadata_json = serde_json::to_string(&response.metadata)
+            .map_err(|e| OmegaError::Memory(format!("serialize failed: {e}")))?;
+
+        sqlx::query(
+            "INSERT INTO messages (id, conversation_id, role, content, metadata_json) VALUES (?, ?, 'assistant', ?, ?)",
+        )
+        .bind(&asst_id)
+        .bind(&conv_id)
+        .bind(&response.text)
+        .bind(&metadata_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("insert failed: {e}")))?;
+
+        Ok(())
+    }
+
+    /// Search past messages across all conversations using FTS5 full-text search.
+    pub async fn search_messages(
+        &self,
+        query: &str,
+        exclude_conversation_id: &str,
+        sender_id: &str,
+        limit: i64,
+    ) -> Result<Vec<(String, String, String)>, OmegaError> {
+        // Skip short queries — they produce noisy results.
+        if query.len() < 3 {
+            return Ok(Vec::new());
+        }
+
+        let rows: Vec<(String, String, String)> = sqlx::query_as(
+            "SELECT m.role, m.content, m.timestamp \
+             FROM messages_fts fts \
+             JOIN messages m ON m.rowid = fts.rowid \
+             JOIN conversations c ON c.id = m.conversation_id \
+             WHERE messages_fts MATCH ? \
+             AND m.conversation_id != ? \
+             AND c.sender_id = ? \
+             ORDER BY rank \
+             LIMIT ?",
+        )
+        .bind(query)
+        .bind(exclude_conversation_id)
+        .bind(sender_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("fts search failed: {e}")))?;
+
+        Ok(rows)
+    }
+}
