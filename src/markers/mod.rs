@@ -104,6 +104,8 @@ pub fn strip_all_remaining_markers(text: &str) -> String {
         "PURGE_FACTS",
         "WHATSAPP_QR",
         "ACTION_OUTCOME:",
+        "REWARD:",
+        "LESSON:",
     ];
     let mut result = text.to_string();
     for marker in MARKERS {

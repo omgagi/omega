@@ -11,6 +11,7 @@ mod context;
 mod conversations;
 mod facts;
 mod messages;
+mod outcomes;
 mod tasks;
 
 pub use context::{detect_language, format_user_profile};
@@ -163,6 +164,10 @@ impl Store {
             (
                 "009_task_retry",
                 include_str!("../../migrations/009_task_retry.sql"),
+            ),
+            (
+                "010_outcomes",
+                include_str!("../../migrations/010_outcomes.sql"),
             ),
         ];
 

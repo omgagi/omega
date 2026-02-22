@@ -23,9 +23,11 @@ Each marker type has extract/parse/strip/has functions:
 - **PROJECT_ACTIVATE/DEACTIVATE**: `extract_project_activate`, `has_project_deactivate`, `strip_project_markers`
 - **WHATSAPP_QR**: `has_whatsapp_qr_marker`, `strip_whatsapp_qr_marker`
 - **HEARTBEAT_ADD/REMOVE/INTERVAL**: `extract_heartbeat_markers`, `strip_heartbeat_markers`, `apply_heartbeat_changes`
-- **SKILL_IMPROVE**: `extract_skill_improve`, `parse_skill_improve_line`, `strip_skill_improve`
+- **SKILL_IMPROVE**: `extract_skill_improve`, `parse_skill_improve_line`, `strip_skill_improve`, `apply_skill_improve`
 - **BUG_REPORT**: `extract_bug_report`, `strip_bug_report`, `append_bug_report`
 - **ACTION_OUTCOME**: `extract_action_outcome`, `strip_action_outcome`
+- **REWARD**: `extract_all_rewards`, `parse_reward_line`, `strip_reward_markers`
+- **LESSON**: `extract_all_lessons`, `parse_lesson_line`, `strip_lesson_markers`
 
 ### Classification Helpers
 - `build_classification_context()` -- Build context string for complexity classifier
@@ -45,5 +47,18 @@ Each marker type has extract/parse/strip/has functions:
 - `ActionOutcome` enum: `Success`, `Failed(String)`
 - `InboxGuard` struct -- RAII guard wrapping `Vec<PathBuf>`, calls `cleanup_inbox_images()` on Drop
 
+### REWARD Functions (in `actions.rs`)
+- `extract_all_rewards(text)` — Extract all `REWARD:` lines. Format: `REWARD: +1|domain|lesson` or `REWARD: -1|domain|lesson`.
+- `parse_reward_line(line)` — Parse into `(score: i32, domain: String, lesson: String)`. Validates score is in `{-1, 0, 1}`, domain and lesson are non-empty.
+- `strip_reward_markers(text)` — Remove all `REWARD:` lines from text.
+
+### LESSON Functions (in `actions.rs`)
+- `extract_all_lessons(text)` — Extract all `LESSON:` lines. Format: `LESSON: domain|rule`.
+- `parse_lesson_line(line)` — Parse into `(domain: String, rule: String)`. Validates domain and rule are non-empty.
+- `strip_lesson_markers(text)` — Remove all `LESSON:` lines from text.
+
+### Skill Improve Refactoring (in `actions.rs`)
+- `apply_skill_improve(data_dir, skill_name, lesson)` — Extracted from `process_markers.rs`. Reads skill's `SKILL.md`, appends lesson under `## Lessons Learned` section (creates section if missing), writes back to disk.
+
 ## Tests
-~100 tests covering all marker types, edge cases, inline markers, heartbeat file operations, workspace snapshots, classification parsing, skill improvement, bug reporting, action outcome parsing, InboxGuard RAII cleanup, zero-byte attachment rejection.
+~100 tests covering all marker types, edge cases, inline markers, heartbeat file operations, workspace snapshots, classification parsing, skill improvement, bug reporting, action outcome parsing, reward/lesson extraction and parsing, InboxGuard RAII cleanup, zero-byte attachment rejection.

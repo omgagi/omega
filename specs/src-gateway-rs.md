@@ -20,7 +20,7 @@
 | `pipeline.rs` | ~423 | `handle_message()`, `build_system_prompt()` |
 | `routing.rs` | ~417 | `classify_and_route()`, `execute_steps()`, `handle_direct_response()` |
 | `auth.rs` | ~167 | `check_auth()`, `handle_whatsapp_qr()` |
-| `process_markers.rs` | ~498 | `process_markers()`, `send_task_confirmation()` |
+| `process_markers.rs` | ~498 | `process_markers()`, `process_purge_facts()`, `process_improvement_markers()`, `send_task_confirmation()` |
 
 All submodules access `Gateway` fields via `pub(super)` visibility (module-internal, not public API).
 
@@ -338,10 +338,10 @@ If sandbox: + sandbox constraint (unchanged)
 **Purpose:** Execute a single heartbeat group via Opus. Builds the prompt from the heartbeat template with the group's items, enriches with pre-computed context, matches MCP servers per group, calls the provider, processes markers via `process_heartbeat_markers()`, and evaluates HEARTBEAT_OK. Returns `None` if OK, `Some((text, elapsed_ms))` if content for the user.
 
 #### `async fn process_heartbeat_markers(text, memory, sender_id, channel_name, interval) -> String`
-**Purpose:** Process all markers in a heartbeat response (SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_*, CANCEL_TASK, UPDATE_TASK). Returns text with all markers stripped. Shared by both single-call and per-group paths to avoid duplication.
+**Purpose:** Process all markers in a heartbeat response (SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_*, CANCEL_TASK, UPDATE_TASK, REWARD, LESSON). REWARD markers are stored via `store_outcome()` with source=`"heartbeat"`. LESSON markers are stored via `store_lesson()`. Returns text with all markers stripped. Shared by both single-call and per-group paths to avoid duplication.
 
 #### `async fn build_enrichment(memory) -> String`
-**Purpose:** Build enrichment context from user facts and recent conversation summaries. Computed once and shared across all groups.
+**Purpose:** Build enrichment context from user facts, recent conversation summaries, learned lessons (via `get_all_lessons()`), and recent outcomes (via `get_all_recent_outcomes(24, 20)`). Computed once and shared across all groups. Lessons are formatted as `"Learned rules:\n- [domain] rule"`. Outcomes are formatted as `"Recent outcomes (last 24h):\n- [+/-/~] domain: lesson (timestamp)"`.
 
 #### `fn build_system_prompt(prompts, sandbox_prompt) -> String`
 **Purpose:** Build the heartbeat system prompt (Identity + Soul + System + sandbox + current time). Computed once and shared across all groups.
@@ -576,7 +576,7 @@ If sandbox: + sandbox constraint (unchanged)
 **Stage 5: Process Markers**
 - After SILENT suppression check:
 - Call `self.process_markers(&incoming, &mut response.text)` — a unified method that extracts and processes all markers from the provider response. This same method is called on each step result in `execute_steps()`, ensuring markers work in both direct and multi-step paths.
-- Markers processed in order: SCHEDULE, SCHEDULE_ACTION, PROJECT_ACTIVATE/DEACTIVATE, WHATSAPP_QR, LANG_SWITCH, HEARTBEAT_ADD/REMOVE/INTERVAL, SKILL_IMPROVE.
+- Markers processed in order: SCHEDULE, SCHEDULE_ACTION, PROJECT_ACTIVATE/DEACTIVATE, WHATSAPP_QR, LANG_SWITCH, REWARD, LESSON, HEARTBEAT_ADD/REMOVE/INTERVAL, SKILL_IMPROVE.
 - Each marker is stripped from the response text after processing.
 
 **Stage 6: Store Exchange in Memory (Lines 579-582)**
@@ -745,11 +745,13 @@ If sandbox: + sandbox constraint (unchanged)
 8. CANCEL_TASK — cancel scheduled tasks by ID prefix (conversational `/cancel`), processes ALL markers via `extract_all_cancel_tasks()`, pushes `MarkerResult::TaskCancelled` or `MarkerResult::TaskCancelFailed` per task
 9. UPDATE_TASK — update fields of pending tasks by ID prefix (description, due_at, repeat; empty fields keep existing values), processes ALL markers via `extract_all_update_tasks()`, pushes `MarkerResult::TaskUpdated` or `MarkerResult::TaskUpdateFailed` per task
 10. PURGE_FACTS — delete all non-system facts, preserving system keys (conversational `/purge`)
-11. HEARTBEAT_ADD / HEARTBEAT_REMOVE / HEARTBEAT_INTERVAL — update heartbeat checklist or interval
-12. SKILL_IMPROVE — read skill's SKILL.md, append lesson under `## Lessons Learned`, confirm to user
-13. BUG_REPORT — append self-detected limitation to `{data_dir}/BUG.md` with date grouping, confirm to user
+11. REWARD — process ALL markers via `extract_all_rewards()`, parse each via `parse_reward_line()`, store via `store_outcome()` with source=`"conversation"`, strip all markers
+12. LESSON — process ALL markers via `extract_all_lessons()`, parse each via `parse_lesson_line()`, store via `store_lesson()` (upsert by sender_id+domain), strip all markers
+13. HEARTBEAT_ADD / HEARTBEAT_REMOVE / HEARTBEAT_INTERVAL — update heartbeat checklist or interval
+14. SKILL_IMPROVE — read skill's SKILL.md, append lesson under `## Lessons Learned`, confirm to user (extracted into `process_improvement_markers()` helper)
+15. BUG_REPORT — append self-detected limitation to `{data_dir}/BUG.md` with date grouping, confirm to user
 
-**Logic:** For each marker type: extract from text, process side effects (DB writes, notifications, file updates), strip the marker from text. Mutates `text` in place.
+**Logic:** For each marker type: extract from text, process side effects (DB writes, notifications, file updates), strip the marker from text. Mutates `text` in place. PURGE_FACTS is extracted into `process_purge_facts()` helper. SKILL_IMPROVE and BUG_REPORT are extracted into `process_improvement_markers()` helper.
 
 ## Free Functions (Distributed Across Submodules)
 
@@ -1274,13 +1276,16 @@ All interactions are logged to SQLite with:
 31. Planning steps are tracked in-memory (ephemeral) and are not persisted to the database.
 32. Model routing: `context.model` is set by classify-and-route before the provider call. The provider resolves the effective model via `context.model.as_deref().unwrap_or(&self.model)`.
 33. SKILL_IMPROVE: markers (format: `SKILL_IMPROVE: skill_name | description`) are processed after HEARTBEAT markers. The gateway extracts the skill name and improvement description, stores them for review, and strips the marker from the response. Processed in `handle_message` (direct), `execute_steps` (multi-step), and `scheduler_loop` — all via `process_markers()`.
-34. All response markers (SCHEDULE, SCHEDULE_ACTION, PROJECT, LANG_SWITCH, PERSONALITY, FORGET_CONVERSATION, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, HEARTBEAT, SKILL_IMPROVE, BUG_REPORT) are processed via the unified `process_markers()` method, ensuring they work in both the direct response path (`handle_message`) and the multi-step execution path (`execute_steps`).
+34. All response markers (SCHEDULE, SCHEDULE_ACTION, PROJECT, LANG_SWITCH, PERSONALITY, FORGET_CONVERSATION, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, REWARD, LESSON, HEARTBEAT, SKILL_IMPROVE, BUG_REPORT) are processed via the unified `process_markers()` method, ensuring they work in both the direct response path (`handle_message`) and the multi-step execution path (`execute_steps`).
 35. All system markers must use their exact English prefix regardless of conversation language. The gateway parses markers as literal string prefixes — a translated or paraphrased marker is a silent failure. The system prompt explicitly instructs the AI: "Speak to the user in their language; speak to the system in markers."
 36. Conversational command markers (PERSONALITY, FORGET_CONVERSATION, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS) provide zero-friction equivalents of slash commands — users can say "be more casual" instead of `/personality casual`. The AI emits the marker; `process_markers()` handles it identically to the slash command.
 37. PURGE_FACTS preserves system fact keys (`welcomed`, `preferred_language`, `active_project`, `personality`) — same logic as `/purge` in `commands.rs`.
 38. CANCEL_TASK and UPDATE_TASK use multi-extraction (`extract_all_cancel_tasks()`, `extract_all_update_tasks()`) to process ALL markers in a single response, not just the first. Each marker pushes a `MarkerResult` (TaskCancelled/TaskCancelFailed/TaskUpdated/TaskUpdateFailed) for gateway confirmation display.
 39. The scheduler action loop also processes CANCEL_TASK and UPDATE_TASK markers from action task responses, using the same `extract_all_*` multi-extraction functions (with empty sender_id since action tasks run autonomously).
 40. Token-efficient prompt architecture: `Prompts.scheduling`, `Prompts.projects_rules`, and `Prompts.meta` are only injected when `kw_match()` detects relevant keywords in the user's message. `ContextNeeds` gates DB queries (semantic recall, pending tasks) based on the same keyword detection. Core sections (Identity, Soul, System) are always injected. Average token reduction is ~55% for typical messages.
+41. REWARD markers (format: `REWARD: +1|domain|lesson`) are processed via multi-extraction. Score must be `-1`, `0`, or `+1`. Stored via `store_outcome()` with source `"conversation"` (regular messages) or `"heartbeat"` (heartbeat responses). Stripped from response before sending.
+42. LESSON markers (format: `LESSON: domain|rule`) are processed via multi-extraction. Stored via `store_lesson()` which upserts by `(sender_id, domain)` — existing rules are replaced and occurrences incremented. Stripped from response before sending.
+43. Outcomes and lessons are injected into the system prompt by `build_context()` (always, not keyword-gated). Outcomes use relative timestamps via `format_relative_time()`. Lessons show `[domain] rule`. Token budget: ~225-450 tokens for both.
 
 ## Tests
 

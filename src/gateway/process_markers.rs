@@ -9,7 +9,6 @@ use omega_core::{
     config::shellexpand,
     message::{IncomingMessage, MessageMetadata, OutgoingMessage},
 };
-use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use tracing::{error, info, warn};
 
@@ -287,36 +286,7 @@ impl Gateway {
 
         // PURGE_FACTS
         if has_purge_marker(text) {
-            // Save system facts first.
-            let preserved: Vec<(String, String)> =
-                match self.memory.get_facts(&incoming.sender_id).await {
-                    Ok(facts) => facts
-                        .into_iter()
-                        .filter(|(k, _)| SYSTEM_FACT_KEYS.contains(&k.as_str()))
-                        .collect(),
-                    Err(e) => {
-                        error!("purge marker: failed to read facts: {e}");
-                        Vec::new()
-                    }
-                };
-            // Delete all facts.
-            match self.memory.delete_facts(&incoming.sender_id, None).await {
-                Ok(n) => {
-                    // Restore system facts.
-                    for (key, value) in &preserved {
-                        let _ = self
-                            .memory
-                            .store_fact(&incoming.sender_id, key, value)
-                            .await;
-                    }
-                    let purged = n as usize - preserved.len();
-                    info!(
-                        "purged {purged} facts via marker for {}",
-                        incoming.sender_id
-                    );
-                }
-                Err(e) => error!("purge marker: failed to delete facts: {e}"),
-            }
+            self.process_purge_facts(&incoming.sender_id).await;
             *text = strip_purge_marker(text);
         }
 
@@ -357,84 +327,38 @@ impl Gateway {
             *text = strip_heartbeat_markers(text);
         }
 
-        // SKILL_IMPROVE
-        if let Some(improve_line) = extract_skill_improve(text) {
-            if let Some((skill_name, lesson)) = parse_skill_improve_line(&improve_line) {
-                let data_dir = shellexpand(&self.data_dir);
-                let skill_path =
-                    PathBuf::from(&data_dir).join(format!("skills/{skill_name}/SKILL.md"));
-                if skill_path.exists() {
-                    match std::fs::read_to_string(&skill_path) {
-                        Ok(mut content) => {
-                            // Append under "## Lessons Learned" section.
-                            if let Some(pos) = content.find("## Lessons Learned") {
-                                // Find end of the "## Lessons Learned" line.
-                                let insert_pos = content[pos..]
-                                    .find('\n')
-                                    .map(|i| pos + i)
-                                    .unwrap_or(content.len());
-                                content.insert_str(insert_pos, &format!("\n- {lesson}"));
-                            } else {
-                                content.push_str(&format!("\n\n## Lessons Learned\n- {lesson}\n"));
-                            }
-                            match std::fs::write(&skill_path, &content) {
-                                Ok(()) => {
-                                    info!("skill improved: {skill_name} — {lesson}");
-                                    marker_results
-                                        .push(MarkerResult::SkillImproved { skill_name, lesson });
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "skill improve: failed to write {}: {e}",
-                                        skill_path.display()
-                                    );
-                                    marker_results.push(MarkerResult::SkillImproveFailed {
-                                        skill_name,
-                                        reason: e.to_string(),
-                                    });
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "skill improve: failed to read {}: {e}",
-                                skill_path.display()
-                            );
-                            marker_results.push(MarkerResult::SkillImproveFailed {
-                                skill_name,
-                                reason: e.to_string(),
-                            });
-                        }
-                    }
-                } else {
-                    warn!("skill improve: skill not found: {skill_name}");
-                    marker_results.push(MarkerResult::SkillImproveFailed {
-                        skill_name,
-                        reason: "skill not found".to_string(),
-                    });
-                }
-            }
-            *text = strip_skill_improve(text);
-        }
+        // SKILL_IMPROVE + BUG_REPORT
+        self.process_improvement_markers(text, &mut marker_results);
 
-        // BUG_REPORT
-        if let Some(description) = extract_bug_report(text) {
-            let data_dir = shellexpand(&self.data_dir);
-            match append_bug_report(&data_dir, &description) {
-                Ok(()) => {
-                    info!("bug reported: {description}");
-                    marker_results.push(MarkerResult::BugReported { description });
-                }
-                Err(e) => {
-                    error!("bug report: failed to write BUG.md: {e}");
-                    marker_results.push(MarkerResult::BugReportFailed {
-                        description,
-                        reason: e,
-                    });
+        // REWARD — process ALL markers
+        for reward_line in extract_all_rewards(text) {
+            if let Some((score, domain, lesson)) = parse_reward_line(&reward_line) {
+                match self
+                    .memory
+                    .store_outcome(&incoming.sender_id, &domain, score, &lesson, "conversation")
+                    .await
+                {
+                    Ok(()) => info!("outcome recorded: {score:+} | {domain} | {lesson}"),
+                    Err(e) => error!("failed to store outcome: {e}"),
                 }
             }
-            *text = strip_bug_report(text);
         }
+        *text = strip_reward_markers(text);
+
+        // LESSON — process ALL markers
+        for lesson_line in extract_all_lessons(text) {
+            if let Some((domain, rule)) = parse_lesson_line(&lesson_line) {
+                match self
+                    .memory
+                    .store_lesson(&incoming.sender_id, &domain, &rule)
+                    .await
+                {
+                    Ok(()) => info!("lesson stored: {domain} | {rule}"),
+                    Err(e) => error!("failed to store lesson: {e}"),
+                }
+            }
+        }
+        *text = strip_lesson_markers(text);
 
         // Safety net: strip any markers still remaining (catches inline markers
         // from small models that don't put them on their own line).
@@ -493,6 +417,72 @@ impl Gateway {
             task_confirmation::format_task_confirmation(marker_results, &similar_warnings, &lang)
         {
             self.send_text(incoming, &confirmation).await;
+        }
+    }
+
+    /// Process SKILL_IMPROVE and BUG_REPORT markers.
+    fn process_improvement_markers(
+        &self,
+        text: &mut String,
+        marker_results: &mut Vec<MarkerResult>,
+    ) {
+        if let Some(improve_line) = extract_skill_improve(text) {
+            if let Some((skill_name, lesson)) = parse_skill_improve_line(&improve_line) {
+                let data_dir = shellexpand(&self.data_dir);
+                match apply_skill_improve(&data_dir, &skill_name, &lesson) {
+                    Ok(()) => {
+                        info!("skill improved: {skill_name} — {lesson}");
+                        marker_results.push(MarkerResult::SkillImproved { skill_name, lesson });
+                    }
+                    Err(reason) => {
+                        error!("skill improve failed: {skill_name}: {reason}");
+                        marker_results
+                            .push(MarkerResult::SkillImproveFailed { skill_name, reason });
+                    }
+                }
+            }
+            *text = strip_skill_improve(text);
+        }
+        if let Some(description) = extract_bug_report(text) {
+            let data_dir = shellexpand(&self.data_dir);
+            match append_bug_report(&data_dir, &description) {
+                Ok(()) => {
+                    info!("bug reported: {description}");
+                    marker_results.push(MarkerResult::BugReported { description });
+                }
+                Err(e) => {
+                    error!("bug report: failed to write BUG.md: {e}");
+                    marker_results.push(MarkerResult::BugReportFailed {
+                        description,
+                        reason: e,
+                    });
+                }
+            }
+            *text = strip_bug_report(text);
+        }
+    }
+
+    /// Purge all non-system facts for a sender, preserving system-managed keys.
+    async fn process_purge_facts(&self, sender_id: &str) {
+        let preserved: Vec<(String, String)> = match self.memory.get_facts(sender_id).await {
+            Ok(facts) => facts
+                .into_iter()
+                .filter(|(k, _)| SYSTEM_FACT_KEYS.contains(&k.as_str()))
+                .collect(),
+            Err(e) => {
+                error!("purge marker: failed to read facts: {e}");
+                return;
+            }
+        };
+        match self.memory.delete_facts(sender_id, None).await {
+            Ok(n) => {
+                for (key, value) in &preserved {
+                    let _ = self.memory.store_fact(sender_id, key, value).await;
+                }
+                let purged = n as usize - preserved.len();
+                info!("purged {purged} facts via marker for {sender_id}");
+            }
+            Err(e) => error!("purge marker: failed to delete facts: {e}"),
         }
     }
 }

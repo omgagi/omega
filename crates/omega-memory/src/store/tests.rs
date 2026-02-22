@@ -1,4 +1,4 @@
-use super::context::{detect_language, format_user_profile};
+use super::context::format_user_profile;
 use super::tasks::{descriptions_are_similar, normalize_due_at};
 use super::Store;
 use omega_core::config::MemoryConfig;
@@ -610,7 +610,7 @@ fn test_build_system_prompt_shows_action_badge() {
         Some("daily".to_string()),
         "action".to_string(),
     )];
-    let prompt = build_system_prompt("Rules", &facts, &[], &[], &tasks, "English", None);
+    let prompt = build_system_prompt("Rules", &facts, &[], &[], &tasks, &[], &[], "English", None);
     assert!(
         prompt.contains("[action]"),
         "should show [action] badge for action tasks"
@@ -624,7 +624,7 @@ fn test_onboarding_stage0_first_conversation() {
         ("welcomed".to_string(), "true".to_string()),
         ("preferred_language".to_string(), "Spanish".to_string()),
     ];
-    let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], "Spanish", Some(0));
+    let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], &[], &[], "Spanish", Some(0));
     assert!(
         prompt.contains("first conversation"),
         "stage 0 should include first-conversation intro"
@@ -639,7 +639,7 @@ fn test_onboarding_stage1_help_hint() {
         ("preferred_language".to_string(), "English".to_string()),
         ("name".to_string(), "Alice".to_string()),
     ];
-    let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], "English", Some(1));
+    let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], &[], &[], "English", Some(1));
     assert!(
         prompt.contains("/help"),
         "stage 1 should mention /help command"
@@ -656,7 +656,7 @@ fn test_onboarding_no_hint_when_none() {
         ("occupation".to_string(), "engineer".to_string()),
         ("timezone".to_string(), "EST".to_string()),
     ];
-    let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], "English", None);
+    let prompt = build_system_prompt("Rules", &facts, &[], &[], &[], &[], &[], "English", None);
     assert!(
         !prompt.contains("Onboarding hint"),
         "should NOT include onboarding hint when None"

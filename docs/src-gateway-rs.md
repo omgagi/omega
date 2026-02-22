@@ -307,7 +307,7 @@ Not all messages need the most powerful (and expensive) model. Simple questions,
 
 ### Important: Markers Are Language-Invariant
 
-All system markers (`SCHEDULE:`, `HEARTBEAT_ADD:`, `HEARTBEAT_INTERVAL:`, `SKILL_IMPROVE:`, `LANG_SWITCH:`, `PROJECT_ACTIVATE:`, etc.) must always use their exact English prefix, regardless of the conversation language. The gateway parses them as literal string prefixes — if the AI translates or paraphrases a marker (e.g., `INTERVALO_HEARTBEAT: 15` instead of `HEARTBEAT_INTERVAL: 15`), the gateway silently ignores it. The system prompt enforces this: "Speak to the user in their language; speak to the system in markers."
+All system markers (`SCHEDULE:`, `HEARTBEAT_ADD:`, `HEARTBEAT_INTERVAL:`, `SKILL_IMPROVE:`, `LANG_SWITCH:`, `PROJECT_ACTIVATE:`, `REWARD:`, `LESSON:`, etc.) must always use their exact English prefix, regardless of the conversation language. The gateway parses them as literal string prefixes — if the AI translates or paraphrases a marker (e.g., `INTERVALO_HEARTBEAT: 15` instead of `HEARTBEAT_INTERVAL: 15`), the gateway silently ignores it. The system prompt enforces this: "Speak to the user in their language; speak to the system in markers."
 
 ### Stage 6: Provider Call
 
@@ -498,6 +498,49 @@ Without conversational management, users must manually edit `~/.omega/prompts/HE
 
 **Error Handling:**
 File write errors are silently ignored. The response is always sent to the user. If `$HOME` is not set, the function returns without action. Invalid interval values (non-numeric, zero, or >1440) are silently ignored.
+
+### Stage 6f: Reward Marker Extraction
+
+**What happens:** The gateway scans the response for all `REWARD:` markers. Each one records a raw interaction outcome in the `outcomes` table, then the markers are stripped from the response.
+
+**Implementation:**
+- Calls `extract_all_rewards(&response.text)` to find ALL `REWARD:` lines.
+- For each line, calls `parse_reward_line()` to extract `(score, domain, lesson)`.
+- Calls `memory.store_outcome(sender_id, &domain, score, &lesson, "conversation")` to persist each outcome.
+- Calls `strip_reward_markers()` to remove all `REWARD:` lines from the response.
+
+**Marker Format:**
+```
+REWARD: +1|training|User completed morning workout on time
+REWARD: 0|weather|User acknowledged weather update without action
+REWARD: -1|trading|Redundant portfolio check — already reviewed today
+```
+
+Score must be `-1`, `0`, or `+1`. Lines with invalid scores or missing fields are silently ignored.
+
+**Why This Exists:**
+Outcomes give OMEGA a feedback loop. By recording whether each interaction was helpful, neutral, or annoying, OMEGA builds temporal awareness of what works. The last 15 outcomes are injected into every future conversation with relative timestamps ("3h ago"), so the AI can reason about patterns over time.
+
+### Stage 6g: Lesson Marker Extraction
+
+**What happens:** The gateway scans the response for all `LESSON:` markers. Each one upserts a permanent behavioral rule into the `lessons` table, then the markers are stripped from the response.
+
+**Implementation:**
+- Calls `extract_all_lessons(&response.text)` to find ALL `LESSON:` lines.
+- For each line, calls `parse_lesson_line()` to extract `(domain, rule)`.
+- Calls `memory.store_lesson(sender_id, &domain, &rule)` to upsert the lesson. If a lesson for the same `(sender_id, domain)` exists, the rule is replaced and the `occurrences` counter is incremented.
+- Calls `strip_lesson_markers()` to remove all `LESSON:` lines from the response.
+
+**Marker Format:**
+```
+LESSON: training|User trains Saturday mornings, no need to nag after 12:00
+LESSON: trading|Always verify market hours before placing orders
+```
+
+Lines with empty domain or rule are silently ignored.
+
+**Why This Exists:**
+Lessons are distilled wisdom from repeated outcomes. While outcomes are working memory (recent, time-stamped), lessons are permanent behavioral rules that persist indefinitely. They prevent OMEGA from repeating mistakes it has already learned from. All lessons are injected into every conversation and heartbeat context.
 
 ### Stage 7: Memory Storage
 
@@ -709,6 +752,16 @@ User sends message on Telegram
 │  ✓ Found? → Append to BUG.md, strip     │
 │  ✗ Not found? → Continue                │
 │                                          │
+│ Stage 6f: extract_all_rewards()         │
+│  • Scan for ALL REWARD: lines           │
+│  ✓ Found? → Store outcomes, strip       │
+│  ✗ Not found? → Continue                │
+│                                          │
+│ Stage 6g: extract_all_lessons()         │
+│  • Scan for ALL LESSON: lines           │
+│  ✓ Found? → Upsert lessons, strip       │
+│  ✗ Not found? → Continue                │
+│                                          │
 │ Stage 7: memory.store_exchange()        │
 │  • Save to SQLite (best-effort)         │
 │                                          │
@@ -835,7 +888,9 @@ At each clock-aligned boundary (e.g. :00 and :30 for a 30-minute interval), the 
 3. **Context Enrichment** -- Before calling the provider, the heartbeat enriches the prompt with:
    - **User facts** from `memory.get_all_facts()` (excluding internal `welcomed` markers).
    - **Recent conversation summaries** from `memory.get_all_recent_summaries(3)`.
-   This gives the AI provider awareness of who the user is and what they've been working on, enabling more contextual responses.
+   - **Learned behavioral rules** from `memory.get_all_lessons()` (all distilled lessons across all users).
+   - **Recent outcomes** from `memory.get_all_recent_outcomes(24, 20)` (last 24h, up to 20 entries).
+   This gives the AI provider awareness of who the user is, what they've been working on, what behavioral rules have been learned, and how recent interactions went.
 4. **System Prompt** -- Composes the full Identity/Soul/System prompt (plus sandbox constraints) and attaches it to the context, ensuring the AI has proper role boundaries during heartbeat calls.
 5. **Model & MCP** -- Sets the Opus model (`model_complex`) for powerful active execution. Matches skill triggers on checklist content to inject relevant MCP servers.
 6. **Provider Call** -- Sends the enriched prompt with the full system prompt to the AI provider for active execution.
@@ -845,6 +900,8 @@ At each clock-aligned boundary (e.g. :00 and :30 for a 30-minute interval), the 
    - `HEARTBEAT_ADD/REMOVE/INTERVAL` → updates checklist/interval
    - `CANCEL_TASK` → cancels pending tasks
    - `UPDATE_TASK` → modifies existing tasks
+   - `REWARD` → records interaction outcomes to outcomes table (source: "heartbeat")
+   - `LESSON` → distills behavioral rules to lessons table
    - All markers are stripped from the response text.
 8. **Suppress or Alert** (after marker stripping):
    - The response text is cleaned (markdown `*` and backtick characters are stripped) before checking for `HEARTBEAT_OK`.

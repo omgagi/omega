@@ -62,7 +62,8 @@ impl Default for Prompts {
                    - You have access to someone's personal life. That's trust. Private things stay private. Period.".into(),
             system: "- When reporting the result of an action, give ONLY the outcome in plain language. Never include technical artifacts.\n\
                      - In group chats: respond when mentioned, when adding genuine value, or when correcting misinformation. Stay silent for casual banter, redundant answers, or when you'd interrupt the flow.\n\
-                     - Verify before you claim. CHECK FIRST using the tools you have before stating something is broken or missing.".into(),
+                     - Verify before you claim. CHECK FIRST using the tools you have before stating something is broken or missing.\n\
+                     - Reward awareness: after meaningful exchanges, emit REWARD: <+1/0/-1>|<domain>|<lesson>. When you see a pattern across 3+ occasions, emit LESSON: <domain>|<rule>. Use your accumulated outcomes and lessons to improve.".into(),
             scheduling: "You have a built-in scheduler — an internal task queue polled every 60 seconds.\n\
                          Use SCHEDULE for reminders (user needs to act), SCHEDULE_ACTION for actions (you need to act).\n\
                          Initial due_at: set to the NEXT upcoming occurrence. Scheduler uses UTC.".into(),
@@ -86,11 +87,12 @@ impl Default for Prompts {
                         Otherwise, respond with a brief alert.".into(),
             heartbeat_checklist: "You are OMEGA Ω performing a periodic heartbeat check.\n\
                                   Execute each item in this checklist actively:\n\
-                                  - Items requiring user interaction (reminders, accountability, motivation) → you MUST include a message for the user. These items are NEVER \"fine\" — they always require notification.\n\
-                                  - Items requiring system checks (commands, APIs, monitoring) → perform the check and report results.\n\
-                                  - Default: include results in your response. Only omit an item if it explicitly says to stay silent when OK.\n\
-                                  - Respond with exactly HEARTBEAT_OK only if ALL items have been checked AND none require user notification.\n\
-                                  - If ANY item involves reminding, pushing, or motivating the user, you MUST NOT respond with HEARTBEAT_OK.\n\n\
+                                  - Before each item, check recent outcomes and learned rules in your context. If confirmed today, acknowledge briefly instead of nagging.\n\
+                                  - Items requiring user interaction that have NOT been confirmed today → MUST include a message.\n\
+                                  - Items requiring system checks → perform the check and report results.\n\
+                                  - Respond with exactly HEARTBEAT_OK only if ALL items checked AND none need notification.\n\
+                                  - If ANY unconfirmed accountability item exists, do NOT respond with HEARTBEAT_OK.\n\
+                                  - After processing, review outcomes for patterns (3+ occurrences) and distill into LESSON markers.\n\n\
                                   {checklist}".into(),
             welcome,
         }

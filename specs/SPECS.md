@@ -59,6 +59,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [memory-migration-006.md](memory-migration-006.md) — Limitations table (historical — originally for self-introspection, now used by SKILL_IMPROVE)
 - [memory-migration-007.md](memory-migration-007.md) — Task type column for action scheduler (reminder vs provider-backed execution)
 - [memory-migration-009.md](memory-migration-009.md) — Task retry columns (retry_count, last_error) for action task failure handling
+- [memory-migration-010.md](memory-migration-010.md) — Reward-based learning tables (outcomes for working memory, lessons for long-term behavioral rules)
 
 ### Milestone 7: omega-skills
 - [skills-lib.md](skills-lib.md) — Skill loader + project loader + MCP trigger matching (skills from `~/.omega/skills/*/SKILL.md`, projects from `~/.omega/projects/*/ROLE.md`)
@@ -110,12 +111,12 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 ## Data Flow
 
 ```
-Message → Auth → Sanitize → Sandbox constraint → Memory (context) → Provider → process_markers (SCHEDULE/SCHEDULE_ACTION/CANCEL_TASK/UPDATE_TASK/HEARTBEAT/SKILL_IMPROVE/...) → Memory (store) → Audit → Send → Task confirmation
+Message → Auth → Sanitize → Sandbox constraint → Memory (context + outcomes/lessons) → Provider → process_markers (SCHEDULE/SCHEDULE_ACTION/CANCEL_TASK/UPDATE_TASK/HEARTBEAT/SKILL_IMPROVE/REWARD/LESSON/...) → Memory (store) → Audit → Send → Task confirmation
 
 Background:
   Scheduler: poll due_tasks → channel.send(reminder) → complete_task
              action tasks: provider.complete → parse ACTION_OUTCOME → audit_log → complete/fail_task → notify
-  Heartbeat: provider.complete(check-in) → strip HEARTBEAT_OK → no content? suppress / has content? channel.send(alert)
+  Heartbeat: provider.complete(check-in) → process markers (REWARD/LESSON/SCHEDULE/...) → strip HEARTBEAT_OK → no content? suppress / has content? channel.send(alert)
   Summarizer: find idle convos → summarize → close
   CLAUDE.md: ensure on startup → refresh every 24h (claude -p subprocess)
 ```

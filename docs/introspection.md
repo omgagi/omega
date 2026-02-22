@@ -1,4 +1,4 @@
-# Omega Self-Improvement: Autonomous Skill Learning
+# Omega Self-Improvement: Autonomous Skill Learning & Reward-Based Adaptation
 
 ## What Is Skill Improvement?
 
@@ -97,6 +97,92 @@ Omega: [detects failure, tries alternative selector]
 Omega: AAPL is at $187.50
 SKILL_IMPROVE: playwright-mcp | Yahoo Finance may serve captcha pages — always check page title before extracting data, and retry with a fresh browser context if captcha detected
 ```
+
+## Reward-Based Learning
+
+Beyond skill-level improvements, OMEGA has a system-wide reward-based learning mechanism that lets it learn from interaction outcomes over time. This is a two-tier system: raw outcomes (short-term working memory) and distilled lessons (permanent behavioral rules).
+
+### How It Works
+
+Every interaction generates feedback. OMEGA evaluates whether its response was helpful, neutral, or annoying, and emits a `REWARD:` marker. Over time, when patterns emerge from multiple outcomes, OMEGA distills them into permanent behavioral rules via `LESSON:` markers.
+
+### Tier 1: Raw Outcomes (Working Memory)
+
+Format: `REWARD: +1|domain|lesson`
+
+| Score | Meaning | Example |
+|-------|---------|---------|
+| `+1` | Helpful — the interaction was valuable | `REWARD: +1\|training\|User completed calisthenics by 15:00` |
+| `0` | Neutral — neither helpful nor harmful | `REWARD: 0\|weather\|User acknowledged weather update without action` |
+| `-1` | Redundant/annoying — OMEGA should do less of this | `REWARD: -1\|trading\|Redundant portfolio check — already reviewed today` |
+
+Outcomes are stored in the `outcomes` table with a `source` field (`"conversation"` or `"heartbeat"`) and serve as 24-48h working memory. The last 15 outcomes are injected into every conversation context with relative timestamps ("3h ago", "1d ago") so OMEGA can reason about recency.
+
+### Tier 2: Distilled Lessons (Permanent Memory)
+
+Format: `LESSON: domain|rule`
+
+Example: `LESSON: training|User trains Saturday mornings, no need to nag after 12:00`
+
+When OMEGA detects a recurring pattern across multiple outcomes in a domain, it distills it into a permanent behavioral rule. Lessons are stored in the `lessons` table, upserted by `(sender_id, domain)` — the rule is replaced and the `occurrences` counter incremented each time, tracking reinforcement strength.
+
+All lessons are injected into every conversation context and every heartbeat enrichment, so OMEGA never forgets what it has learned.
+
+### Context Injection
+
+| Context | Outcomes | Lessons |
+|---------|----------|---------|
+| Regular conversation | Last 15 (per user, relative timestamps) | All (per user) |
+| Heartbeat enrichment | Last 24h (all users, up to 20) | All (all users) |
+
+### Marker Processing
+
+Both markers are processed in two flows:
+
+1. **Conversation flow** (`process_markers.rs`): All `REWARD:` and `LESSON:` markers extracted, stored, and stripped before the response reaches the user.
+2. **Heartbeat flow** (`heartbeat.rs`): Same extraction, storage, and stripping. Source is set to `"heartbeat"` for outcomes.
+
+Both markers are included in the safety-net strip (`strip_all_remaining_markers`) to ensure they never leak to the user.
+
+### The Learning Loop
+
+```
+OMEGA interacts with user (or heartbeat fires)
+    |
+    v
+OMEGA evaluates: Was this helpful? Neutral? Annoying?
+    |
+    v
+OMEGA emits REWARD: +1|domain|what happened
+    |
+    v
+Gateway stores outcome in DB, strips marker
+    |
+    v
+On next interaction, last 15 outcomes + all lessons are in context
+    |
+    v
+OMEGA detects pattern: "I keep getting -1 for morning reminders before 7am"
+    |
+    v
+OMEGA emits LESSON: reminders|Don't send morning reminders before 7am
+    |
+    v
+Gateway upserts lesson (occurrences++), strips marker
+    |
+    v
+All future interactions see this rule → OMEGA adapts behavior
+```
+
+### Difference from Skill Improvement
+
+| | Skill Improvement | Reward-Based Learning |
+|-|-------------------|----------------------|
+| Scope | Per-skill (SKILL.md files) | System-wide (any domain) |
+| Trigger | Error during skill use | Any interaction outcome |
+| Storage | Appended to skill file | SQLite tables (outcomes + lessons) |
+| Persistence | File-based, always in skill context | DB-based, injected into system prompt |
+| Purpose | Fix specific tool mistakes | Adapt general behavioral patterns |
 
 ## Self-Audit
 

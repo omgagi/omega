@@ -15,6 +15,8 @@ The heartbeat runs as a background loop inside the gateway, firing at clock-alig
 3. **Enrich with context** -- The heartbeat enriches the prompt with data from memory (computed once, shared across all groups):
    - **User facts** (name, timezone, interests, etc.) from all users — gives the AI awareness of who it's monitoring for.
    - **Recent conversation summaries** (last 3 closed conversations) — gives the AI context about recent activity.
+   - **Learned behavioral rules** (all distilled lessons across all users) — prevents repeating mistakes the system has already learned from (e.g., "user trains Saturday mornings, no need to nag after 12:00").
+   - **Recent outcomes** (last 24h, up to 20 entries across all users) — gives the AI awareness of what happened recently and whether interventions were helpful (+1), neutral (0), or annoying (-1).
 4. **Compose system prompt** -- The heartbeat attaches the full Identity/Soul/System prompt (plus sandbox constraints if applicable) to the provider call. Computed once and shared across all groups.
 5. **Classify by domain** -- A fast Sonnet classification call (no tools) groups related checklist items by domain. If all items are closely related or there are 3 or fewer items, the classifier returns DIRECT and a single Opus call handles everything. Otherwise, items are grouped (e.g., trading tasks together, personal reminders together, system monitoring together).
 6. **Execute groups in parallel** -- Each group gets its own focused Opus session via `tokio::spawn`. Related items stay together (5 trading items = 1 call), unrelated domains are separated (crypto vs training = 2 concurrent calls). MCP servers are matched per-group so each group gets only the tools it needs. For DIRECT, a single Opus call processes the full checklist (unchanged behavior).
@@ -24,6 +26,8 @@ The heartbeat runs as a background loop inside the gateway, firing at clock-alig
    - `HEARTBEAT_ADD/REMOVE/INTERVAL` → updates checklist/interval
    - `CANCEL_TASK` → cancels pending tasks
    - `UPDATE_TASK` → modifies existing tasks
+   - `REWARD` → records interaction outcomes to the outcomes table (source: "heartbeat")
+   - `LESSON` → distills behavioral rules to the lessons table
    - All markers are stripped from the response before evaluating it.
 8. **Evaluate per group** -- HEARTBEAT_OK is evaluated independently per group. A training group fires even when a crypto group is OK. Groups returning OK are logged silently. Non-OK results are joined with `---` separators and delivered as a single message.
 

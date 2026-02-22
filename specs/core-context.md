@@ -272,7 +272,7 @@ Context::new(prompt)
 
 ### Path 2: Memory-enriched (`Store::build_context`)
 
-Used by the gateway when processing real user messages. Produces a full context with conversation history, user facts, and recent summaries baked into the system prompt.
+Used by the gateway when processing real user messages. Produces a full context with conversation history, user facts, recent summaries, outcomes, and lessons baked into the system prompt.
 
 ```
 store.build_context(&incoming)
@@ -280,7 +280,9 @@ store.build_context(&incoming)
   --> SELECT role, content FROM messages WHERE conversation_id = ? (newest N, reversed to chronological)
   --> get_facts(sender_id)
   --> get_recent_summaries(channel, sender_id, 3)
-  --> build_system_prompt(facts, summaries, text)
+  --> get_recent_outcomes(sender_id, 15)          [always, reward-based learning]
+  --> get_lessons(sender_id)                       [always, reward-based learning]
+  --> build_system_prompt(facts, summaries, text, outcomes, lessons)
   --> Context { system_prompt, history, current_message }
 ```
 

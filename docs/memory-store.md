@@ -43,7 +43,7 @@ The store uses a single SQLite file located at `~/.omega/data/memory.db` by defa
 
 ### Tables
 
-There are five tables managed by the store:
+There are seven tables managed by the store:
 
 **conversations** -- Tracks conversation threads between users and Omega.
 ```
@@ -90,6 +90,30 @@ created_at   TEXT               -- When the task was created
 delivered_at TEXT (nullable)    -- When the task was last delivered
 ```
 Tasks are indexed on `(status, due_at)` for efficient polling and on `(sender_id, status)` for the `/tasks` command.
+
+**outcomes** -- Raw interaction outcomes, used as short-term working memory for reward-based learning.
+```
+id        TEXT PRIMARY KEY   -- UUID v4
+timestamp TEXT               -- When the outcome was recorded (default: now)
+sender_id TEXT               -- User this outcome applies to
+domain    TEXT               -- Domain/topic (e.g., "training", "trading", "health")
+score     INTEGER            -- +1 helpful, 0 neutral, -1 redundant/annoying
+lesson    TEXT               -- What happened (e.g., "User completed calisthenics by 15:00")
+source    TEXT               -- Where this came from: 'conversation' or 'heartbeat'
+```
+Outcomes are indexed on `(sender_id, timestamp)` for per-user queries and on `(timestamp)` for cross-user heartbeat queries. They serve as 24-48h working memory -- recent enough to inform decisions, old enough to be distilled into permanent lessons.
+
+**lessons** -- Distilled behavioral rules, the permanent long-term memory of the reward system.
+```
+id          TEXT PRIMARY KEY   -- UUID v4
+sender_id   TEXT               -- User this lesson applies to
+domain      TEXT               -- Domain/topic (e.g., "training", "trading")
+rule        TEXT               -- The learned rule (e.g., "User trains Saturday mornings, no need to nag after 12:00")
+occurrences INTEGER            -- How many times this pattern has been observed (incremented on upsert)
+created_at  TEXT               -- When the lesson was first created
+updated_at  TEXT               -- When the lesson was last updated
+```
+Lessons are unique per `(sender_id, domain)`. Storing a lesson with the same domain overwrites the rule and increments the `occurrences` counter, tracking how strongly a pattern has been reinforced. Indexed on `(sender_id)` for per-user queries.
 
 **_migrations** -- Tracks which database migrations have been applied.
 
@@ -174,7 +198,8 @@ Behind the scenes, this does:
 3. **Fetch user facts** -- all stored facts for this sender (name, preferences, etc.).
 4. **Fetch recent summaries** -- the 3 most recent closed conversation summaries.
 5. **Search past messages** -- FTS5 full-text search finds up to 5 relevant messages from other conversations.
-6. **Build the system prompt** -- weave facts, summaries, recalled messages, and marker instructions (SCHEDULE, LANG_SWITCH, HEARTBEAT_ADD/REMOVE/INTERVAL) into the base prompt.
+6. **Fetch outcomes and lessons** -- the last 15 raw outcomes (with timestamps for relative formatting) and all distilled lessons for this sender. These are always loaded regardless of keyword matching.
+7. **Build the system prompt** -- weave facts, summaries, recalled messages, outcomes, lessons, and marker instructions (SCHEDULE, LANG_SWITCH, HEARTBEAT_ADD/REMOVE/INTERVAL, REWARD, LESSON) into the base prompt.
 
 ### The System Prompt
 
@@ -203,6 +228,14 @@ Recent conversation history:
 Related past context:
 - [2024-01-10 16:00:00] User: I need to set up nginx reverse proxy for port 8080...
 - [2024-01-08 11:30:00] User: The SSL cert is at /etc/letsencrypt/live/example.com...
+
+Learned behavioral rules:
+- [training] User trains Saturday mornings, no need to nag after 12:00
+- [trading] Always verify market hours before placing orders
+
+Recent outcomes:
+- [+] training: User completed morning workout (3h ago)
+- [-] trading: Redundant portfolio check — already reviewed today (1d ago)
 
 IMPORTANT: Always respond in Spanish.
 ```
@@ -340,6 +373,63 @@ Two additional methods support the heartbeat loop's context-aware check-ins:
 - **`get_all_facts()`** -- Returns all facts across all users (excluding internal `welcomed` markers), ordered by key. Used by the heartbeat to give the AI awareness of who it's monitoring for.
 - **`get_all_recent_summaries(limit)`** -- Returns recent closed conversation summaries across all users, ordered newest-first. Used by the heartbeat with `limit = 3` to give the AI context about recent user activity.
 
+## Reward-Based Learning
+
+The store supports a two-tier reward-based learning system that lets OMEGA learn from interaction outcomes over time.
+
+### Tier 1: Raw Outcomes (Working Memory)
+
+Outcomes are short-term records of what happened in each interaction. OMEGA evaluates every interaction and emits `REWARD:` markers with a score, domain, and description. The gateway extracts these markers and stores them via `store_outcome()`.
+
+```rust
+// Store an outcome (called by process_markers)
+store.store_outcome("user123", "training", 1, "User completed workout on time", "conversation").await?;
+
+// Get recent outcomes for a specific user (context injection)
+let outcomes = store.get_recent_outcomes("user123", 15).await?;
+// Returns Vec<(score, domain, lesson, timestamp)>
+
+// Get recent outcomes across all users (heartbeat enrichment)
+let outcomes = store.get_all_recent_outcomes(24, 20).await?;
+// Returns outcomes from the last 24 hours, up to 20 entries
+```
+
+Scores: `+1` = helpful/positive, `0` = neutral, `-1` = redundant/annoying. The `source` field tracks where the outcome was generated: `"conversation"` for regular messages, `"heartbeat"` for heartbeat cycle responses.
+
+### Tier 2: Distilled Lessons (Permanent Memory)
+
+When OMEGA detects a recurring pattern across outcomes, it distills it into a permanent behavioral rule via a `LESSON:` marker. Lessons are upserted by `(sender_id, domain)` -- the rule is replaced and the `occurrences` counter incremented each time the same domain fires.
+
+```rust
+// Store/update a lesson (called by process_markers)
+store.store_lesson("user123", "training", "User trains Saturday mornings, no need to nag after 12:00").await?;
+
+// Get all lessons for a specific user (context injection)
+let lessons = store.get_lessons("user123").await?;
+// Returns Vec<(domain, rule)>
+
+// Get all lessons across all users (heartbeat enrichment)
+let lessons = store.get_all_lessons().await?;
+```
+
+### Context Injection
+
+Both outcomes and lessons are injected into every AI provider context:
+
+- **Regular conversations**: Last 15 outcomes (with relative timestamps like "3h ago", "1d ago") and all lessons for the current user are appended to the system prompt via `build_system_prompt()`.
+- **Heartbeat enrichment**: All lessons across all users and outcomes from the last 24 hours are included in the heartbeat context via `build_enrichment()`.
+
+This gives OMEGA continuous awareness of what worked, what did not, and what behavioral rules it has learned -- informing every future interaction.
+
+### Marker Processing
+
+Both `REWARD:` and `LESSON:` markers are processed in two flows:
+
+1. **Conversation flow** (`process_markers.rs`): All REWARD and LESSON markers are extracted from the AI response, stored in the database, and stripped before the response reaches the user.
+2. **Heartbeat flow** (`heartbeat.rs`): Same extraction and storage, enabling OMEGA to learn from heartbeat check-in outcomes (e.g., "user was already awake when I sent the morning reminder" -> lesson: "no need to send wake-up reminder after 7am").
+
+Both markers are also included in the safety-net strip list (`strip_all_remaining_markers`) so they never leak to the user even if individual strip functions miss them.
+
 ## Memory Statistics and Introspection
 
 The store provides several methods for system introspection, used primarily by bot commands:
@@ -377,6 +467,11 @@ The store uses a simple, custom migration system. SQL migration files are embedd
 3. **003_memory_enhancement** -- Adds conversation boundaries (status, last_activity, summary) and re-creates facts with sender-scoped uniqueness.
 4. **004_fts5_recall** -- Creates FTS5 full-text search index on user messages for cross-conversation recall.
 5. **005_scheduled_tasks** -- Creates the `scheduled_tasks` table with indexes for the task queue.
+6. **006_limitations** -- Internal limitations tracking.
+7. **007_task_type** -- Adds `task_type` column to `scheduled_tasks` for action task support.
+8. **008_user_aliases** -- Creates `user_aliases` table for cross-channel identity resolution.
+9. **009_task_retry** -- Adds `retry_count` and `last_error` columns for action task failure handling.
+10. **010_outcomes** -- Creates `outcomes` and `lessons` tables for reward-based learning.
 
 ### Handling Pre-Existing Databases
 

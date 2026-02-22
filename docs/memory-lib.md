@@ -206,13 +206,15 @@ Each entry gets a UUID and timestamp automatically.
 
 ## Database schema
 
-The memory system manages four tables (plus a migration tracker):
+The memory system manages six tables (plus a migration tracker):
 
 | Table | Purpose |
 |-------|---------|
 | `conversations` | Conversation sessions with status, summary, and activity tracking |
 | `messages` | Individual messages within conversations (user and assistant) |
 | `facts` | Key-value facts about users, scoped by `sender_id` |
+| `outcomes` | Raw interaction outcomes -- short-term working memory (24-48h), scored +1/0/-1 per domain |
+| `lessons` | Distilled behavioral rules -- permanent long-term memory, upserted by (sender_id, domain) |
 | `audit_log` | Complete record of every interaction |
 | `_migrations` | Internal migration tracking (do not modify) |
 
@@ -220,10 +222,17 @@ The memory system manages four tables (plus a migration tracker):
 
 Migrations run automatically on `Store::new()`. The system is idempotent -- it tracks which migrations have been applied and skips those already recorded. It also handles bootstrapping from databases created before migration tracking was added.
 
-Three migrations exist:
+Migrations exist:
 1. **001_init** -- Base schema: conversations, messages, facts tables
 2. **002_audit_log** -- Audit log table
 3. **003_memory_enhancement** -- Conversation boundaries (status, summary, last_activity), facts scoped by sender_id
+4. **004_fts5_recall** -- FTS5 full-text search index for cross-conversation recall
+5. **005_scheduled_tasks** -- Task queue table with indexes
+6. **006_limitations** -- Internal limitations tracking
+7. **007_task_type** -- Task type column for action scheduler
+8. **008_user_aliases** -- Cross-channel user aliases table
+9. **009_task_retry** -- Retry columns for action failure handling
+10. **010_outcomes** -- Reward-based learning: outcomes (working memory) and lessons (long-term memory) tables
 
 New migrations can be added by:
 1. Creating a new SQL file in `crates/omega-memory/migrations/` (e.g. `004_your_feature.sql`).
@@ -342,4 +351,10 @@ If you need a new subsystem (e.g. a scheduler store), add it as a sibling module
 | Get database size | `store.db_size().await?` |
 | Create audit logger | `AuditLogger::new(store.pool().clone())` |
 | Log an interaction | `logger.log(&audit_entry).await?` |
+| Store a reward outcome | `store.store_outcome("sender", "domain", 1, "lesson", "conversation").await?` |
+| Get recent outcomes (per user) | `store.get_recent_outcomes("sender", 15).await?` |
+| Get recent outcomes (all users) | `store.get_all_recent_outcomes(24, 20).await?` |
+| Store a distilled lesson | `store.store_lesson("sender", "domain", "rule").await?` |
+| Get lessons (per user) | `store.get_lessons("sender").await?` |
+| Get lessons (all users) | `store.get_all_lessons().await?` |
 | Get connection pool | `store.pool()` |

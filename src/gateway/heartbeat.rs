@@ -265,7 +265,7 @@ async fn execute_heartbeat_group(
 /// Process all markers in a heartbeat response.
 ///
 /// Handles: SCHEDULE, SCHEDULE_ACTION, heartbeat markers (interval, add/remove),
-/// CANCEL_TASK, UPDATE_TASK. Returns the text with all markers stripped.
+/// CANCEL_TASK, UPDATE_TASK, REWARD, LESSON. Returns the text with all markers stripped.
 async fn process_heartbeat_markers(
     mut text: String,
     memory: &Store,
@@ -366,6 +366,29 @@ async fn process_heartbeat_markers(
     }
     text = strip_update_task(&text);
 
+    for reward_line in extract_all_rewards(&text) {
+        if let Some((score, domain, lesson)) = parse_reward_line(&reward_line) {
+            match memory
+                .store_outcome(sender_id, &domain, score, &lesson, "heartbeat")
+                .await
+            {
+                Ok(()) => info!("heartbeat outcome: {score:+} | {domain} | {lesson}"),
+                Err(e) => error!("heartbeat: failed to store outcome: {e}"),
+            }
+        }
+    }
+    text = strip_reward_markers(&text);
+
+    for lesson_line in extract_all_lessons(&text) {
+        if let Some((domain, rule)) = parse_lesson_line(&lesson_line) {
+            match memory.store_lesson(sender_id, &domain, &rule).await {
+                Ok(()) => info!("heartbeat lesson: {domain} | {rule}"),
+                Err(e) => error!("heartbeat: failed to store lesson: {e}"),
+            }
+        }
+    }
+    text = strip_lesson_markers(&text);
+
     text
 }
 
@@ -385,6 +408,27 @@ async fn build_enrichment(memory: &Store) -> String {
             enrichment.push_str("\n\nRecent activity:");
             for (summary, timestamp) in &summaries {
                 enrichment.push_str(&format!("\n- [{timestamp}] {summary}"));
+            }
+        }
+    }
+    if let Ok(lessons) = memory.get_all_lessons().await {
+        if !lessons.is_empty() {
+            enrichment.push_str("\n\nLearned behavioral rules:");
+            for (domain, rule) in &lessons {
+                enrichment.push_str(&format!("\n- [{domain}] {rule}"));
+            }
+        }
+    }
+    if let Ok(outcomes) = memory.get_all_recent_outcomes(24, 20).await {
+        if !outcomes.is_empty() {
+            enrichment.push_str("\n\nRecent outcomes (last 24h):");
+            for (score, domain, lesson, timestamp) in &outcomes {
+                let sign = match score.cmp(&0) {
+                    std::cmp::Ordering::Greater => "+",
+                    std::cmp::Ordering::Less => "-",
+                    std::cmp::Ordering::Equal => "~",
+                };
+                enrichment.push_str(&format!("\n- [{sign}] {domain}: {lesson} ({timestamp})"));
             }
         }
     }

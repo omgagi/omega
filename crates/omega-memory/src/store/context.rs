@@ -78,6 +78,16 @@ impl Store {
             vec![]
         };
 
+        // Outcomes and lessons are always loaded (small, essential for reward awareness).
+        let outcomes = self
+            .get_recent_outcomes(&incoming.sender_id, 15)
+            .await
+            .unwrap_or_default();
+        let lessons = self
+            .get_lessons(&incoming.sender_id)
+            .await
+            .unwrap_or_default();
+
         // Resolve language: stored preference > auto-detect > English.
         let language =
             if let Some((_, lang)) = facts.iter().find(|(k, _)| k == "preferred_language") {
@@ -148,6 +158,8 @@ impl Store {
             &summaries,
             &recall,
             &pending_tasks,
+            &outcomes,
+            &lessons,
             &language,
             onboarding_hint,
         );
@@ -274,12 +286,15 @@ pub(super) fn onboarding_hint_text(stage: u8, language: &str) -> Option<String> 
 }
 
 /// Build a dynamic system prompt enriched with facts, conversation history, and recalled messages.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_system_prompt(
     base_rules: &str,
     facts: &[(String, String)],
     summaries: &[(String, String)],
     recall: &[(String, String, String)],
     pending_tasks: &[(String, String, String, Option<String>, String)],
+    outcomes: &[(i32, String, String, String)],
+    lessons: &[(String, String)],
     language: &str,
     onboarding_hint: Option<u8>,
 ) -> String {
@@ -323,6 +338,29 @@ pub(super) fn build_system_prompt(
                 "\n- [{id_short}] {desc}{type_badge} (due: {due_at}, {r})",
                 id_short = &id[..8.min(id.len())]
             ));
+        }
+    }
+
+    if !lessons.is_empty() {
+        prompt.push_str("\n\nLearned behavioral rules:");
+        for (domain, rule) in lessons {
+            prompt.push_str(&format!("\n- [{domain}] {rule}"));
+        }
+    }
+
+    if !outcomes.is_empty() {
+        prompt.push_str("\n\nRecent outcomes:");
+        let now = chrono::Utc::now();
+        for (score, domain, lesson, timestamp) in outcomes {
+            let ago = format_relative_time(timestamp, &now);
+            let sign = if *score > 0 {
+                "+"
+            } else if *score < 0 {
+                "-"
+            } else {
+                "~"
+            };
+            prompt.push_str(&format!("\n- [{sign}] {domain}: {lesson} ({ago})"));
         }
     }
 
@@ -432,5 +470,26 @@ pub fn detect_language(text: &str) -> &'static str {
         best
     } else {
         "English"
+    }
+}
+
+/// Format a UTC timestamp as a relative time string (e.g., "3h ago", "1d ago").
+fn format_relative_time(timestamp: &str, now: &chrono::DateTime<chrono::Utc>) -> String {
+    let parsed = chrono::NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .map(|dt| dt.and_utc());
+    match parsed {
+        Some(ts) => {
+            let diff = *now - ts;
+            let minutes = diff.num_minutes();
+            if minutes < 60 {
+                format!("{minutes}m ago")
+            } else if minutes < 1440 {
+                format!("{}h ago", minutes / 60)
+            } else {
+                format!("{}d ago", minutes / 1440)
+            }
+        }
+        None => timestamp.to_string(),
     }
 }

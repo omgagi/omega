@@ -43,7 +43,7 @@ pub struct Store {
 
 ## Database Schema
 
-The store manages six tables and one virtual table created across eight migrations. A tracking table (`_migrations`) tracks migration state.
+The store manages eight tables and one virtual table created across ten migrations. A tracking table (`_migrations`) tracks migration state.
 
 ### Table: `_migrations`
 
@@ -271,6 +271,68 @@ CREATE TABLE IF NOT EXISTS user_aliases (
 
 **Design:** The first channel to connect creates the canonical ID (via the `welcomed` fact). When a new channel connects and finds an existing welcomed user, an alias is created mapping the new sender_id to the existing canonical sender_id. All fact operations then use the canonical ID, while conversations keep using the original channel-specific sender_id.
 
+### Table: `outcomes`
+
+Created by `010_outcomes.sql`. Raw reward outcomes — short-term working memory (24-48h window).
+
+```sql
+CREATE TABLE IF NOT EXISTS outcomes (
+    id        TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    sender_id TEXT NOT NULL,
+    domain    TEXT NOT NULL,
+    score     INTEGER NOT NULL CHECK (score IN (-1, 0, 1)),
+    lesson    TEXT NOT NULL,
+    source    TEXT NOT NULL DEFAULT 'conversation'
+);
+```
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `TEXT` | `PRIMARY KEY` | UUID v4 string. |
+| `timestamp` | `TEXT` | `NOT NULL`, default `datetime('now')` | When the outcome was recorded. |
+| `sender_id` | `TEXT` | `NOT NULL` | The user this outcome belongs to. |
+| `domain` | `TEXT` | `NOT NULL` | Domain/category of the outcome (e.g., `"training"`, `"crypto"`, `"productivity"`). |
+| `score` | `INTEGER` | `NOT NULL`, CHECK `IN (-1, 0, 1)` | Reward signal: `+1` (helpful), `0` (neutral), `-1` (redundant/annoying). |
+| `lesson` | `TEXT` | `NOT NULL` | What was learned from this interaction. |
+| `source` | `TEXT` | `NOT NULL`, default `'conversation'` | Origin: `'conversation'` (regular messages) or `'heartbeat'` (periodic check-ins). |
+
+**Indexes:**
+- `idx_outcomes_sender_time` on `(sender_id, timestamp)` -- for per-sender recent outcome queries.
+- `idx_outcomes_time` on `(timestamp)` -- for cross-user time-based queries (heartbeat enrichment).
+
+### Table: `lessons`
+
+Created by `010_outcomes.sql`. Distilled behavioral rules — permanent long-term memory.
+
+```sql
+CREATE TABLE IF NOT EXISTS lessons (
+    id          TEXT PRIMARY KEY,
+    sender_id   TEXT NOT NULL,
+    domain      TEXT NOT NULL,
+    rule        TEXT NOT NULL,
+    occurrences INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(sender_id, domain)
+);
+```
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `TEXT` | `PRIMARY KEY` | UUID v4 string. |
+| `sender_id` | `TEXT` | `NOT NULL` | The user this lesson belongs to. |
+| `domain` | `TEXT` | `NOT NULL` | Domain/category (e.g., `"training"`, `"scheduling"`). |
+| `rule` | `TEXT` | `NOT NULL` | The distilled behavioral rule (e.g., `"User trains Saturday mornings, no need to nag after 12:00"`). |
+| `occurrences` | `INTEGER` | `NOT NULL`, default `1` | Number of times this domain's lesson has been updated (confidence signal). |
+| `created_at` | `TEXT` | `NOT NULL`, default `datetime('now')` | When the lesson was first created. |
+| `updated_at` | `TEXT` | `NOT NULL`, default `datetime('now')` | When the lesson was last updated. |
+
+**Unique constraint:** `(sender_id, domain)` -- each user has at most one lesson per domain. Upserts replace the rule and increment occurrences.
+
+**Index:**
+- `idx_lessons_sender` on `(sender_id)` -- for per-sender lesson queries.
+
 ## Migrations
 
 ### Migration Tracking
@@ -293,6 +355,8 @@ Migrations are tracked via the `_migrations` table. The system handles three sce
 | `006_limitations` | `migrations/006_limitations.sql` | Creates `limitations` table with case-insensitive unique index for autonomous self-introspection. |
 | `007_task_type` | `migrations/007_task_type.sql` | Adds `task_type` column to `scheduled_tasks` for distinguishing reminder vs action tasks. |
 | `008_user_aliases` | `migrations/008_user_aliases.sql` | Creates `user_aliases` table for cross-channel user identity resolution. |
+| `009_task_retry` | `migrations/009_task_retry.sql` | Adds `retry_count` and `last_error` columns to `scheduled_tasks` for action task failure handling. |
+| `010_outcomes` | `migrations/010_outcomes.sql` | Creates `outcomes` and `lessons` tables for reward-based learning (working memory + long-term behavioral rules). |
 
 ### Bootstrap Detection Logic
 
@@ -786,18 +850,20 @@ LIMIT ?
 4. Fetch the 3 most recent closed conversation summaries (always loaded, errors suppressed, default to empty).
 5. If `needs.recall` is true, search past messages via FTS5 for cross-conversation recall (errors suppressed, default to empty). Otherwise, empty vec.
 6. If `needs.pending_tasks` is true, fetch pending tasks for the sender (errors suppressed, default to empty). Otherwise, empty vec.
-7. Resolve language preference:
+7. Fetch recent outcomes for the sender (always loaded, limit 15, errors suppressed, default to empty).
+8. Fetch all lessons for the sender (always loaded, errors suppressed, default to empty).
+9. Resolve language preference:
    - If a `preferred_language` fact exists in the fetched facts, use it.
    - Otherwise, call `detect_language(&incoming.text)` and store the result as a `preferred_language` fact.
-8. Compute progressive onboarding stage:
-   - Read `onboarding_stage` from facts (default 0).
-   - Call `compute_onboarding_stage()` with current stage, real fact count, and task presence.
-   - If stage advanced: store new stage via `store_fact()`, pass `Some(new_stage)` to `build_system_prompt()`.
-   - If first contact (no stage fact, 0 real facts): pass `Some(0)` (show intro).
-   - If pre-existing user with no stage fact: silently bootstrap their stage, pass `None` (no hint).
-   - Otherwise: pass `None` (no hint).
-9. Build a dynamic system prompt via `build_system_prompt()`, passing the `base_system_prompt`, resolved language, and onboarding hint.
-10. Return a `Context` with the system prompt, history, and current message.
+10. Compute progressive onboarding stage:
+    - Read `onboarding_stage` from facts (default 0).
+    - Call `compute_onboarding_stage()` with current stage, real fact count, and task presence.
+    - If stage advanced: store new stage via `store_fact()`, pass `Some(new_stage)` to `build_system_prompt()`.
+    - If first contact (no stage fact, 0 real facts): pass `Some(0)` (show intro).
+    - If pre-existing user with no stage fact: silently bootstrap their stage, pass `None` (no hint).
+    - Otherwise: pass `None` (no hint).
+11. Build a dynamic system prompt via `build_system_prompt()`, passing the `base_system_prompt`, resolved language, outcomes, lessons, and onboarding hint.
+12. Return a `Context` with the system prompt, history, and current message.
 
 **SQL (step 2):**
 ```sql
@@ -827,12 +893,18 @@ SELECT messages                          get_facts(sender_id)         [always]
     |                                   get_tasks_for_sender(...)     [if needs.pending_tasks]
     |                                         |
     |                                         v
+    |                                   get_recent_outcomes(sender, 15) [always]
+    |                                         |
+    |                                         v
+    |                                   get_lessons(sender)           [always]
+    |                                         |
+    |                                         v
     |                                   resolve language:
     |                                     preferred_language fact? → use it
     |                                     else → detect_language(text) + store fact
     |                                         |
     v                                         v
-history: Vec<ContextEntry>     build_system_prompt(base_system_prompt, facts, summaries, recall, tasks, language)
+history: Vec<ContextEntry>     build_system_prompt(base, facts, summaries, recall, tasks, outcomes, lessons, lang)
     |                                         |
     v                                         v
     └──────────────┬─────────────────────────┘
@@ -851,6 +923,8 @@ history: Vec<ContextEntry>     build_system_prompt(base_system_prompt, facts, su
 - `get_recent_summaries` failure silently defaults to empty vec (`unwrap_or_default()`).
 - `search_messages` failure silently defaults to empty vec (`unwrap_or_default()`) — only called when `needs.recall` is true.
 - `get_tasks_for_sender` failure silently defaults to empty vec (`unwrap_or_default()`) — only called when `needs.pending_tasks` is true.
+- `get_recent_outcomes` failure silently defaults to empty vec (`unwrap_or_default()`).
+- `get_lessons` failure silently defaults to empty vec (`unwrap_or_default()`).
 
 ---
 
@@ -1167,6 +1241,143 @@ SELECT sender_id FROM facts WHERE key = 'welcomed' AND sender_id != ? LIMIT 1
 
 ---
 
+#### `async fn store_outcome(&self, sender_id: &str, domain: &str, score: i32, lesson: &str, source: &str) -> Result<(), OmegaError>`
+
+**Purpose:** Store a raw outcome from a REWARD marker.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sender_id` | `&str` | The user this outcome belongs to. |
+| `domain` | `&str` | Domain/category (e.g., `"training"`, `"crypto"`). |
+| `score` | `i32` | Reward signal: `+1`, `0`, or `-1`. |
+| `lesson` | `&str` | What was learned from this interaction. |
+| `source` | `&str` | Origin: `"conversation"` or `"heartbeat"`. |
+
+**Returns:** `Result<(), OmegaError>`.
+
+**SQL:**
+```sql
+INSERT INTO outcomes (id, sender_id, domain, score, lesson, source) VALUES (?, ?, ?, ?, ?, ?)
+```
+
+**Called by:** `gateway/process_markers.rs` (source=`"conversation"`), `gateway/heartbeat.rs` (source=`"heartbeat"`).
+
+---
+
+#### `async fn get_recent_outcomes(&self, sender_id: &str, limit: i64) -> Result<Vec<(i32, String, String, String)>, OmegaError>`
+
+**Purpose:** Get recent outcomes for a sender (for regular conversation prompt injection).
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sender_id` | `&str` | The user whose outcomes to retrieve. |
+| `limit` | `i64` | Maximum number of outcomes to return. |
+
+**Returns:** `Result<Vec<(i32, String, String, String)>, OmegaError>` where each tuple is `(score, domain, lesson, timestamp)`, ordered newest first.
+
+**SQL:**
+```sql
+SELECT score, domain, lesson, timestamp FROM outcomes
+WHERE sender_id = ? ORDER BY timestamp DESC LIMIT ?
+```
+
+**Called by:** `build_context()` with `limit = 15` to inject recent outcomes into the system prompt.
+
+---
+
+#### `async fn get_all_recent_outcomes(&self, hours: i64, limit: i64) -> Result<Vec<(i32, String, String, String)>, OmegaError>`
+
+**Purpose:** Get recent outcomes across all users within a time window (for heartbeat enrichment).
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `hours` | `i64` | Look-back window in hours. |
+| `limit` | `i64` | Maximum number of outcomes to return. |
+
+**Returns:** `Result<Vec<(i32, String, String, String)>, OmegaError>` where each tuple is `(score, domain, lesson, timestamp)`, ordered newest first.
+
+**SQL:**
+```sql
+SELECT score, domain, lesson, timestamp FROM outcomes
+WHERE datetime(timestamp) >= datetime('now', ? || ' hours')
+ORDER BY timestamp DESC LIMIT ?
+```
+
+**Called by:** `gateway/heartbeat.rs::build_enrichment()` with `hours = 24, limit = 20`.
+
+---
+
+#### `async fn store_lesson(&self, sender_id: &str, domain: &str, rule: &str) -> Result<(), OmegaError>`
+
+**Purpose:** Store or update a distilled lesson (upsert by sender_id + domain). If a lesson already exists for this domain, the rule is replaced and occurrences is incremented. Otherwise a new lesson is created.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sender_id` | `&str` | The user this lesson belongs to. |
+| `domain` | `&str` | Domain/category. |
+| `rule` | `&str` | The distilled behavioral rule. |
+
+**Returns:** `Result<(), OmegaError>`.
+
+**SQL:**
+```sql
+INSERT INTO lessons (id, sender_id, domain, rule) VALUES (?, ?, ?, ?)
+ON CONFLICT(sender_id, domain) DO UPDATE SET
+  rule = excluded.rule,
+  occurrences = occurrences + 1,
+  updated_at = datetime('now')
+```
+
+**Called by:** `gateway/process_markers.rs` and `gateway/heartbeat.rs` (LESSON marker processing).
+
+---
+
+#### `async fn get_lessons(&self, sender_id: &str) -> Result<Vec<(String, String)>, OmegaError>`
+
+**Purpose:** Get all lessons for a sender.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sender_id` | `&str` | The user whose lessons to retrieve. |
+
+**Returns:** `Result<Vec<(String, String)>, OmegaError>` where each tuple is `(domain, rule)`, ordered by most-recently-updated first.
+
+**SQL:**
+```sql
+SELECT domain, rule FROM lessons WHERE sender_id = ? ORDER BY updated_at DESC
+```
+
+**Called by:** `build_context()` to inject learned behavioral rules into the system prompt.
+
+---
+
+#### `async fn get_all_lessons(&self) -> Result<Vec<(String, String)>, OmegaError>`
+
+**Purpose:** Get all lessons across all users (for heartbeat enrichment).
+
+**Parameters:** None.
+
+**Returns:** `Result<Vec<(String, String)>, OmegaError>` where each tuple is `(domain, rule)`, ordered by most-recently-updated first.
+
+**SQL:**
+```sql
+SELECT domain, rule FROM lessons ORDER BY updated_at DESC
+```
+
+**Called by:** `gateway/heartbeat.rs::build_enrichment()` to inject learned rules into the heartbeat prompt.
+
+---
+
 #### `async fn get_open_limitations(&self) -> Result<Vec<(String, String, String)>, OmegaError>`
 
 **Purpose:** Get all open (unresolved) limitations for heartbeat context enrichment.
@@ -1216,6 +1427,8 @@ let migrations: &[(&str, &str)] = &[
     ("006_limitations", include_str!("../migrations/006_limitations.sql")),
     ("007_task_type", include_str!("../migrations/007_task_type.sql")),
     ("008_user_aliases", include_str!("../migrations/008_user_aliases.sql")),
+    ("009_task_retry", include_str!("../migrations/009_task_retry.sql")),
+    ("010_outcomes", include_str!("../migrations/010_outcomes.sql")),
 ];
 ```
 
@@ -1342,9 +1555,9 @@ The `shellexpand()` utility is now a public function in `omega_core::config`, re
 
 ---
 
-### `fn build_system_prompt(base_rules: &str, facts: &[(String, String)], summaries: &[(String, String)], recall: &[(String, String, String)], pending_tasks: &[(String, String, String, Option<String>, String)], language: &str, onboarding_hint: Option<u8>) -> String`
+### `fn build_system_prompt(base_rules: &str, facts: &[(String, String)], summaries: &[(String, String)], recall: &[(String, String, String)], pending_tasks: &[(String, String, String, Option<String>, String)], outcomes: &[(i32, String, String, String)], lessons: &[(String, String)], language: &str, onboarding_hint: Option<u8>) -> String`
 
-**Purpose:** Build a dynamic system prompt enriched with user facts, conversation summaries, recalled past messages, and explicit language instruction.
+**Purpose:** Build a dynamic system prompt enriched with user facts, conversation summaries, recalled past messages, reward-based learning data, and explicit language instruction.
 
 **Parameters:**
 
@@ -1355,6 +1568,8 @@ The `shellexpand()` utility is now a public function in `omega_core::config`, re
 | `summaries` | `&[(String, String)]` | Recent conversation summaries as `(summary, timestamp)` pairs. |
 | `recall` | `&[(String, String, String)]` | Recalled past messages as `(role, content, timestamp)` tuples. |
 | `pending_tasks` | `&[(String, String, String, Option<String>, String)]` | Pending scheduled tasks as `(id, description, due_at, repeat, task_type)`. |
+| `outcomes` | `&[(i32, String, String, String)]` | Recent outcomes as `(score, domain, lesson, timestamp)` tuples. |
+| `lessons` | `&[(String, String)]` | Distilled behavioral rules as `(domain, rule)` pairs. |
 | `language` | `&str` | The user's preferred language (e.g., `"English"`, `"Spanish"`). |
 | `onboarding_hint` | `Option<u8>` | If `Some(stage)`, inject the hint for that stage. If `None`, no onboarding hint. |
 
@@ -1384,6 +1599,14 @@ User's scheduled tasks:               ← (only if pending_tasks is non-empty)
 - [a1b2c3d4] Call John (due: 2026-02-17 15:00:00, once)
 - [e5f6g7h8] Check deployment [action] (due: 2026-02-18 09:00:00, daily)
 
+Learned behavioral rules:             ← (only if lessons is non-empty)
+- [training] User trains Saturday mornings, no need to nag after 12:00
+- [scheduling] Prefers reminders 30 minutes before, not 1 hour
+
+Recent outcomes:                      ← (only if outcomes is non-empty)
+- [+] training: User completed calisthenics by 15:00 (3h ago)
+- [-] crypto: User found the market update redundant (1d ago)
+
 IMPORTANT: Always respond in Spanish.  ← (always present, uses language parameter)
 
 If the user explicitly asks you to change language (e.g. 'speak in French'),
@@ -1398,10 +1621,12 @@ at the END of your response.
 - Summaries section: appended only if `summaries` is non-empty.
 - Recall section: appended only if `recall` is non-empty. Each message is truncated to 200 characters.
 - Pending tasks section: appended only if `pending_tasks` is non-empty. Each task shows `[id_short] description [action] (due: datetime, repeat)`.
+- Lessons section: appended only if `lessons` is non-empty. Each lesson shows `[domain] rule`. Header is "Learned behavioral rules:".
+- Outcomes section: appended only if `outcomes` is non-empty. Each outcome shows `[+/-/~] domain: lesson (relative_time)` via `format_relative_time()`. Header is "Recent outcomes:".
 - Language directive: always appended (unconditional). Uses the `language` parameter.
 - LANG_SWITCH instruction: always appended (unconditional). Tells the provider to include a `LANG_SWITCH:` marker when the user explicitly asks to change language.
 
-**Note:** Marker instructions for SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_ADD/REMOVE/INTERVAL, SKILL_IMPROVE, and LIMITATION are now defined in `SYSTEM_PROMPT.md` conditional sections (within the `## System` section), not in this function. The function still handles: user profile, summaries, recall, pending tasks, language enforcement, onboarding hints, and LANG_SWITCH instruction.
+**Note:** Marker instructions for SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_ADD/REMOVE/INTERVAL, SKILL_IMPROVE, REWARD, LESSON, and LIMITATION are now defined in `SYSTEM_PROMPT.md` conditional sections (within the `## System` section), not in this function. The function still handles: user profile, summaries, recall, pending tasks, outcomes, lessons, language enforcement, onboarding hints, and LANG_SWITCH instruction.
 
 ---
 
@@ -1460,6 +1685,30 @@ at the END of your response.
 
 **Note:** This is a simple heuristic, not a language detection library. Some stop-words overlap between Romance languages. The user can always override with `/language <lang>`.
 
+---
+
+### `fn format_relative_time(timestamp: &str, now: &chrono::DateTime<chrono::Utc>) -> String`
+
+**Purpose:** Format a UTC timestamp as a relative time string for compact display in the system prompt.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `timestamp` | `&str` | UTC timestamp in `"%Y-%m-%d %H:%M:%S"` format. |
+| `now` | `&chrono::DateTime<chrono::Utc>` | Current UTC time. |
+
+**Returns:** `String` -- relative time (e.g., `"3m ago"`, `"2h ago"`, `"1d ago"`). Falls back to the raw timestamp string if parsing fails.
+
+**Logic:**
+1. Parse the timestamp as `NaiveDateTime`, convert to UTC.
+2. Compute the difference in minutes.
+3. If `< 60` minutes: `"{minutes}m ago"`.
+4. If `< 1440` minutes (24h): `"{hours}h ago"`.
+5. Otherwise: `"{days}d ago"`.
+
+**Called by:** `build_system_prompt()` to format outcome timestamps compactly (~15 tokens each).
+
 ## Context Building Flow Diagram
 
 ```
@@ -1503,7 +1752,14 @@ at the END of your response.
 │    |                    get_tasks_for_sender()                        │
 │    |                          |                                       │
 │    |                          v                                       │
-│    |      build_system_prompt(facts, summaries, recall, tasks, ...)  │
+│    |                    get_recent_outcomes(sender, 15)  [always]     │
+│    |                          |                                       │
+│    |                          v                                       │
+│    |                    get_lessons(sender)              [always]     │
+│    |                          |                                       │
+│    |                          v                                       │
+│    |      build_system_prompt(facts, summaries, recall, tasks,       │
+│    |                          outcomes, lessons, ...)                  │
 │    v                          |                                       │
 │  history[]                    v                                       │
 │    |                    system_prompt                                  │
@@ -1604,9 +1860,15 @@ All errors are wrapped in `OmegaError::Memory(String)` with descriptive messages
 | `delete_fact()` | Propagates errors. |
 | `store_limitation()` | Propagates errors (caller in gateway/heartbeat logs and continues). |
 | `get_open_limitations()` | Propagates errors (caller in heartbeat suppresses with default empty). |
+| `store_outcome()` | Propagates errors (caller in gateway/heartbeat logs and continues). |
+| `get_recent_outcomes()` | Propagates errors (caller in build_context suppresses with default empty). |
+| `get_all_recent_outcomes()` | Propagates errors (caller in heartbeat suppresses with default empty). |
+| `store_lesson()` | Propagates errors (caller in gateway/heartbeat logs and continues). |
+| `get_lessons()` | Propagates errors (caller in build_context suppresses with default empty). |
+| `get_all_lessons()` | Propagates errors (caller in heartbeat suppresses with default empty). |
 
 ### Resilience in build_context()
-Facts, summaries, recalled messages, and pending tasks are fetched with `unwrap_or_default()`. This ensures that a failure in retrieving personalization data does not prevent the provider from receiving a valid context. The conversation will still work; it will just lack facts, summaries, recalled context, or task listings. Recall and pending tasks are only loaded when requested via `ContextNeeds`, reducing unnecessary DB queries.
+Facts, summaries, recalled messages, pending tasks, outcomes, and lessons are fetched with `unwrap_or_default()`. This ensures that a failure in retrieving personalization data does not prevent the provider from receiving a valid context. The conversation will still work; it will just lack facts, summaries, recalled context, task listings, or reward-based learning data. Recall and pending tasks are only loaded when requested via `ContextNeeds`, reducing unnecessary DB queries. Outcomes and lessons are always loaded (small, essential for reward awareness).
 
 ## Dependencies
 
@@ -1615,6 +1877,7 @@ Facts, summaries, recalled messages, and pending tasks are fetched with `unwrap_
 - `uuid` -- UUID v4 generation for all primary keys.
 - `tracing` -- Structured logging (`info!` macro).
 - `serde_json` -- Serialization of `MessageMetadata` to JSON.
+- `chrono` -- UTC time handling for relative timestamp formatting in `format_relative_time()`.
 
 ### Internal Dependencies
 - `omega_core::config::MemoryConfig` -- Configuration struct.
@@ -1690,4 +1953,8 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 20. Skill improvement suggestions are deduplicated by title (case-insensitive) — duplicate inserts are silently ignored.
 21. Limitation status is one of `'open'` or `'resolved'` (table retained for SKILL_IMPROVE storage).
 22. Task type is one of `'reminder'` or `'action'` — default is `'reminder'`.
-23. `build_context()` conditionally loads recall and pending tasks based on the `ContextNeeds` parameter. Facts and summaries are always loaded.
+23. `build_context()` conditionally loads recall and pending tasks based on the `ContextNeeds` parameter. Facts, summaries, outcomes, and lessons are always loaded.
+24. Outcomes have UUID v4 as their primary key. Score is constrained to `{-1, 0, 1}` by a CHECK constraint.
+25. Lessons are unique per `(sender_id, domain)` -- upserts replace the rule and increment occurrences.
+26. Outcomes and lessons are always loaded in `build_context()` (not keyword-gated). They are small (~15 tokens each) and essential for reward awareness.
+27. `format_relative_time()` renders outcome timestamps as compact relative strings (e.g., "3h ago") to minimize token overhead.

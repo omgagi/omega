@@ -35,6 +35,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [memory-migration-005.md](memory-migration-005.md) — Scheduled tasks table and indexes
 - [memory-migration-007.md](memory-migration-007.md) — Task type column for action scheduler
 - [memory-migration-009.md](memory-migration-009.md) — Task retry columns for action failure handling
+- [memory-migration-010.md](memory-migration-010.md) — Reward-based learning tables (outcomes + lessons)
 
 ### HTTP API
 - [api.md](api.md) — HTTP API for SaaS dashboard integration (health, WhatsApp QR pairing)
@@ -46,7 +47,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 ### Proactive Features
 - [scheduler.md](scheduler.md) — Task queue: reminders, recurring tasks, natural language scheduling
 - [heartbeat.md](heartbeat.md) — Periodic AI check-ins, health monitoring, alert suppression
-- [introspection.md](introspection.md) — Autonomous skill improvement (SKILL_IMPROVE marker, lesson appending to SKILL.md), self-audit (anomaly flagging + audit DB access)
+- [introspection.md](introspection.md) — Autonomous skill improvement (SKILL_IMPROVE marker), reward-based learning (REWARD/LESSON markers, outcomes + lessons tables), self-audit (anomaly flagging + audit DB access)
 - [claudemd.md](claudemd.md) — Workspace CLAUDE.md maintenance (auto-creation and periodic refresh for Claude Code subprocess context)
 
 ### Commands
