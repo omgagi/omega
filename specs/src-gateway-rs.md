@@ -16,7 +16,7 @@
 | `keywords.rs` | ~269 | Constants (`MAX_ACTION_RETRIES`, `SCHEDULING_KW`, `RECALL_KW`, `TASKS_KW`, `PROJECTS_KW`, `META_KW`, `SYSTEM_FACT_KEYS`), `kw_match()`, `is_valid_fact()`, tests |
 | `summarizer.rs` | ~276 | `summarize_and_extract()`, `background_summarizer()`, `summarize_conversation()`, `handle_forget()` |
 | `scheduler.rs` | ~417 | `scheduler_loop()` |
-| `heartbeat.rs` | ~266 | `heartbeat_loop()` |
+| `heartbeat.rs` | ~370 | `heartbeat_loop()`, `classify_heartbeat_groups()`, `execute_heartbeat_group()`, `process_heartbeat_markers()`, `build_enrichment()`, `build_system_prompt()`, `send_heartbeat_result()` |
 | `pipeline.rs` | ~423 | `handle_message()`, `build_system_prompt()` |
 | `routing.rs` | ~417 | `classify_and_route()`, `execute_steps()`, `handle_direct_response()` |
 | `auth.rs` | ~167 | `check_auth()`, `handle_whatsapp_qr()` |
@@ -303,62 +303,57 @@ If sandbox: + sandbox constraint (unchanged)
 
 ### Heartbeat Functions (heartbeat.rs)
 
-#### `async fn heartbeat_loop(provider, channels, config, prompts, sandbox_prompt, memory, interval, model_complex, skills, audit, provider_name)`
-**Purpose:** Background task that periodically invokes the AI provider for **active execution** of a health checklist. Unlike passive review, the heartbeat actively executes each checklist item: reminders/accountability items are sent to the user, system checks are performed, and results are reported. Skips the API call entirely when no checklist is configured. Processes response markers (SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_*, CANCEL_TASK, UPDATE_TASK) identically to the scheduler. Uses Opus model for powerful active execution and matches skill triggers on checklist content for MCP server injection.
+#### `async fn heartbeat_loop(provider, channels, config, prompts, sandbox_prompt, memory, interval, model_complex, model_fast, skills, audit, provider_name)`
+**Purpose:** Background task that periodically invokes the AI provider for **active execution** of a health checklist. A fast Sonnet classification call groups related items by domain before execution. Each group gets its own focused Opus session **in parallel**. Falls back to a single call when all items belong to the same domain (≤3 items or closely related). Processes response markers (SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_*, CANCEL_TASK, UPDATE_TASK) identically to the scheduler.
 
 **Parameters:**
 - `provider: Arc<dyn Provider>` - Shared provider reference for the check-in call.
 - `channels: HashMap<String, Arc<dyn Channel>>` - Map of channel implementations for alert delivery.
 - `config: HeartbeatConfig` - Heartbeat configuration (interval, active hours, channel, reply target).
-- `prompts: Prompts` - Full prompts struct (Identity/Soul/System + heartbeat_checklist template). The heartbeat composes the full system prompt from `prompts.identity`, `prompts.soul`, and `prompts.system` and sets it on the context, ensuring the AI has proper role boundaries during heartbeat calls.
+- `prompts: Prompts` - Full prompts struct (Identity/Soul/System + heartbeat_checklist template).
 - `sandbox_prompt: Option<String>` - Optional sandbox constraint text appended to the system prompt.
 - `memory: Store` - Shared memory store for enriching heartbeat context with user facts and recent summaries. Also used for marker-created tasks.
-- `interval: Arc<AtomicU64>` - Shared atomic holding the current interval in minutes. Read on each iteration. Updated by `process_markers()`, `scheduler_loop`, or heartbeat's own marker processing when a `HEARTBEAT_INTERVAL:` marker is processed.
-- `model_complex: String` - Opus model name for active execution (same model used by scheduler action tasks and multi-step execution).
-- `skills: Vec<omega_skills::Skill>` - Loaded skills for MCP trigger matching against checklist content.
-- `audit: AuditLogger` - Audit logger for recording heartbeat executions (logged when response is not HEARTBEAT_OK).
+- `interval: Arc<AtomicU64>` - Shared atomic holding the current interval in minutes.
+- `model_complex: String` - Opus model name for active execution.
+- `model_fast: String` - Sonnet model name for classification.
+- `skills: Vec<omega_skills::Skill>` - Loaded skills for MCP trigger matching per group.
+- `audit: AuditLogger` - Audit logger for recording heartbeat executions.
 - `provider_name: String` - Provider name for audit entries.
 
 **Returns:** Never returns (infinite loop).
 
 **Logic:**
-1. Loop forever, reading the interval from the shared `AtomicU64` on each iteration (dynamic, not fixed at startup). Sleep is **clock-aligned**: computes the next clean boundary (e.g., :00, :30 for a 30-min interval) and sleeps until that exact time, preventing drift from process start time.
-2. Check active hours:
-   - If both `active_start` and `active_end` are non-empty, call `is_within_active_hours()`.
-   - If outside active hours, log info and skip this iteration.
-3. Read checklist from `~/.omega/prompts/HEARTBEAT.md` via `read_heartbeat_file()`.
-4. **Skip when no checklist**: If `read_heartbeat_file()` returns `None`, log info and skip this iteration entirely (no API call).
-5. Build prompt from `prompts.heartbeat_checklist` with `{checklist}` replaced by the file content.
-6. **Context enrichment**: Enrich the prompt with memory data:
-   - Call `memory.get_all_facts()` — if non-empty, append "Known about the user:" followed by key-value pairs.
-   - Call `memory.get_all_recent_summaries(3)` — if non-empty, append "Recent activity:" followed by timestamped summaries.
-7. **System prompt composition**: Compose the full system prompt from `format!("{}\n\n{}\n\n{}", prompts.identity, prompts.soul, prompts.system)` and append `sandbox_prompt` if present. Append current time. Set `ctx.system_prompt = system` on the context.
-8. **Context setup**: Set `ctx.model = Some(model_complex)` (Opus) and `ctx.mcp_servers` from `match_skill_triggers(&skills, &checklist)`.
-9. Call `provider.complete()` with the enriched prompt context and full system prompt.
-10. On success, **process markers** from the response (same as scheduler action tasks):
-    - SCHEDULE markers → create reminder tasks via `memory.create_task()`.
-    - SCHEDULE_ACTION markers → create action tasks via `memory.create_task()`.
-    - HEARTBEAT_ADD/REMOVE/INTERVAL markers → apply checklist/interval changes.
-    - CANCEL_TASK markers → cancel matching tasks via `memory.cancel_task()`.
-    - UPDATE_TASK markers → update matching tasks via `memory.update_task()`.
-    - All markers are stripped from the text before evaluating the response.
-    - `config.reply_target` is used as both `sender_id` and `reply_target` for created tasks.
-11. After stripping markers, check for `HEARTBEAT_OK`:
-    - Strip markdown formatting characters (`*`, `` ` ``) from the response.
-    - If cleaned response contains `HEARTBEAT_OK`, log info and suppress (no message sent).
-    - Otherwise, log an audit entry (`[HEARTBEAT]` prefix, `AuditStatus::Ok`) and send the response as an alert via `config.channel` to `config.reply_target`.
-    - If channel not found, log warning.
-12. On provider error, log error.
+1. Loop forever, reading the interval from the shared `AtomicU64` on each iteration. Sleep is **clock-aligned**.
+2. Check active hours; skip if outside window.
+3. Read checklist from `~/.omega/prompts/HEARTBEAT.md` via `read_heartbeat_file()`. Skip if none.
+4. **Build enrichment and system prompt once** (shared across all groups) via `build_enrichment()` and `build_system_prompt()`.
+5. **Classify checklist** via `classify_heartbeat_groups()` — fast Sonnet call (no tools) that returns `None` for DIRECT or `Some(Vec<String>)` for grouped domains.
+6. **DIRECT path (None):** Single Opus call via `execute_heartbeat_group()` with the full checklist. Result handled by `send_heartbeat_result()`.
+7. **Grouped path (Some):** Spawn each group as a parallel `tokio::spawn(execute_heartbeat_group(...))`. Collect results. Groups returning `None` (HEARTBEAT_OK) are logged. Non-OK texts are joined with `\n\n---\n\n` and sent as a single combined message via `send_heartbeat_result()`.
 
-**Async Patterns:**
-- Uses `tokio::time::sleep()` for periodic ticking.
-- Provider, channel, and memory operations are awaited.
+#### `async fn classify_heartbeat_groups(provider, model_fast, checklist) -> Option<Vec<String>>`
+**Purpose:** Fast Sonnet classification that groups related checklist items by domain. Returns `None` for DIRECT (all items closely related or ≤3 items). Returns `Some(groups)` when items span different domains. Reuses `parse_plan_response()` for parsing. On failure, returns `None` (safe fallback).
+
+#### `async fn execute_heartbeat_group(provider, model_complex, group_items, heartbeat_template, enrichment, system_prompt, skills, memory, sender_id, channel_name, interval) -> Option<(String, i64)>`
+**Purpose:** Execute a single heartbeat group via Opus. Builds the prompt from the heartbeat template with the group's items, enriches with pre-computed context, matches MCP servers per group, calls the provider, processes markers via `process_heartbeat_markers()`, and evaluates HEARTBEAT_OK. Returns `None` if OK, `Some((text, elapsed_ms))` if content for the user.
+
+#### `async fn process_heartbeat_markers(text, memory, sender_id, channel_name, interval) -> String`
+**Purpose:** Process all markers in a heartbeat response (SCHEDULE, SCHEDULE_ACTION, HEARTBEAT_*, CANCEL_TASK, UPDATE_TASK). Returns text with all markers stripped. Shared by both single-call and per-group paths to avoid duplication.
+
+#### `async fn build_enrichment(memory) -> String`
+**Purpose:** Build enrichment context from user facts and recent conversation summaries. Computed once and shared across all groups.
+
+#### `fn build_system_prompt(prompts, sandbox_prompt) -> String`
+**Purpose:** Build the heartbeat system prompt (Identity + Soul + System + sandbox + current time). Computed once and shared across all groups.
+
+#### `async fn send_heartbeat_result(result, channel_name, sender_id, channels, config, audit, provider_name, model)`
+**Purpose:** Audit log and send a heartbeat result to the user. If result is `None`, logs OK and returns. Otherwise creates audit entry and sends to channel.
 
 **Error Handling:**
-- Provider errors are logged but do not stop the loop.
+- Classification errors fall back to single-call (zero regression risk).
+- Provider errors per group are logged but do not affect other groups.
+- Spawned group panics are caught and logged.
 - Channel send errors are logged but do not stop the loop.
-- Marker processing errors are logged but do not stop the loop.
-- Missing channel is logged as warning.
 
 ### Summarizer (continued)
 
@@ -1261,7 +1256,7 @@ All interactions are logged to SQLite with:
 11. LANG_SWITCH: markers are stripped from the response before sending to the user. The extracted language is persisted as a `preferred_language` fact.
 12. Scheduler loop only runs when `scheduler_config.enabled` is true.
 13. Heartbeat loop only runs when `heartbeat_config.enabled` is true.
-14. Heartbeat alerts are suppressed when the provider response contains `HEARTBEAT_OK` (after stripping markdown formatting).
+14. Heartbeat suppression is content-aware: `HEARTBEAT_OK` is stripped from the response, and only if no meaningful content remains is the message suppressed. Responses containing both user-facing content and `HEARTBEAT_OK` deliver the content (with the token removed).
 15. Status updater is aborted when provider result arrives.
 16. Platform formatting hints are injected into the system prompt based on `incoming.channel` (WhatsApp avoids markdown tables/headers; Telegram supports full markdown).
 19. Heartbeat loop skips API calls entirely when no checklist file (`~/.omega/prompts/HEARTBEAT.md`) is configured.

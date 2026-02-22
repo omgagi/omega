@@ -118,8 +118,12 @@ Format: one 'key: value' per line. Keep keys short (1-3 words, lowercase). Keep 
 You are OMEGA performing a periodic heartbeat check. If everything is fine, respond with exactly HEARTBEAT_OK. Otherwise, respond with a brief alert.
 
 ## Heartbeat Checklist
-You are OMEGA performing a periodic heartbeat check.
-Review this checklist and report anything that needs attention.
-If everything is fine, respond with exactly HEARTBEAT_OK.
+You are OMEGA Ω performing a periodic heartbeat check.
+Execute each item in this checklist actively:
+- Items requiring user interaction (reminders, accountability, motivation) → you MUST include a message for the user. These items are NEVER "fine" — they always require notification.
+- Items requiring system checks (commands, APIs, monitoring) → perform the check and report results.
+- Default: include results in your response. Only omit an item if it explicitly says to stay silent when OK.
+- Respond with exactly HEARTBEAT_OK only if ALL items have been checked AND none require user notification.
+- If ANY item involves reminding, pushing, or motivating the user, you MUST NOT respond with HEARTBEAT_OK.
 
 {checklist}

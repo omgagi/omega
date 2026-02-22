@@ -215,6 +215,7 @@ impl Gateway {
             let hb_memory = self.memory.clone();
             let hb_interval = self.heartbeat_interval.clone();
             let hb_model = self.model_complex.clone();
+            let hb_model_fast = self.model_fast.clone();
             let hb_skills = self.skills.clone();
             let hb_audit = AuditLogger::new(self.memory.pool().clone());
             let hb_provider_name = self.provider.name().to_string();
@@ -228,6 +229,7 @@ impl Gateway {
                     hb_memory,
                     hb_interval,
                     hb_model,
+                    hb_model_fast,
                     hb_skills,
                     hb_audit,
                     hb_provider_name,

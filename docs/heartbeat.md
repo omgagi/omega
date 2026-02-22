@@ -12,23 +12,20 @@ The heartbeat runs as a background loop inside the gateway, firing at clock-alig
 
 1. **Check active hours** -- If you configured an active hours window (e.g., 08:00-22:00), the heartbeat checks the current local time. Outside the window, it sleeps until the next cycle.
 2. **Read the checklist** -- Looks for `~/.omega/prompts/HEARTBEAT.md`. If the file does not exist or is empty, the entire cycle is **skipped** — no API call is made. This prevents wasted provider calls when no checklist is configured.
-3. **Enrich with context** -- The heartbeat enriches the prompt with data from memory:
+3. **Enrich with context** -- The heartbeat enriches the prompt with data from memory (computed once, shared across all groups):
    - **User facts** (name, timezone, interests, etc.) from all users — gives the AI awareness of who it's monitoring for.
    - **Recent conversation summaries** (last 3 closed conversations) — gives the AI context about recent activity.
-4. **Compose system prompt** -- The heartbeat attaches the full Identity/Soul/System prompt (plus sandbox constraints if applicable) to the provider call, ensuring the AI has proper role context and behavioral boundaries — identical to how scheduled action tasks and regular messages receive the system prompt.
-5. **Set model and MCP** -- The heartbeat uses the Opus model for active execution (same as scheduler action tasks) and matches skill triggers on checklist content to inject relevant MCP servers.
-6. **Call the provider** -- Sends the enriched prompt with the full system prompt to the AI provider for active execution.
-7. **Process markers** -- Response markers are processed identically to the scheduler:
+4. **Compose system prompt** -- The heartbeat attaches the full Identity/Soul/System prompt (plus sandbox constraints if applicable) to the provider call. Computed once and shared across all groups.
+5. **Classify by domain** -- A fast Sonnet classification call (no tools) groups related checklist items by domain. If all items are closely related or there are 3 or fewer items, the classifier returns DIRECT and a single Opus call handles everything. Otherwise, items are grouped (e.g., trading tasks together, personal reminders together, system monitoring together).
+6. **Execute groups in parallel** -- Each group gets its own focused Opus session via `tokio::spawn`. Related items stay together (5 trading items = 1 call), unrelated domains are separated (crypto vs training = 2 concurrent calls). MCP servers are matched per-group so each group gets only the tools it needs. For DIRECT, a single Opus call processes the full checklist (unchanged behavior).
+7. **Process markers** -- Each group's response markers are processed independently:
    - `SCHEDULE` → creates reminder tasks
    - `SCHEDULE_ACTION` → creates action tasks
    - `HEARTBEAT_ADD/REMOVE/INTERVAL` → updates checklist/interval
    - `CANCEL_TASK` → cancels pending tasks
    - `UPDATE_TASK` → modifies existing tasks
    - All markers are stripped from the response before evaluating it.
-8. **Evaluate the response** (after marker stripping):
-   - Markdown formatting characters (`*` and backticks) are stripped before checking for the keyword.
-   - If the cleaned response contains `HEARTBEAT_OK`, the heartbeat logs an INFO message and sends nothing to the user.
-   - If the response contains anything else, it is logged in the audit trail and delivered to the configured channel.
+8. **Evaluate per group** -- HEARTBEAT_OK is evaluated independently per group. A training group fires even when a crypto group is OK. Groups returning OK are logged silently. Non-OK results are joined with `---` separators and delivered as a single message.
 
 ```
 At next clock-aligned boundary (e.g. :00, :30):
@@ -36,23 +33,25 @@ At next clock-aligned boundary (e.g. :00, :30):
     → No: skip, sleep
     → Yes: read HEARTBEAT.md
       → File missing or empty? → skip, no API call
-      → Has content? → Enrich prompt with user facts + recent summaries
-        → Compose full system prompt (Identity + Soul + System + sandbox)
-          → Set Opus model + match MCP triggers
-            → Call provider for active execution
-              → Process markers (SCHEDULE, CANCEL_TASK, etc.)
-                → Strip markdown, check for "HEARTBEAT_OK"
-                  → Yes: log "heartbeat: OK", done
-                  → No: audit log + send response to channel
+      → Has content? → Build enrichment + system prompt (once)
+        → Sonnet classification: group by domain
+          → DIRECT? → 1 Opus call (existing behavior)
+          → Grouped? → tokio::spawn per group (parallel)
+            ↓ Opus call A (domain 1)     ↓ Opus call B (domain 2)
+            ↓ markers processed           ↓ markers processed
+            ↓ HEARTBEAT_OK eval           ↓ HEARTBEAT_OK eval
+          → Consolidate non-OK results → audit + send to channel
 ```
 
 ## The HEARTBEAT_OK Suppression Mechanism
 
-When the AI determines that everything is fine, it responds with exactly `HEARTBEAT_OK`. The gateway detects this keyword and suppresses the message -- it is logged but never sent to you.
+When the AI determines that everything is fine and no item requires user notification, it responds with exactly `HEARTBEAT_OK`. The gateway detects this keyword and suppresses the message -- it is logged but never sent to you.
 
 This prevents notification fatigue. Without suppression, you would receive a message every 30 minutes telling you everything is fine. The suppression mechanism ensures you only hear from the heartbeat when something actually needs attention.
 
-The keyword check is a simple `contains("HEARTBEAT_OK")`, so the provider can include additional text alongside it. However, the convention is to respond with just `HEARTBEAT_OK` when all checks pass.
+**Content-aware suppression:** The gateway strips `HEARTBEAT_OK` from the response and checks if meaningful content remains. If the AI included both a user-facing message (e.g., a training reminder) and `HEARTBEAT_OK`, the reminder is still delivered -- only the `HEARTBEAT_OK` token is removed. This prevents accountability items from being silently swallowed when the AI mistakenly appends `HEARTBEAT_OK` to a response that should reach the user.
+
+**Prompt enforcement:** The heartbeat checklist prompt explicitly instructs the AI that items requiring user interaction (reminders, accountability, motivation) are NEVER "fine" and always require notification. The AI must NOT respond with `HEARTBEAT_OK` when any checklist item involves reminding, pushing, or motivating the user.
 
 ## Active Hours
 
@@ -223,6 +222,14 @@ A naive `sleep(N minutes)` fires at times relative to process start -- if the se
 ### Why Attach the Full System Prompt?
 
 Without the Identity/Soul/System prompt, the heartbeat provider call has no role context -- the AI behaves as a generic assistant and may produce incoherent responses (echoing stale conversation context, listing unrelated options). Attaching the full system prompt ensures the AI stays in character with proper behavioral boundaries, identical to how scheduled action tasks and regular messages receive the system prompt.
+
+### Why Classify Then Route?
+
+When the heartbeat has 10+ items spanning diverse domains (trading, training reminders, system monitoring), cramming them all into a single AI context increases the risk of hallucination and missed items. Unrelated domains compete for attention, and the AI defaults to HEARTBEAT_OK when overwhelmed.
+
+The classify-then-route approach uses a fast, cheap Sonnet call to group related items by domain. Each group gets its own focused Opus session, so the AI can concentrate on one domain at a time. Related items stay together (5 trading items = 1 call, not 5 calls), while unrelated domains run in parallel for faster total execution.
+
+The classification falls back to a single call when all items are related or there are 3 or fewer items, preserving the existing behavior for simple checklists. On classification failure, the system also falls back to single-call (zero regression risk).
 
 ### Why Active Hours?
 

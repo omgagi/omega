@@ -115,7 +115,7 @@ Message → Auth → Sanitize → Sandbox constraint → Memory (context) → Pr
 Background:
   Scheduler: poll due_tasks → channel.send(reminder) → complete_task
              action tasks: provider.complete → parse ACTION_OUTCOME → audit_log → complete/fail_task → notify
-  Heartbeat: provider.complete(check-in) → suppress HEARTBEAT_OK / channel.send(alert)
+  Heartbeat: provider.complete(check-in) → strip HEARTBEAT_OK → no content? suppress / has content? channel.send(alert)
   Summarizer: find idle convos → summarize → close
   CLAUDE.md: ensure on startup → refresh every 24h (claude -p subprocess)
 ```
