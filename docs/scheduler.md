@@ -344,9 +344,9 @@ The scheduler enriches the action task system prompt with:
 
 1. **User profile** — Facts from the database (name, preferences, context) so the AI knows who the task owner is.
 2. **Language preference** — The user's `preferred_language` fact, ensuring responses match their language.
-3. **Delivery context** — Explicit instruction that the AI's text response will be delivered directly to the task owner via their messaging channel (Telegram/WhatsApp). The AI does NOT need to use external services (email, APIs, contacts, curl) to "send" messages — it simply composes the message as its response and the gateway delivers it.
+3. **Delivery context** — Explicit instruction that the AI's text response will be delivered directly to the task owner via their messaging channel (Telegram/WhatsApp). To communicate with the owner, compose the message as the response. To perform external actions (send email, call APIs), use tools normally and report the result. Never search contacts to reach the owner — the response IS the delivery channel.
 
-This prevents the AI from hallucinating external delivery mechanisms (e.g., trying to send emails or search contacts) when the task says "send someone a message."
+This prevents the AI from hallucinating external delivery mechanisms (e.g., searching contacts or fabricating email sends) when the task simply means "talk to the owner", while still allowing genuine external actions like sending emails to explicit addresses.
 
 The provider must also end its response with one of:
 

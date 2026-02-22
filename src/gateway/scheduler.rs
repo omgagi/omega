@@ -95,13 +95,14 @@ impl Gateway {
                                 "\n\nIMPORTANT — Action Task Delivery:\n\
                                  You are executing a scheduled action task for {owner}. \
                                  Your text response will be delivered DIRECTLY to {owner} \
-                                 via {channel}. You do NOT need to send messages through \
-                                 external services (email, APIs, contacts, curl). Simply \
-                                 write the message as your response — the system delivers \
-                                 it automatically to {owner}.\n\
-                                 If the task says 'send someone a message', compose that \
-                                 message as your response text. Do NOT use email, curl, \
-                                 or any external messaging tool.",
+                                 via {channel}.\n\
+                                 - To communicate with {owner}: just write the message as \
+                                 your response. The system delivers it automatically.\n\
+                                 - To perform external actions (send email, call APIs, run \
+                                 commands): use your tools normally, then report the result \
+                                 as your response to {owner}.\n\
+                                 Never search contacts or guess how to reach {owner} — your \
+                                 response IS the delivery channel.",
                                 owner = facts
                                     .iter()
                                     .find(|(k, _)| k == "name")
