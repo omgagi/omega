@@ -14,7 +14,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [quickstart.md](quickstart.md) — Build, configure, and run Omega in 2 minutes
 
 ### Architecture
-- [architecture.md](architecture.md) — System design, crate structure, data flow
+- [architecture.md](architecture.md) — End-to-end message flow (Telegram → Gateway → Claude Code → response), concurrency model, session persistence, background loops, efficiency summary
 
 ### Configuration
 - [configuration.md](configuration.md) — config.toml reference, environment variables, defaults
