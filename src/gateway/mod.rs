@@ -45,8 +45,6 @@ pub struct Gateway {
     pub(super) data_dir: String,
     pub(super) skills: Vec<omega_skills::Skill>,
     pub(super) uptime: Instant,
-    pub(super) sandbox_mode: String,
-    pub(super) sandbox_prompt: Option<String>,
     /// Fast model for classification and direct responses (Sonnet).
     pub(super) model_fast: String,
     /// Complex model for multi-step autonomous execution (Opus).
@@ -55,8 +53,6 @@ pub struct Gateway {
     pub(super) active_senders: Mutex<HashMap<String, Vec<IncomingMessage>>>,
     /// Shared heartbeat interval (minutes) — updated at runtime via `HEARTBEAT_INTERVAL:` marker.
     pub(super) heartbeat_interval: Arc<AtomicU64>,
-    /// Sandbox mode enum — needed for direct subprocess calls (CLAUDE.md maintenance).
-    pub(super) sandbox_mode_enum: omega_core::config::SandboxMode,
     /// Active CLI sessions per sender (channel:sender_id → session_id).
     /// Used for session-based prompt persistence with Claude Code CLI.
     pub(super) cli_sessions: Arc<std::sync::Mutex<HashMap<String, String>>>,
@@ -77,11 +73,8 @@ impl Gateway {
         prompts: Prompts,
         data_dir: String,
         skills: Vec<omega_skills::Skill>,
-        sandbox_mode: String,
-        sandbox_prompt: Option<String>,
         model_fast: String,
         model_complex: String,
-        sandbox_mode_enum: omega_core::config::SandboxMode,
     ) -> Self {
         let audit = AuditLogger::new(memory.pool().clone());
         let heartbeat_interval = Arc::new(AtomicU64::new(heartbeat_config.interval_minutes));
@@ -99,13 +92,10 @@ impl Gateway {
             data_dir,
             skills,
             uptime: Instant::now(),
-            sandbox_mode,
-            sandbox_prompt,
             model_fast,
             model_complex,
             active_senders: Mutex::new(HashMap::new()),
             heartbeat_interval,
-            sandbox_mode_enum,
             cli_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
@@ -113,7 +103,7 @@ impl Gateway {
     /// Run the main event loop.
     pub async fn run(self: Arc<Self>) -> anyhow::Result<()> {
         info!(
-            "Omega gateway running | provider: {} | channels: {} | auth: {} | sandbox: {}",
+            "Omega gateway running | provider: {} | channels: {} | auth: {}",
             self.provider.name(),
             self.channels.keys().cloned().collect::<Vec<_>>().join(", "),
             if self.auth_config.enabled {
@@ -121,7 +111,6 @@ impl Gateway {
             } else {
                 "disabled"
             },
-            self.sandbox_mode
         );
 
         // Purge orphaned inbox files from previous runs.
@@ -131,9 +120,8 @@ impl Gateway {
         if self.provider.name() == "claude-code" {
             let workspace = PathBuf::from(shellexpand(&self.data_dir)).join("workspace");
             let data_dir = PathBuf::from(shellexpand(&self.data_dir));
-            let sm = self.sandbox_mode_enum;
             tokio::spawn(async move {
-                crate::claudemd::ensure_claudemd(&workspace, &data_dir, sm).await;
+                crate::claudemd::ensure_claudemd(&workspace, &data_dir).await;
             });
         }
 
@@ -181,7 +169,6 @@ impl Gateway {
             let sched_skills = self.skills.clone();
             let sched_prompts = self.prompts.clone();
             let sched_model = self.model_complex.clone();
-            let sched_sandbox = self.sandbox_prompt.clone();
             let sched_hb_interval = self.heartbeat_interval.clone();
             let sched_audit = AuditLogger::new(self.memory.pool().clone());
             let sched_provider_name = self.provider.name().to_string();
@@ -194,7 +181,6 @@ impl Gateway {
                     sched_skills,
                     sched_prompts,
                     sched_model,
-                    sched_sandbox,
                     sched_hb_interval,
                     sched_audit,
                     sched_provider_name,
@@ -211,7 +197,6 @@ impl Gateway {
             let hb_channels = self.channels.clone();
             let hb_config = self.heartbeat_config.clone();
             let hb_prompts = self.prompts.clone();
-            let hb_sandbox_prompt = self.sandbox_prompt.clone();
             let hb_memory = self.memory.clone();
             let hb_interval = self.heartbeat_interval.clone();
             let hb_model = self.model_complex.clone();
@@ -225,7 +210,6 @@ impl Gateway {
                     hb_channels,
                     hb_config,
                     hb_prompts,
-                    hb_sandbox_prompt,
                     hb_memory,
                     hb_interval,
                     hb_model,
@@ -244,9 +228,8 @@ impl Gateway {
         let claudemd_handle = if self.provider.name() == "claude-code" {
             let ws = PathBuf::from(shellexpand(&self.data_dir)).join("workspace");
             let dd = PathBuf::from(shellexpand(&self.data_dir));
-            let sm = self.sandbox_mode_enum;
             Some(tokio::spawn(async move {
-                crate::claudemd::claudemd_loop(ws, dd, sm, 24).await;
+                crate::claudemd::claudemd_loop(ws, dd, 24).await;
             }))
         } else {
             None

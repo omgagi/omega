@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use omega_core::{
-    config::SandboxMode,
     context::Context,
     error::OmegaError,
     message::{MessageMetadata, OutgoingMessage},
@@ -29,7 +28,6 @@ pub struct GeminiProvider {
     api_key: String,
     model: String,
     workspace_path: Option<PathBuf>,
-    sandbox_mode: SandboxMode,
 }
 
 impl GeminiProvider {
@@ -38,14 +36,12 @@ impl GeminiProvider {
         api_key: String,
         model: String,
         workspace_path: Option<PathBuf>,
-        sandbox_mode: SandboxMode,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
             api_key,
             model,
             workspace_path,
-            sandbox_mode,
         }
     }
 }
@@ -184,7 +180,7 @@ impl Provider for GeminiProvider {
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
-                let mut executor = ToolExecutor::new(ws.clone(), self.sandbox_mode);
+                let mut executor = ToolExecutor::new(ws.clone());
                 executor.connect_mcp_servers(&context.mcp_servers).await;
 
                 let result = self
@@ -486,7 +482,6 @@ mod tests {
             "AIza-test".into(),
             "gemini-2.0-flash".into(),
             None,
-            SandboxMode::Rwx,
         );
         assert_eq!(p.name(), "gemini");
         assert!(p.requires_api_key());

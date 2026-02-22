@@ -20,7 +20,6 @@ The configuration uses TOML format with six main sections:
 [memory]          # Conversation storage backend
 [scheduler]       # Scheduled task delivery
 [heartbeat]       # Periodic AI health check-in
-[sandbox]         # Command execution security
 ```
 
 ---
@@ -105,7 +104,7 @@ Local Claude Code CLI integration (zero-config, recommended default).
 | `max_turns` | Integer | `10` | Maximum conversation turns (exchanges) before forcing a summary. Prevents runaway context growth. |
 | `allowed_tools` | Array[String] | `["Bash", "Read", "Write", "Edit"]` | Whitelist of tools the Claude Code provider can invoke. Restricts what operations are permitted. |
 | `timeout_secs` | Integer | `3600` | Max wait time in seconds for CLI response (60-minute ceiling). Tunable per deployment. |
-| `max_resume_attempts` | Integer | `5` | Maximum number of auto-resume attempts when the CLI hits max turns with a session ID. The provider automatically retries with `--session-id` to continue interrupted work. |
+| `max_resume_attempts` | Integer | `5` | Maximum number of auto-resume attempts when the CLI hits max turns with a session ID. The provider automatically retries with `--resume` and exponential backoff (2s, 4s, 8s, ...) to continue interrupted work. |
 | `model` | String | `"claude-sonnet-4-6"` | Default model for fast/simple requests (DIRECT path). Used by the classify-and-route logic for classification calls and direct responses. |
 | `model_complex` | String | `"claude-opus-4-6"` | Model for complex multi-step requests (Steps path). Used by the classify-and-route logic when the classifier identifies a multi-step task. |
 
@@ -361,40 +360,6 @@ reply_target = ""               # Chat ID for delivery
 
 ---
 
-## Section: `[sandbox]`
-
-Sandbox mode configuration. Controls how the AI provider interacts with the filesystem and system resources via system prompt constraints and working directory confinement.
-
-### Keys
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `mode` | String | `"sandbox"` | Sandbox operating mode. Valid values: `"sandbox"`, `"rx"`, `"rwx"`. Controls both the working directory and the system prompt constraints injected for the provider. |
-
-**Mode Values:**
-
-| Mode | Working Directory | System Prompt Constraint | Description |
-|------|------------------|-------------------------|-------------|
-| `"sandbox"` | `~/.omega/workspace/` | SANDBOX mode instructions (confine to workspace) | Default. Provider is confined to the workspace directory. System prompt instructs the provider to only operate within the workspace path. |
-| `"rx"` | `~/.omega/workspace/` | READ-ONLY mode instructions (no writes, no deletes, no commands) | Read-only mode. Provider receives system prompt instructions allowing read access but forbidding writes, deletes, and command execution. |
-| `"rwx"` | None (no confinement) | None (no constraint injected) | Unrestricted mode. No sandbox prompt constraint is injected and no working directory is set on the provider subprocess. |
-
-**Example:**
-```toml
-[sandbox]
-mode = "sandbox"   # "sandbox" | "rx" | "rwx"
-```
-
-### Notes
-
-- **Security Sensitive:** Sandbox mode controls the level of filesystem access granted to the AI provider.
-- **Workspace Directory:** In `sandbox` and `rx` modes, the provider subprocess `current_dir` is set to `~/.omega/workspace/`, which is automatically created at startup.
-- **System Prompt Injection:** The sandbox constraint text is prepended to the system prompt before context building, giving the provider explicit instructions about its operating boundaries.
-- **Root Check:** Omega explicitly refuses to run as root (uid 0) to prevent privilege escalation risks.
-- **Default Safety:** The default mode is `"sandbox"`, ensuring new installations start with filesystem confinement enabled.
-
----
-
 ## Environment Variable Overrides
 
 Sensitive values can be provided via environment variables instead of hardcoding in `config.toml`. This is the recommended approach for API keys and tokens.
@@ -435,7 +400,7 @@ The config file should contain empty string values (`api_key = ""`) for these fi
 1. Use a secrets manager (e.g., 1Password, Bitwarden, HashiCorp Vault) to store keys.
 2. Inject secrets via environment variables at runtime.
 3. Enable `auth.enabled = true` and populate `allowed_users` to restrict access.
-4. Keep `sandbox.mode = "sandbox"` (the default) unless you explicitly need broader access.
+4. System protection is always active -- writes to system directories and `~/.omega/data/` are blocked at the OS level.
 5. Monitor `~/.omega/logs/omega.log` for suspicious activity.
 6. Review `~/.omega/data/memory.db` audit trail periodically.
 
@@ -453,7 +418,7 @@ The config file should contain empty string values (`api_key = ""`) for these fi
    - Choose a provider (Claude Code recommended; enable and set as `default`).
    - Enable desired channels and set tokens/credentials via environment variables.
    - Configure `[auth]` with `allowed_users` if desired.
-   - Adjust `[sandbox]` if needed (keep restrictive by default).
+   - System protection is always active (no configuration needed).
 
 3. **Set environment variables:**
    ```bash
@@ -482,7 +447,7 @@ The config file should contain empty string values (`api_key = ""`) for these fi
 | **"provider not enabled"** | Verify `[provider.<name>] enabled = true` and that it's set as `default`. |
 | **"API key not found"** | Check env var is set: `echo $ANTHROPIC_API_KEY`. Ensure it's exported, not just set. |
 | **"Access denied"** | If `auth.enabled = true`, add your user ID to `allowed_users` in the channel config. |
-| **Provider restricted** | Check `sandbox.mode` — use `"rwx"` for unrestricted access, or `"rx"` for read-only. Default `"sandbox"` confines to workspace. |
+| **Write blocked** | System protection blocks writes to OS directories and `~/.omega/data/`. Use `~/.omega/workspace/` or `~/.omega/stores/` for writable storage. |
 | **Database locked** | Ensure no other Omega instance is running. Delete `memory.db` if corrupted. |
 
 ---

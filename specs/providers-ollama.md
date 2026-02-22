@@ -21,12 +21,10 @@ Connects to a locally running Ollama server over HTTP. No API key required.
 | `base_url` | `String` | Ollama server endpoint (default: `http://localhost:11434`) |
 | `model` | `String` | Model name (default: `llama3`) |
 | `workspace_path` | `Option<PathBuf>` | Working directory for tool execution; `None` disables tool calling |
-| `sandbox_mode` | `SandboxMode` | Sandbox level passed to `ToolExecutor` |
-
 ### Constructor
 
 ```rust
-pub fn from_config(base_url: String, model: String, workspace_path: Option<PathBuf>, sandbox_mode: SandboxMode) -> Self
+pub fn from_config(base_url: String, model: String, workspace_path: Option<PathBuf>) -> Self
 ```
 
 ## Provider Trait Implementation

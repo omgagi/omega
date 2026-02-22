@@ -8,7 +8,6 @@ pub(super) async fn handle_status(
     store: &Store,
     uptime: &Instant,
     provider_name: &str,
-    sandbox_mode: &str,
     lang: &str,
 ) -> String {
     let elapsed = uptime.elapsed();
@@ -26,12 +25,10 @@ pub(super) async fn handle_status(
         "{}\n\
          {} {hours}h {minutes}m {secs}s\n\
          {} {provider_name}\n\
-         {} {sandbox_mode}\n\
          {} {db_size}",
         i18n::t("status_header", lang),
         i18n::t("uptime", lang),
         i18n::t("provider", lang),
-        i18n::t("sandbox", lang),
         i18n::t("database", lang),
     )
 }

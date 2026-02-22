@@ -99,7 +99,7 @@ Each is an `Option` inside `ProviderConfig`, so they only appear in the config f
 ### Other sections
 
 - **`MemoryConfig`** -- backend type (`"sqlite"`), database path, max context window size
-- **`SandboxConfig`** -- sandbox toggle, command allowlist, path blocklist, execution time/output limits
+- **Filesystem protection** -- always-on via `omega_sandbox` crate (blocklist approach, no config needed)
 - **`AuthConfig`** -- global auth toggle and the message shown to unauthorized users
 
 ---

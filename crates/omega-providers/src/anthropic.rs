@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use omega_core::{
-    config::SandboxMode,
     context::Context,
     error::OmegaError,
     message::{MessageMetadata, OutgoingMessage},
@@ -30,7 +29,6 @@ pub struct AnthropicProvider {
     api_key: String,
     model: String,
     workspace_path: Option<PathBuf>,
-    sandbox_mode: SandboxMode,
 }
 
 impl AnthropicProvider {
@@ -39,14 +37,12 @@ impl AnthropicProvider {
         api_key: String,
         model: String,
         workspace_path: Option<PathBuf>,
-        sandbox_mode: SandboxMode,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
             api_key,
             model,
             workspace_path,
-            sandbox_mode,
         }
     }
 }
@@ -172,7 +168,7 @@ impl Provider for AnthropicProvider {
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
-                let mut executor = ToolExecutor::new(ws.clone(), self.sandbox_mode);
+                let mut executor = ToolExecutor::new(ws.clone());
                 executor.connect_mcp_servers(&context.mcp_servers).await;
 
                 let result = self
@@ -463,7 +459,6 @@ mod tests {
             "sk-ant-test".into(),
             "claude-sonnet-4-20250514".into(),
             None,
-            SandboxMode::Rwx,
         );
         assert_eq!(p.name(), "anthropic");
         assert!(p.requires_api_key());

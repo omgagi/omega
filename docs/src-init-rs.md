@@ -67,7 +67,7 @@ OMEGA_TELEGRAM_TOKEN="123:ABC" OMEGA_ALLOWED_USERS="842277204" omega init
 **Full deployment with all options:**
 ```bash
 omega init --telegram-token "123:ABC" --allowed-users "842277204" \
-  --claude-setup-token "..." --whisper-key "sk-..." --sandbox rx \
+  --claude-setup-token "..." --whisper-key "sk-..." \
   --google-credentials ~/client_secret.json --google-email user@gmail.com
 ```
 
@@ -79,13 +79,12 @@ omega init --telegram-token "123:ABC" --allowed-users "842277204" \
 | `--allowed-users` | `OMEGA_ALLOWED_USERS` | — | Comma-separated Telegram user IDs |
 | `--claude-setup-token` | `OMEGA_CLAUDE_SETUP_TOKEN` | — | Anthropic setup token for headless Claude CLI auth |
 | `--whisper-key` | `OMEGA_WHISPER_KEY` | — | OpenAI API key for Whisper voice transcription |
-| `--sandbox` | `OMEGA_SANDBOX` | `sandbox` | Sandbox mode: `sandbox`, `rx`, or `rwx` |
 | `--google-credentials` | `OMEGA_GOOGLE_CREDENTIALS` | — | Path to Google OAuth `client_secret.json` |
 | `--google-email` | `OMEGA_GOOGLE_EMAIL` | — | Gmail address for Google Workspace |
 
 ### Non-Interactive Flow Steps
 
-1. **Parse arguments** -- Validate `--allowed-users` (comma-separated integers) and `--sandbox` (must be `sandbox`, `rx`, or `rwx`)
+1. **Parse arguments** -- Validate `--allowed-users` (comma-separated integers)
 2. **Create data directory** -- `~/.omega/` created if missing
 3. **Validate Claude CLI** -- Same check as interactive mode (`claude --version`)
 4. **Apply setup token** -- If `--claude-setup-token` provided, runs `claude setup-token <token>`
@@ -95,7 +94,6 @@ omega init --telegram-token "123:ABC" --allowed-users "842277204" \
 
 ### Error Handling
 - Invalid `--allowed-users` (non-numeric values) causes immediate failure with a descriptive error
-- Invalid `--sandbox` mode causes immediate failure listing valid options
 - Missing Claude CLI is fatal (same as interactive mode)
 - Google credential failures are non-fatal (warning logged, deployment continues)
 
@@ -543,37 +541,9 @@ Even if verification is ambiguous, the wizard still records the email in the con
 
 ---
 
-### Step 8: Sandbox Mode Selection (< 10 seconds)
+### Step 8: Generate Configuration File (< 1 second)
 
-**What the User Sees:**
-```
-◆  Sandbox mode
-│  ● Sandbox (Recommended) — Workspace only — no host filesystem access
-│  ○ Read-only — Read & execute on host, writes only in workspace
-│  ○ Full access — Unrestricted host access (power users)
-```
-
-**What's Happening:**
-The wizard uses `cliclack::select()` to let the user choose the security boundary for Claude Code CLI execution. The selected mode controls how far the AI can reach beyond its workspace directory (`~/.omega/workspace/`).
-
-**Three Modes:**
-
-| Mode | Config Value | Behavior |
-|------|-------------|----------|
-| **Sandbox** | `sandbox` | AI can only read/write inside `~/.omega/workspace/`. Default, safest. |
-| **Read-only** | `rx` | AI can read/execute anywhere on host, but only write inside workspace. |
-| **Full access** | `rwx` | AI has unrestricted filesystem access. For power users only. |
-
-**Why This Matters:**
-The sandbox mode is a key security decision. Most users should keep the default `sandbox` mode. The `rx` mode is useful when you want the AI to inspect your system but not modify files outside its workspace. The `rwx` mode removes all restrictions — only for users who understand the implications.
-
-**User Action:** Select one of the three options using arrow keys and Enter.
-
-**Time:** < 10 seconds
-
----
-
-### Step 9: Generate Configuration File (< 1 second)
+> **Note:** Sandbox mode selection has been removed. Filesystem protection is now always-on via `omega_sandbox`'s blocklist approach -- no configuration needed.
 
 > **Note:** Step numbering continues from Step 7 (Google Workspace). Steps 8-10 are the final wizard phases.
 
@@ -623,9 +593,6 @@ backend = "sqlite"
 db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
-[sandbox]
-mode = "sandbox"
-
 [google]
 account = "you@gmail.com"
 ```
@@ -641,7 +608,6 @@ account = "you@gmail.com"
 | `[channel.telegram]` | Telegram integration (token, allowed users) |
 | `[channel.whatsapp]` | WhatsApp integration (enabled/disabled, allowed users) |
 | `[memory]` | Conversation storage (SQLite database settings) |
-| `[sandbox]` | Workspace isolation mode (sandbox/rx/rwx) |
 | `[google]` | Google Workspace account (only present if configured) |
 
 **Config Generation Logic:**
@@ -877,10 +843,9 @@ User runs: omega init
 6. User ID collected (if token provided)
 7. WhatsApp pairing via Yes/No toggle (or skipped)
 8. Google Workspace setup (if gog installed, or skipped)
-9. Sandbox mode selection (sandbox/rx/rwx)
-10. config.toml generated
-11. System service install offer (or skipped)
-12. Next steps + success outro
+9. config.toml generated
+10. System service install offer (or skipped)
+11. Next steps + success outro
        |
 [WIZARD ENDS]
        |

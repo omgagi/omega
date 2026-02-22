@@ -105,7 +105,6 @@ pub struct CommandContext<'a> {
     pub provider_name: &'a str,
     pub skills: &'a [omega_skills::Skill],
     pub projects: &'a [omega_skills::Project],
-    pub sandbox_mode: &'a str,
     pub heartbeat_enabled: bool,
     pub heartbeat_interval_mins: u64,
 }
@@ -121,7 +120,6 @@ pub struct CommandContext<'a> {
 | `provider_name` | Active AI provider name (e.g., "Claude Code CLI") |
 | `skills` | Slice of loaded skill definitions (for `/skills` command) |
 | `projects` | Slice of loaded project definitions (for `/projects` and `/project` commands) |
-| `sandbox_mode` | Display name of the active sandbox mode (e.g., `"sandbox"`, `"rx"`, `"rwx"`). Shown in `/status` output. |
 | `heartbeat_enabled` | Whether the heartbeat background loop is active (for `/heartbeat` command) |
 | `heartbeat_interval_mins` | Current heartbeat interval in minutes (for `/heartbeat` command) |
 
@@ -161,7 +159,7 @@ async fn resolve_lang(store: &Store, sender_id: &str) -> String
 
 ## Individual Command Handlers
 
-### /status — `handle_status(store, uptime, provider_name, sandbox_mode, lang)`
+### /status — `handle_status(store, uptime, provider_name, lang)`
 
 **Location:** Lines 52–70
 
@@ -169,8 +167,7 @@ async fn resolve_lang(store: &Store, sender_id: &str) -> String
 - Calculates elapsed time since `uptime` in hours, minutes, seconds
 - Queries `store.db_size()` for database file size
 - Formats size using `format_bytes()`
-- Includes the active sandbox mode in the output
-- Returns multi-line response with four fields
+- Returns multi-line response with provider name, uptime, and database size
 
 **Response Format:**
 ```

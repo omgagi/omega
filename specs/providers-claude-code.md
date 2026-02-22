@@ -34,9 +34,9 @@ Public struct. The provider that wraps the Claude Code CLI. Session continuity i
 | Field | Type | Visibility | Description |
 |-------|------|------------|-------------|
 | `max_turns` | `u32` | Private | Maximum number of agentic turns the CLI is allowed per single invocation. Default: `10`. |
-| `allowed_tools` | `Vec<String>` | Private | List of tool names the CLI is permitted to use. Default: `[]` (empty = full tool access, `--dangerously-skip-permissions` passed to bypass all permission prompts since the OS-level sandbox provides the real security boundary). When non-empty, each tool is passed as a separate `--allowedTools` argument. |
+| `allowed_tools` | `Vec<String>` | Private | List of tool names the CLI is permitted to use. Default: `[]` (empty = full tool access, `--dangerously-skip-permissions` passed to bypass all permission prompts since the OS-level system protection provides the real security boundary). When non-empty, each tool is passed as a separate `--allowedTools` argument. |
 | `timeout` | `Duration` | Private | Maximum time to wait for the CLI subprocess to complete. Constructed from `Duration::from_secs(timeout_secs)`. Default: `3600` seconds (60 minutes). |
-| `working_dir` | `Option<PathBuf>` | Private | Optional working directory for the CLI subprocess. When `Some`, sets the `current_dir` on the subprocess `Command`. Used by sandbox mode to confine the provider to a workspace directory (e.g., `~/.omega/workspace/`). Default: `None`. |
+| `working_dir` | `Option<PathBuf>` | Private | Optional working directory for the CLI subprocess. When `Some`, sets the `current_dir` on the subprocess `Command`. Always set to `~/.omega/workspace/` in normal operation. Default: `None`. |
 | `max_resume_attempts` | `u32` | Private | Maximum number of auto-resume attempts when the CLI hits `error_max_turns` with a `session_id`. Default: `5`. |
 | `model` | `String` | Private | Default model to pass to the CLI via `--model`. Can be overridden per-request by `Context.model`. Default: `"claude-sonnet-4-6"`. |
 
@@ -212,7 +212,7 @@ The core method. Invokes the Claude Code CLI as a subprocess and parses the resu
       - Otherwise: returns `"(No response text returned)"`.
     - Extracts `model` from the response.
 
-10b. **Auto-resume loop:** When `subtype == "error_max_turns"` and `session_id` is present in the response, the provider automatically retries using `run_cli_with_session()`, passing the same prompt and the returned `session_id` via `--session-id`. This continues up to `max_resume_attempts` times. If the resumed call also hits `error_max_turns` with a `session_id`, it loops again. The loop breaks when the response has `subtype != "error_max_turns"`, when no `session_id` is returned, or when the attempt limit is reached. The final accumulated result text is used as the response.
+10b. **Auto-resume loop:** When `subtype == "error_max_turns"` and `session_id` is present in the response, the provider automatically retries using `run_cli_with_session()`, passing the same prompt and the returned `session_id` via `--resume`. Each attempt waits with exponential backoff (2s, 4s, 8s, ...) to give the CLI session time to release. On error, the loop continues to the next attempt (with backoff) instead of breaking — transient errors like session-not-yet-released are tolerated. This continues up to `max_resume_attempts` times. If the resumed call also hits `error_max_turns` with a `session_id`, it loops again. The loop breaks when the response has `subtype != "error_max_turns"`, when no `session_id` is returned, or when the attempt limit is reached. The final accumulated result text is used as the response.
 
 11. **JSON parse failure fallback:** If serde fails, logs a warning and uses the raw stdout (trimmed) as the response text. `model` is set to `None`.
 
@@ -248,12 +248,12 @@ Private helper that assembles and executes the `claude` CLI subprocess. Called b
 
 Permission logic (3 branches):
 1. **Tools disabled** (`context_disabled_tools = true`): passes `--allowedTools ""` to disable all tool use (used by classification calls).
-2. **Full access** (`allowed_tools` empty, regardless of MCP tools): passes `--dangerously-skip-permissions` to bypass all permission prompts in non-interactive `-p` mode. MCP tool patterns are still appended via `--allowedTools` so the CLI discovers them. The OS-level sandbox (Seatbelt/Landlock) provides the real security boundary.
+2. **Full access** (`allowed_tools` empty, regardless of MCP tools): passes `--dangerously-skip-permissions` to bypass all permission prompts in non-interactive `-p` mode. MCP tool patterns are still appended via `--allowedTools` so the CLI discovers them. The OS-level system protection (Seatbelt/Landlock blocklist) provides the real security boundary.
 3. **Explicit whitelist** (`allowed_tools` non-empty): passes `--allowedTools` for each tool plus any MCP patterns. Only these tools are pre-approved.
 
 ### `run_cli_with_session(prompt, extra_allowed_tools, session_id, model)` (private, async)
 
-Private helper that assembles and executes the `claude` CLI subprocess with an explicit `--session-id` argument. Called by the auto-resume loop in `complete()` when a previous invocation returned `error_max_turns` with a `session_id`. Behaves identically to `run_cli()` except it always includes `--session-id <session_id>` in the CLI arguments. Takes an additional `model: &str` parameter; when non-empty, passes `--model <value>` to the CLI. Uses the same permission logic as `run_cli()`: full access (`allowed_tools` empty) → `--dangerously-skip-permissions`; explicit whitelist → `--allowedTools` per tool.
+Private helper that assembles and executes the `claude` CLI subprocess with an explicit `--resume` argument. Called by the auto-resume loop in `complete()` when a previous invocation returned `error_max_turns` with a `session_id`. Behaves identically to `run_cli()` except it always includes `--resume <session_id>` in the CLI arguments. Takes an additional `model: &str` parameter; when non-empty, passes `--model <value>` to the CLI. Uses the same permission logic as `run_cli()`: full access (`allowed_tools` empty) → `--dangerously-skip-permissions`; explicit whitelist → `--allowedTools` per tool.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -280,7 +280,7 @@ The subprocess is invoked with the following arguments:
 
 **Working directory:**
 
-When `working_dir` is `Some(path)`, the subprocess is started with `current_dir` set to the given path. This confines the CLI to the workspace directory (e.g., `~/.omega/workspace/`) when sandbox mode is active.
+When `working_dir` is `Some(path)`, the subprocess is started with `current_dir` set to the given path. This sets the CLI's working directory to `~/.omega/workspace/`.
 
 ---
 
@@ -322,7 +322,7 @@ stdout from CLI
 | CLI binary not found / spawn failure | `OmegaError::Provider` | `"failed to run claude CLI: {io_error}"` |
 | CLI exits with non-zero status | `OmegaError::Provider` | `"claude CLI exited with {status}: {stderr}"` |
 | JSON parse failure | No error (graceful degradation) | Warning logged, raw stdout used |
-| `error_max_turns` subtype with `session_id` | No error (auto-resume) | Warning logged with `effective_limit` (from caller) and `configured` (from `self.max_turns`), auto-resume loop retries with `--session-id` up to `max_resume_attempts` times |
+| `error_max_turns` subtype with `session_id` | No error (auto-resume) | Warning logged with `effective_limit` (from caller) and `configured` (from `self.max_turns`), auto-resume loop retries with `--resume` up to `max_resume_attempts` times, with exponential backoff (2s, 4s, 8s, ...) between attempts |
 | `error_max_turns` subtype without `session_id` | No error (graceful degradation) | Warning logged with effective vs configured limits, result extracted if available |
 | Empty result + `is_error == true` | No error (fallback text) | `"Error from Claude: {subtype}"` |
 | Empty result + no error | No error (fallback text) | `"(No response text returned)"` |

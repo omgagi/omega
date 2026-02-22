@@ -103,7 +103,6 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             "Russian" => "\u{041f}\u{0440}\u{043e}\u{0432}\u{0430}\u{0439}\u{0434}\u{0435}\u{0440}:",
             _ => "Provider:",
         },
-        "sandbox" => "Sandbox:",
         "database" => match lang {
             "Spanish" => "Base de datos:",
             "Portuguese" => "Banco de dados:",

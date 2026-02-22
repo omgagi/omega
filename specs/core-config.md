@@ -37,7 +37,6 @@ Config
   |     +-- telegram: Option<TelegramConfig>
   |     +-- whatsapp: Option<WhatsAppConfig>
   +-- memory: MemoryConfig
-  +-- sandbox: SandboxConfig
   +-- heartbeat: HeartbeatConfig
   +-- scheduler: SchedulerConfig
 ```
@@ -55,7 +54,6 @@ Config
 | `provider` | `ProviderConfig` | `#[serde(default)]` | `ProviderConfig::default()` |
 | `channel` | `ChannelConfig` | `#[serde(default)]` | `ChannelConfig::default()` |
 | `memory` | `MemoryConfig` | `#[serde(default)]` | `MemoryConfig::default()` |
-| `sandbox` | `SandboxConfig` | `#[serde(default)]` | `SandboxConfig::default()` |
 | `heartbeat` | `HeartbeatConfig` | `#[serde(default)]` | `HeartbeatConfig::default()` |
 | `scheduler` | `SchedulerConfig` | `#[serde(default)]` | `SchedulerConfig::default()` |
 
@@ -210,46 +208,6 @@ Derives: `Debug, Clone, Serialize, Deserialize`
 
 Derives: `Debug, Clone, Serialize, Deserialize`
 Implements: `Default` (manual).
-
-### `SandboxMode` (enum)
-
-Controls how the AI provider interacts with the filesystem and system resources. Used as the `mode` field of `SandboxConfig`.
-
-```rust
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SandboxMode {
-    #[default]
-    Sandbox,
-    Rx,
-    Rwx,
-}
-```
-
-| Variant | Serialized Value | Description |
-|---------|-----------------|-------------|
-| `Sandbox` | `"sandbox"` | Default. Full sandbox isolation. Provider receives system prompt instructions restricting it to the `~/.omega/workspace/` directory. |
-| `Rx` | `"rx"` | Read-only mode. Provider receives system prompt instructions allowing read access but forbidding writes, deletes, and command execution. |
-| `Rwx` | `"rwx"` | Unrestricted mode. No sandbox prompt constraint is injected. Provider operates without filesystem restrictions. |
-
-Derives: `Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize`
-
-The `#[serde(rename_all = "lowercase")]` attribute ensures that the TOML values are lowercase strings (`"sandbox"`, `"rx"`, `"rwx"`).
-
-#### `SandboxMode` Methods
-
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `prompt_constraint` | `fn prompt_constraint(&self, workspace_path: &str) -> Option<String>` | Returns the system prompt instructions for the mode. `Sandbox` returns SANDBOX mode text referencing the workspace path. `Rx` returns READ-ONLY mode text. `Rwx` returns `None` (no constraint). |
-| `display_name` | `fn display_name(&self) -> &str` | Returns the human-readable name: `"sandbox"`, `"rx"`, or `"rwx"`. |
-
-### `SandboxConfig`
-
-| Field | Type | `#[serde]` | Default Value |
-|-------|------|------------|---------------|
-| `mode` | `SandboxMode` | `#[serde(default)]` | `SandboxMode::Sandbox` |
-
-Derives: `Debug, Clone, Default, Serialize, Deserialize`
 
 ### `HeartbeatConfig`
 
@@ -422,7 +380,6 @@ Channel and provider sub-configs use `Option<T>` rather than `#[serde(default)]`
 | `[channel.telegram]` | `Config.channel.telegram` |
 | `[channel.whatsapp]` | `Config.channel.whatsapp` |
 | `[memory]` | `Config.memory` |
-| `[sandbox]` | `Config.sandbox` |
 | `[heartbeat]` | `Config.heartbeat` |
 | `[scheduler]` | `Config.scheduler` |
 
@@ -521,32 +478,3 @@ Verifies that `Prompts::default()` provides non-empty hardcoded values for `iden
 
 Verifies that `install_bundled_prompts()` deploys `SYSTEM_PROMPT.md` and `WELCOME.toml` to a temporary directory, that the deployed files contain expected markers (`## System`, `[messages]`, `English`), and that a second invocation does not overwrite files that were modified by the user.
 
-### `test_sandbox_mode_default`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `SandboxMode::default()` is `SandboxMode::Sandbox`.
-
-### `test_sandbox_mode_display_names`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `display_name()` returns `"sandbox"`, `"rx"`, and `"rwx"` for each respective variant.
-
-### `test_sandbox_mode_prompt_constraint`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `prompt_constraint()` returns `Some(...)` with workspace path for `Sandbox`, `Some(...)` for `Rx`, and `None` for `Rwx`.
-
-### `test_sandbox_config_from_toml`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that a TOML config with `mode = "rx"` is correctly deserialized into `SandboxConfig { mode: SandboxMode::Rx }`.
-
-### `test_sandbox_config_default_when_missing`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that when the `[sandbox]` section is absent from TOML, the default `SandboxConfig` has `mode: SandboxMode::Sandbox`.

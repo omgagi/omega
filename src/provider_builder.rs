@@ -15,7 +15,6 @@ pub fn build_provider(
     workspace_path: &std::path::Path,
 ) -> anyhow::Result<(Box<dyn Provider>, String, String)> {
     let ws = Some(workspace_path.to_path_buf());
-    let sandbox = cfg.sandbox.mode;
 
     match cfg.provider.default.as_str() {
         "claude-code" => {
@@ -33,7 +32,6 @@ pub fn build_provider(
                     cc.allowed_tools,
                     cc.timeout_secs,
                     ws,
-                    sandbox,
                     cc.max_resume_attempts,
                     cc.model,
                 )),
@@ -53,7 +51,6 @@ pub fn build_provider(
                     oc.base_url.clone(),
                     oc.model.clone(),
                     ws,
-                    sandbox,
                 )),
                 m.clone(),
                 m,
@@ -72,7 +69,6 @@ pub fn build_provider(
                     oc.api_key.clone(),
                     oc.model.clone(),
                     ws,
-                    sandbox,
                 )),
                 m.clone(),
                 m,
@@ -89,7 +85,6 @@ pub fn build_provider(
                     ac.api_key.clone(),
                     ac.model.clone(),
                     ws,
-                    sandbox,
                 )),
                 m.clone(),
                 m,
@@ -106,7 +101,6 @@ pub fn build_provider(
                     oc.api_key.clone(),
                     oc.model.clone(),
                     ws,
-                    sandbox,
                 )),
                 m.clone(),
                 m,
@@ -124,7 +118,6 @@ pub fn build_provider(
                     gc.api_key.clone(),
                     gc.model.clone(),
                     ws,
-                    sandbox,
                 )),
                 m.clone(),
                 m,

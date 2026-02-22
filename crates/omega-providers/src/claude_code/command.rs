@@ -87,7 +87,7 @@ impl ClaudeCodeProvider {
             .arg("json")
             .arg("--max-turns")
             .arg(max_turns.to_string())
-            .arg("--session-id")
+            .arg("--resume")
             .arg(session_id);
 
         // Model override.
@@ -111,18 +111,18 @@ impl ClaudeCodeProvider {
             }
         }
 
-        debug!("executing: claude -p <resume> --session-id {session_id}");
+        debug!("executing: claude -p <resume> --resume {session_id}");
         self.execute_with_timeout(cmd, "claude CLI resume").await
     }
 
-    /// Build the base `Command` with working directory and sandbox settings.
+    /// Build the base `Command` with working directory and system protection.
     fn base_command(&self) -> Command {
         let mut cmd = match self.working_dir {
             Some(ref dir) => {
-                // Sandbox protects the data dir (parent of workspace) so
-                // skills, projects, etc. are writable — not just workspace.
+                // Protection blocks writes to data dir (parent of workspace)
+                // so memory.db is safe, but skills, projects, etc. are writable.
                 let data_dir = dir.parent().unwrap_or(dir);
-                let mut c = omega_sandbox::sandboxed_command("claude", self.sandbox_mode, data_dir);
+                let mut c = omega_sandbox::protected_command("claude", data_dir);
                 c.current_dir(dir);
                 c
             }

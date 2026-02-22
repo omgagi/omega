@@ -29,7 +29,7 @@ Database: 1.4 MB
 - Check if Omega is responsive and healthy
 - Monitor database growth over time
 - Verify which AI provider is configured
-- Confirm the active sandbox mode (sandbox, rx, or rwx)
+- Confirm that filesystem protection is active
 
 ---
 

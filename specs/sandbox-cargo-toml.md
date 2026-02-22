@@ -11,7 +11,7 @@
 
 ## Purpose
 
-Defines the `omega-sandbox` crate, which provides OS-level filesystem enforcement for the AI provider subprocess. The crate wraps provider commands with platform-native write restrictions using Apple Seatbelt (macOS) and Landlock LSM (Linux).
+Defines the `omega-sandbox` crate, which provides OS-level system protection for AI provider subprocesses. The crate uses a blocklist approach to block writes to dangerous system directories and OMEGA's core database, using Apple Seatbelt (macOS) and Landlock LSM (Linux).
 
 ## Package Metadata
 
@@ -32,21 +32,13 @@ The crate uses `workspace = true` for all core dependencies and all package meta
 
 ## Dependencies
 
-### Internal Crate Dependencies
-
-| Dependency   | Workspace Ref          | Resolved Path           |
-|--------------|------------------------|-------------------------|
-| `omega-core` | `{ workspace = true }` | `crates/omega-core`     |
-
 ### External Dependencies
 
 | Dependency    | Workspace Version | Features Enabled | Purpose                           |
 |---------------|-------------------|------------------|-----------------------------------|
 | `tokio`       | `1`               | `full`           | Async runtime, `tokio::process::Command` |
-| `serde`       | `1`               | `derive`         | Serialization of configuration types |
-| `tracing`     | `0.1`             | (none)           | Structured logging for sandbox events |
-| `thiserror`   | `2`               | (none)           | Typed error definitions |
-| `anyhow`      | `1`               | (none)           | Ergonomic error propagation |
+| `tracing`     | `0.1`             | (none)           | Structured logging for fallback warnings and sandbox events |
+| `anyhow`      | `1`               | (none)           | Ergonomic error propagation in Landlock setup |
 
 ### Platform-Specific Dependencies
 
@@ -58,7 +50,8 @@ Note: The `landlock` dependency uses a direct version declaration (not workspace
 
 ### Dependency Count
 
-- **Direct dependencies:** 6 (1 internal + 5 external)
+- **Direct dependencies:** 3 (all external)
+- **Internal crate dependencies:** 0
 - **Platform-specific dependencies:** 1 (landlock, Linux only)
 - **Dev dependencies:** 0
 - **Build dependencies:** 0
@@ -67,11 +60,8 @@ Note: The `landlock` dependency uses a direct version declaration (not workspace
 
 ```
 omega-sandbox
-  +-- omega-core (internal, workspace path)
   +-- tokio 1 [full]
-  +-- serde 1 [derive]
   +-- tracing 0.1
-  +-- thiserror 2
   +-- anyhow 1
   +-- [linux] landlock 0.4
 ```
@@ -105,7 +95,9 @@ The workspace root `Cargo.toml` registers `omega-sandbox` in two places:
 
 ## Notes
 
+- The crate has **no internal crate dependencies** — it does not depend on `omega-core` or any other workspace crate. This makes it fully standalone.
 - The macOS Seatbelt implementation uses `sandbox-exec` which is a built-in macOS binary (`/usr/bin/sandbox-exec`). No additional macOS-specific crate dependency is needed.
 - The `landlock` crate is Linux-only and declared under `[target.'cfg(target_os = "linux")'.dependencies]`.
 - The crate does **not** declare any `[[bin]]`, `[[example]]`, or `[[bench]]` targets. It is a pure library crate.
 - No `[dev-dependencies]` or `[build-dependencies]` sections are present.
+- Previous versions depended on `omega-core` for `SandboxMode`, `serde`, and `thiserror`. These were removed when the crate switched from an allowlist (3 modes) to a blocklist (always-on) approach.

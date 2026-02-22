@@ -35,7 +35,6 @@ impl Gateway {
         channels: HashMap<String, Arc<dyn Channel>>,
         config: HeartbeatConfig,
         prompts: Prompts,
-        sandbox_prompt: Option<String>,
         memory: Store,
         interval: Arc<AtomicU64>,
         model_complex: String,
@@ -74,7 +73,7 @@ impl Gateway {
 
             // Build enrichment and system prompt once (shared across all groups).
             let enrichment = build_enrichment(&memory).await;
-            let system = build_system_prompt(&prompts, &sandbox_prompt);
+            let system = build_system_prompt(&prompts);
             let sender_id = &config.reply_target;
             let channel_name = &config.channel;
 
@@ -432,16 +431,12 @@ async fn build_enrichment(memory: &Store) -> String {
     enrichment
 }
 
-/// Build the heartbeat system prompt (Identity + Soul + System + sandbox + time).
-fn build_system_prompt(prompts: &Prompts, sandbox_prompt: &Option<String>) -> String {
+/// Build the heartbeat system prompt (Identity + Soul + System + time).
+fn build_system_prompt(prompts: &Prompts) -> String {
     let mut system = format!(
         "{}\n\n{}\n\n{}",
         prompts.identity, prompts.soul, prompts.system
     );
-    if let Some(ref sp) = sandbox_prompt {
-        system.push_str("\n\n");
-        system.push_str(sp);
-    }
     system.push_str(&format!(
         "\n\nCurrent time: {}",
         chrono::Local::now().format("%Y-%m-%d %H:%M %Z")

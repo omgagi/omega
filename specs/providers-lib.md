@@ -49,12 +49,12 @@ Each module exports a provider struct with `from_config()` constructor and `Prov
 
 | Module | Struct | `from_config()` Params |
 |--------|--------|----------------------|
-| `claude_code` | `ClaudeCodeProvider` | max_turns, allowed_tools, timeout_secs, working_dir, sandbox_mode, max_resume_attempts, model |
-| `ollama` | `OllamaProvider` | base_url, model, workspace_path, sandbox_mode |
-| `openai` | `OpenAiProvider` | base_url, api_key, model, workspace_path, sandbox_mode |
-| `anthropic` | `AnthropicProvider` | api_key, model, workspace_path, sandbox_mode |
-| `openrouter` | `OpenRouterProvider` | api_key, model, workspace_path, sandbox_mode |
-| `gemini` | `GeminiProvider` | api_key, model, workspace_path, sandbox_mode |
+| `claude_code` | `ClaudeCodeProvider` | max_turns, allowed_tools, timeout_secs, working_dir, max_resume_attempts, model |
+| `ollama` | `OllamaProvider` | base_url, model, workspace_path |
+| `openai` | `OpenAiProvider` | base_url, api_key, model, workspace_path |
+| `anthropic` | `AnthropicProvider` | api_key, model, workspace_path |
+| `openrouter` | `OpenRouterProvider` | api_key, model, workspace_path |
+| `gemini` | `GeminiProvider` | api_key, model, workspace_path |
 
 Additionally, `openai` exports `pub(crate)` types and functions reused by `openrouter` and the shared agentic loop:
 - `ChatMessage`, `ChatCompletionRequest`, `ChatCompletionResponse`, `ChatChoice`, `build_openai_messages()`
@@ -68,7 +68,7 @@ Declared in `Cargo.toml` (all workspace-level):
 | Dependency | Usage |
 |------------|-------|
 | `omega-core` | `Provider` trait, `Context`, `ApiMessage`, `OmegaError`, `OutgoingMessage`, `MessageMetadata` |
-| `omega-sandbox` | `sandboxed_command()` for Claude Code CLI sandbox enforcement |
+| `omega-sandbox` | `protected_command()` for Claude Code CLI filesystem protection |
 | `tokio` | Async runtime, `tokio::process::Command` for Claude Code subprocess |
 | `serde` / `serde_json` | Serialize/deserialize request and response JSON |
 | `tracing` | `debug!` and `warn!` log macros |
@@ -83,7 +83,7 @@ All HTTP-based providers follow the same pattern:
 1. `let (system, messages) = context.to_api_messages()`
 2. `let effective_model = context.model.as_deref().unwrap_or(&self.model)`
 3. Check `allowed_tools` / `workspace_path` — determine whether the agentic tool-calling path is active
-4. If `workspace_path` is set, create a `ToolExecutor` scoped to that directory and the configured `sandbox_mode`
+4. If `workspace_path` is set, create a `ToolExecutor` scoped to that directory
 5. If tools are available, enter the provider-specific agentic loop (or call `openai_agentic_complete()` for OpenAI/OpenRouter), iterating until the model stops requesting tool calls or the max-iterations guard fires
 6. Otherwise (no workspace or no tools), fall back to the plain single-shot POST → parse response → return
 7. Return `OutgoingMessage { text, metadata: { provider_used, tokens_used, processing_time_ms, model } }`

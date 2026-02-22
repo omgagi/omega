@@ -21,12 +21,10 @@ Calls the Anthropic Messages API directly (not via Claude Code CLI). Non-streami
 | `api_key` | `String` | Anthropic API key |
 | `model` | `String` | Model ID (default: `claude-sonnet-4-20250514`) |
 | `workspace_path` | `Option<PathBuf>` | Working directory for tool execution; `None` disables tool calling |
-| `sandbox_mode` | `SandboxMode` | Sandbox level passed to `ToolExecutor` |
-
 ### Constructor
 
 ```rust
-pub fn from_config(api_key: String, model: String, workspace_path: Option<PathBuf>, sandbox_mode: SandboxMode) -> Self
+pub fn from_config(api_key: String, model: String, workspace_path: Option<PathBuf>) -> Self
 ```
 
 ## Provider Trait Implementation

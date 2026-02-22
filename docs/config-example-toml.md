@@ -286,28 +286,11 @@ max_context_messages = 50
 
 For a new installation, leave these at defaults.
 
-## Step 7: Configure the Sandbox
+## Step 7: Filesystem Protection (Always-On)
 
-The `[sandbox]` section controls how much host access the AI provider has.
+Filesystem protection is automatic and requires no configuration. The `omega_sandbox` crate uses an OS-level blocklist approach (Seatbelt on macOS, Landlock on Linux) to block writes to dangerous system directories and OMEGA's core database. The workspace directory `~/.omega/workspace/` and `/tmp` remain writable.
 
-```toml
-[sandbox]
-mode = "sandbox"   # "sandbox" | "rx" | "rwx"
-```
-
-**What this means:**
-- **`mode = "sandbox"`** (default): The AI is confined to `~/.omega/workspace/`. It cannot read, write, or execute anything outside that directory. This is the safest option.
-- **`mode = "rx"`**: The AI can read files and execute commands anywhere on the host, but it can only write files inside `~/.omega/workspace/`. Good for inspecting your system without risk of modification.
-- **`mode = "rwx"`**: Full host access. The AI can read, write, and execute anywhere. Only use this if you fully trust the AI provider.
-
-The workspace directory `~/.omega/workspace/` is created automatically on startup. The Claude Code CLI always runs with its working directory set to the workspace, regardless of mode.
-
-**When to change:**
-- **You want the AI to inspect system files:** Switch to `rx` mode.
-- **You want the AI to manage files on your system:** Switch to `rwx` mode.
-- **You want maximum isolation:** Keep the default `sandbox` mode.
-
-For now, keep the default.
+There is no `[sandbox]` config section -- protection is always active. The Claude Code CLI always runs with its working directory set to the workspace.
 
 ## Step 8: Configure the Scheduler (Task Queue)
 
@@ -457,8 +440,6 @@ backend = "sqlite"
 db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
-[sandbox]
-mode = "sandbox"
 ```
 
 ### Scenario 2: Personal Telegram Bot (Anthropic API)
@@ -491,8 +472,6 @@ backend = "sqlite"
 db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
-[sandbox]
-mode = "sandbox"
 ```
 
 ### Scenario 3: Multi-User Team (OpenRouter)
@@ -525,8 +504,6 @@ backend = "sqlite"
 db_path = "~/.omega/data/memory.db"
 max_context_messages = 75  # More context for complex discussions
 
-[sandbox]
-mode = "rwx"  # Team bot needs full host access for CI/CD tasks
 ```
 
 ## Troubleshooting
@@ -580,14 +557,7 @@ If auth is enabled, your user ID must be in `allowed_users`. Find it:
 
 ### "Cannot access files outside workspace"
 
-If the AI reports it cannot access files on your system, your sandbox mode may be too restrictive. Switch to a more permissive mode:
-
-```toml
-[sandbox]
-mode = "rx"    # Read and execute on host, write only in workspace
-# or
-mode = "rwx"   # Full host access
-```
+Filesystem protection is always-on via `omega_sandbox`'s blocklist approach. Writes to dangerous system directories and OMEGA's core database are blocked. If the AI reports it cannot write to a specific path, that path is likely in a protected location. The workspace (`~/.omega/workspace/`) and `/tmp` are always writable.
 
 ### "Database is locked"
 

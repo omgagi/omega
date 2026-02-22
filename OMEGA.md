@@ -2,7 +2,7 @@
 
 Omega is a personal AI agent that connects messaging platforms to AI providers. You message it on Telegram or WhatsApp, it thinks using Claude (or another AI), and replies — remembering your conversations, preferences, and scheduled tasks across sessions.
 
-But Omega is far more than a chat relay. It has its own native intelligence layer — background loops that monitor and summarize; a marker system that lets the AI trigger real-world side effects; autonomous model routing that picks the right brain for each task; autonomous skill improvement; a quantitative trading engine; and OS-level sandboxing. The AI provider is just one piece. Most of the magic happens in Rust, before and after the AI ever sees your message.
+But Omega is far more than a chat relay. It has its own native intelligence layer — background loops that monitor and summarize; a marker system that lets the AI trigger real-world side effects; autonomous model routing that picks the right brain for each task; autonomous skill improvement; a quantitative trading engine; and OS-level system protection. The AI provider is just one piece. Most of the magic happens in Rust, before and after the AI ever sees your message.
 
 This document explains how every piece fits together.
 
@@ -36,7 +36,7 @@ This document explains how every piece fits together.
 │                 │          │───> Memory (SQLite)                    │
 │                 │          │───> Audit Log                          │
 │                 │          │───> Skills & Projects                  │
-│                 │          │───> Sandbox (OS-level)                 │
+│                 │          │───> System Protection (OS-level)       │
 │                 │          │───> Quant Engine                       │
 │                 └──────────┘                                        │
 │                      │                                              │
@@ -65,7 +65,7 @@ Before diving into the architecture, here's the key distinction: Omega is **not*
 |---------|-------------|
 | **Autonomous model routing** | Every message gets a fast Sonnet classification (~90 tokens of context). Returns DIRECT (Sonnet handles it) or a numbered step list (Opus executes each step). The AI decides which model handles each message — no hardcoded rules. |
 | **Multi-step execution** | Step lists run sequentially with progress reporting after each step, per-step retries (3x), per-step marker processing, and a final summary. |
-| **Auto-resume** | When Claude Code hits its turn limit and returns a session_id, Omega automatically retries with `--session-id` up to 5 times, accumulating results across attempts. |
+| **Auto-resume** | When Claude Code hits its turn limit and returns a session_id, Omega automatically retries with `--resume` up to 5 times with exponential backoff (2s, 4s, 8s, ...), accumulating results across attempts. Transient errors are retried instead of aborting. |
 | **Per-sender serialization** | Concurrent messages from the same sender are buffered with a "Got it, I'll get to this next." ack, then processed in order. Different senders run fully concurrent. |
 | **Delayed status updates** | "Taking a moment..." after 15 seconds, "Still working..." every 2 minutes. Localized in 8 languages. If the provider responds within 15s, no status shown. |
 
@@ -166,7 +166,7 @@ You type a message on Telegram
     │     │            • Active project ROLE.md instructions    │
     │     │            • Platform hints (Telegram=markdown)     │
     │     │            • Group chat rules (if applicable)       │
-    │     │            • Sandbox constraint (workspace path)    │
+    │     │            • System protection (blocklist)           │
     │     │            • Heartbeat checklist awareness          │
     │     │            • Quant advisory signal (if enabled)     │
     │     │            (omega-memory/src/store.rs               │
@@ -192,8 +192,8 @@ You type a message on Telegram
     │ 12. PROVIDER ─── Send context to AI (async)              │
     │     │            (omega-providers :: complete)            │
     │     │                                                    │
-    │     ├── Sandbox wraps subprocess with OS-level write     │
-    │     │   restrictions (Seatbelt/Landlock)                 │
+    │     ├── System protection wraps subprocess (blocklist     │
+    │     │   via Seatbelt/Landlock)                           │
     │     ├── MCP servers written to settings.local.json       │
     │     ├── 15 seconds pass... "Taking a moment..."          │
     │     ├── 2 minutes pass... "Still working..."             │
@@ -286,9 +286,9 @@ Claude Code CLI is the default zero-config provider. It inherits the user's loca
 **Native provider features** (implemented in Rust, not by the AI):
 
 - **MCP server injection** — writes temporary `.claude/settings.local.json` with `mcpServers` config + `--allowedTools`, cleans up after
-- **Auto-resume** — on `error_max_turns` with `session_id`, retries with `--session-id` up to 5 times, accumulating results
+- **Auto-resume** — on `error_max_turns` with `session_id`, retries with `--resume` up to 5 times with exponential backoff (2s, 4s, 8s, ...), accumulating results
 - **Per-request model override** — Sonnet for classification, Opus for multi-step execution
-- **Sandbox integration** — wraps subprocess with `omega_sandbox::sandboxed_command()` for OS-level write restrictions
+- **System protection** — wraps subprocess with `omega_sandbox::protected_command()` for OS-level write restrictions (blocklist)
 - **Friendly error mapping** — raw provider errors are never shown to users
 
 ### omega-channels — Messaging Platforms
@@ -393,24 +393,21 @@ Projects are directories with instruction files that give Omega context about wh
 
 When you say `/project my-app`, those instructions are prepended to the system prompt — Omega now understands your project's architecture, conventions, and goals. Projects are **hot-reloaded from disk on every message** — no restart needed.
 
-### omega-sandbox — OS-Level Filesystem Enforcement
+### omega-sandbox — OS-Level System Protection
 
 **Files:** `crates/omega-sandbox/src/`
 
-Three-level workspace isolation with OS-level write enforcement:
+Always-on blocklist-based filesystem protection. No configuration, no modes — protection is always active.
 
-| Mode | Read | Write | Use Case |
-|------|------|-------|----------|
-| `sandbox` | Workspace only | Workspace only | Maximum isolation |
-| `rx` | Anywhere | Workspace only | Read the system, write to sandbox |
-| `rwx` | Anywhere | Anywhere | Unrestricted (trusted environments) |
+**Approach:** Allow everything by default, then block writes to dangerous system directories and `~/.omega/data/` (memory.db).
 
 **Enforcement:**
-- **macOS:** Seatbelt profiles via `sandbox-exec -p`. Denies `file-write*`, then allows: `~/.omega/`, `/private/tmp`, `/private/var/folders`, `~/.claude`, `~/.cargo`.
-- **Linux:** Landlock LSM via `pre_exec` hook. Allows read+execute on `/`, full access to allowed dirs. Requires kernel 5.13+.
-- **Fallback:** Graceful degradation to prompt-only enforcement on unsupported platforms.
+- **macOS:** Seatbelt profiles via `sandbox-exec -p`. `(allow default)` + `(deny file-write* ...)` for `/System`, `/bin`, `/sbin`, `/usr/bin`, `/usr/sbin`, `/usr/lib`, `/usr/libexec`, `/private/etc`, `/Library`, and `{data_dir}/data`.
+- **Linux:** Landlock LSM via `pre_exec` hook. Read-only on `/` (system dirs), full access to `$HOME`, `/tmp`, `/var/tmp`, `/opt`, `/srv`, `/run`, `/media`, `/mnt`. Memory.db protection via code-level `is_write_blocked()`.
+- **Code-level:** `is_write_blocked(path, data_dir)` blocks writes to dangerous OS paths + `{data_dir}/data/`. Applied to HTTP provider tool operations (write/edit tools).
+- **Fallback:** Graceful degradation to code-level enforcement on unsupported platforms.
 
-The provider subprocess is always started with `current_dir` set to `~/.omega/workspace/`, regardless of mode.
+The provider subprocess is always started with `current_dir` set to `~/.omega/workspace/`. Domain-specific databases go in `~/.omega/stores/` (writable), separate from protected `~/.omega/data/`.
 
 ### omega-quant — Quantitative Trading Engine
 
@@ -570,7 +567,7 @@ The system prompt is not hardcoded. It lives at `~/.omega/SYSTEM_PROMPT.md` (aut
 - Current heartbeat checklist items
 - Pending scheduled tasks
 - Language instruction: "Always respond in Spanish"
-- Sandbox workspace path constraint
+- System protection (blocklist enforcement)
 - Quant advisory signal (if enabled)
 - Onboarding hints (graduated by fact count)
 
@@ -585,7 +582,7 @@ Commands are handled locally by `commands.rs :: handle()` — they never reach t
 | Command | What It Does |
 |---------|-------------|
 | `/help` | List available commands |
-| `/status` | Show uptime, provider, sandbox mode, DB size |
+| `/status` | Show uptime, provider, DB size |
 | `/memory` | Show conversation count, message count, fact count |
 | `/history` | Show last 5 conversation summaries |
 | `/facts` | List all known facts about the user |
@@ -601,7 +598,7 @@ Commands are handled locally by `commands.rs :: handle()` — they never reach t
 | `/whatsapp` | Start WhatsApp QR pairing |
 | `/quant` | Manage IBKR quant engine (enable/disable/symbol/portfolio/paper/live) |
 
-Commands use the `CommandContext` struct which bundles the store, channel info, sender, text, uptime, provider name, skills, projects, and sandbox mode into a single parameter.
+Commands use the `CommandContext` struct which bundles the store, channel info, sender, text, uptime, provider name, skills, projects, heartbeat status, and heartbeat interval into a single parameter.
 
 ---
 
@@ -619,7 +616,7 @@ Omega is also a CLI tool. Entry point: `main.rs`.
 | `omega service uninstall` | Remove OS service |
 | `omega service status` | Check service status |
 
-The **init wizard** (`src/init.rs`) is a full `cliclack`-styled interactive setup: creates `~/.omega/`, checks Claude CLI, Anthropic auth, Telegram bot token, user ID, Whisper API key, WhatsApp QR pairing, Google Workspace setup (with incognito browser detection for OAuth), sandbox mode selection, config.toml generation, and optional service installation.
+The **init wizard** (`src/init.rs`) is a full `cliclack`-styled interactive setup: creates `~/.omega/`, checks Claude CLI, Anthropic auth, Telegram bot token, user ID, Whisper API key, WhatsApp QR pairing, Google Workspace setup (with incognito browser detection for OAuth), config.toml generation, and optional service installation.
 
 The **self-check** (`src/selfcheck.rs`) runs at startup: verifies database accessibility, provider availability, and Telegram token validity.
 
@@ -632,7 +629,7 @@ The **self-check** (`src/selfcheck.rs`) runs at startup: verifies database acces
 | Root guard | Refuses to run as root (`main.rs :: geteuid()`) |
 | Auth | Per-channel `allowed_users` whitelist |
 | Sanitization | Role impersonation + instruction override patterns neutralized before AI sees input |
-| Sandbox | OS-level filesystem enforcement — Seatbelt (macOS) / Landlock (Linux) |
+| System protection | OS-level filesystem enforcement — blocklist via Seatbelt (macOS) / Landlock (Linux) |
 | Audit | Every interaction logged with full metadata (channel, sender, I/O, model, timing, status) |
 | Config isolation | `config.toml` is gitignored — secrets never committed |
 | Provider isolation | `CLAUDECODE` env var removed to prevent nested sessions |
@@ -650,7 +647,8 @@ The **self-check** (`src/selfcheck.rs`) runs at startup: verifies database acces
 ├── SYSTEM_PROMPT.md       ← AI personality and rules (editable, 3 sections: Identity/Soul/System)
 ├── WELCOME.toml           ← Welcome messages per language (editable)
 ├── HEARTBEAT.md           ← Monitoring checklist (editable, also managed via chat)
-├── workspace/             ← Sandbox working directory (current_dir for provider)
+├── workspace/             ← Working directory (current_dir for provider)
+├── stores/                ← Domain-specific databases (e.g., stores/trading/store.db)
 │   ├── inbox/             ← Temporary storage for incoming image attachments
 │   └── .claude/           ← Temporary MCP settings (auto-cleaned)
 ├── skills/
@@ -721,7 +719,7 @@ omega/                     ← Repository root
 - **Trait-based extensibility** — adding a new AI provider is implementing one trait
 - **Marker-based side effects** — the AI writes markers, the gateway acts on them
 - **Background loops over cron jobs** — everything runs inside the same process
-- **OS-level sandbox** — real filesystem enforcement, not just prompt-based trust
+- **OS-level system protection** — real filesystem enforcement via blocklist, not just prompt-based trust
 - **Autonomous model routing** — the AI picks its own brain size per task
 - **Skill improvement** — Omega learns from its mistakes and updates its own skills
 - **Graceful degradation** — if memory fails, responses still work; if audit fails, messages still send

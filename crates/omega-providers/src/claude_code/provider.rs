@@ -7,7 +7,7 @@ use omega_core::{
     message::{MessageMetadata, OutgoingMessage},
     traits::Provider,
 };
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 #[async_trait]
@@ -146,10 +146,16 @@ impl ClaudeCodeProvider {
         let mut resume_session = session_id.to_string();
 
         for attempt in 1..=self.max_resume_attempts {
+            // Exponential backoff: 2s, 4s, 8s, ... — gives the CLI session time to release.
+            let delay = Duration::from_secs(2u64.pow(attempt));
             info!(
-                "auto-resume: attempt {}/{} with session {}",
-                attempt, self.max_resume_attempts, resume_session
+                "auto-resume: attempt {}/{} with session {} (delay {}s)",
+                attempt,
+                self.max_resume_attempts,
+                resume_session,
+                delay.as_secs()
             );
+            tokio::time::sleep(delay).await;
 
             let resume_result = self
                 .run_cli_with_session(
@@ -189,7 +195,8 @@ impl ClaudeCodeProvider {
                 }
                 Err(e) => {
                     warn!("auto-resume attempt {} failed: {e}", attempt);
-                    break;
+                    // Don't break — retry after backoff. The session may need time to release.
+                    continue;
                 }
             }
         }

@@ -108,11 +108,11 @@ active_end = "22:00"
 channel = "telegram"
 reply_target = ""
 
-[sandbox]
-mode = "sandbox"   # "sandbox" | "rx" | "rwx"
 ```
 
 Every section except `[omega]` can be omitted entirely and Omega will use defaults.
+
+> **Note:** There is no `[sandbox]` config section. Filesystem protection is always-on via `omega_sandbox`'s blocklist approach (Seatbelt on macOS, Landlock on Linux).
 
 ## Section-by-Section Guide
 
@@ -234,23 +234,13 @@ The scheduler delivers reminders and recurring tasks that users create through n
 
 The heartbeat calls the AI provider periodically to perform a health check. If the provider responds with `HEARTBEAT_OK`, the result is suppressed (log only). Otherwise, the response is sent as an alert to the configured channel and reply target. An optional `~/.omega/prompts/HEARTBEAT.md` file can contain a checklist for the AI to evaluate.
 
-### `[sandbox]` -- Workspace Isolation
+### Filesystem Protection (Always-On)
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `mode` | string | `"sandbox"` | Sandbox mode. One of `"sandbox"`, `"rx"`, or `"rwx"`. |
+There is no `[sandbox]` config section. Filesystem protection is always active via the `omega_sandbox` crate's blocklist approach. The workspace directory `~/.omega/workspace/` is created automatically on startup and serves as the AI's working directory.
 
-The sandbox controls how much host access the AI provider has. The workspace directory `~/.omega/workspace/` is created automatically on startup and serves as the AI's working directory.
-
-**Sandbox modes:**
-
-| Mode | Workspace Access | Host Read | Host Write | Host Execute | Use Case |
-|------|-----------------|-----------|------------|--------------|----------|
-| `sandbox` | Full | No | No | No | Default. AI is confined to `~/.omega/workspace/`. No host access. |
-| `rx` | Full | Yes | No | Yes | AI can read and execute anywhere on the host, but writes are restricted to `~/.omega/workspace/`. |
-| `rwx` | Full | Yes | Yes | Yes | Full host access. For power users who trust the AI provider. |
-
-The `SandboxMode` enum in `omega-core::config` maps directly to these three modes. The mode is injected into the system prompt so the AI provider knows its boundaries, and it is displayed by the `/status` command.
+- `omega_sandbox::protected_command()` wraps subprocess execution with OS-level protection (Seatbelt on macOS, Landlock on Linux), blocking writes to dangerous system directories and OMEGA's core database.
+- `omega_sandbox::is_write_blocked()` checks paths at the tool level, denying writes to protected locations.
+- The workspace (`~/.omega/workspace/`) and `/tmp` are always writable.
 
 ## Environment Variables
 

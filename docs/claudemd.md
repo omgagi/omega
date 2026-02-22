@@ -43,7 +43,7 @@ This means the template is always re-deployed from the latest binary — any upd
 
 Both operations use direct `claude -p` subprocess calls with:
 - `--output-format json` and `--dangerously-skip-permissions`
-- OS-level sandbox enforcement via `omega_sandbox::sandboxed_command()`
+- OS-level filesystem protection via `omega_sandbox::protected_command()`
 - 120-second timeout
 - `CLAUDECODE` env var removed (prevents nested session errors)
 

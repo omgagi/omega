@@ -239,8 +239,6 @@ Load all projects from projects/*/ROLE.md
     ↓
 Create workspace directory (~/.omega/workspace/) if not present
     ↓
-Log sandbox mode (e.g., "Sandbox mode: sandbox")
-    ↓
 Build Claude Code provider (with working_dir set to workspace)
     ↓
 Check if Claude CLI available
@@ -323,7 +321,6 @@ Check: --telegram-token or --allowed-users provided?
     ├─ Yes → Non-interactive deployment (init::run_noninteractive)
     │        ↓
     │   Parse --allowed-users (comma-separated i64 values)
-    │   Validate --sandbox mode (sandbox/rx/rwx)
     │        ↓
     │   Create ~/.omega, validate Claude CLI
     │   Apply --claude-setup-token if provided
@@ -372,8 +369,7 @@ When you run `omega start`:
 1. The code reads `provider.default` from config (currently only "claude-code" supported)
 2. Extracts provider-specific settings (max_turns, allowed_tools, timeout_secs, model, model_complex)
 3. Resolves the workspace directory (`~/.omega/workspace/`) and ensures it exists
-4. Logs the active sandbox mode (sandbox, rx, or rwx)
-5. Extracts `model_fast` (from `cc.model`, default `"claude-sonnet-4-6"`) and `model_complex` (from `cc.model_complex`, default `"claude-opus-4-6"`) from the Claude Code config
+4. Extracts `model_fast` (from `cc.model`, default `"claude-sonnet-4-6"`) and `model_complex` (from `cc.model_complex`, default `"claude-opus-4-6"`) from the Claude Code config
 6. Creates a ClaudeCodeProvider instance by calling `from_config(cc.max_turns, cc.allowed_tools, cc.timeout_secs, Some(workspace_dir), cc.max_resume_attempts, model_fast.clone())`
 7. Passes `model_fast` and `model_complex` to the Gateway so it can route between models during classification
 8. The provider handles the actual Claude API calls

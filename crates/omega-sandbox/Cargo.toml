@@ -7,11 +7,8 @@ repository.workspace = true
 description = "Secure execution environment for Omega"
 
 [dependencies]
-omega-core = { workspace = true }
 tokio = { workspace = true }
-serde = { workspace = true }
 tracing = { workspace = true }
-thiserror = { workspace = true }
 anyhow = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

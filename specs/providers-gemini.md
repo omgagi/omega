@@ -21,12 +21,10 @@ Calls the Google Gemini `generateContent` endpoint. Authentication via URL query
 | `api_key` | `String` | Google API key |
 | `model` | `String` | Model ID (default: `gemini-2.0-flash`) |
 | `workspace_path` | `Option<PathBuf>` | Working directory for tool execution; `None` disables tool calling |
-| `sandbox_mode` | `SandboxMode` | Sandbox level passed to `ToolExecutor` |
-
 ### Constructor
 
 ```rust
-pub fn from_config(api_key: String, model: String, workspace_path: Option<PathBuf>, sandbox_mode: SandboxMode) -> Self
+pub fn from_config(api_key: String, model: String, workspace_path: Option<PathBuf>) -> Self
 ```
 
 ## Provider Trait Implementation

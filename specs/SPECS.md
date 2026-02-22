@@ -69,7 +69,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [quant.md](quant.md) — Standalone CLI binary + library (Kalman filter, HMM regime detection, Kelly sizing, IBKR connectivity, execution, skill-based invocation)
 
 ### Milestone 9: omega-sandbox
-- [sandbox-lib.md](sandbox-lib.md) — 3-level workspace sandbox (sandbox/rx/rwx modes)
+- [sandbox-lib.md](sandbox-lib.md) — Blocklist-based system protection (always-on, blocks writes to OS dirs + memory.db)
 - [sandbox-cargo-toml.md](sandbox-cargo-toml.md) — Sandbox crate Cargo.toml
 
 ## Architecture Diagram
@@ -102,7 +102,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 │                 │ tools.rs        │               │
 ├─────────────────┼─────────────────┼───────────────┤
 │  omega-memory   │ omega-skills    │ omega-sandbox  │
-│  store.rs       │ lib.rs (loader) │ (planned)      │
+│  store.rs       │ lib.rs (loader) │ lib.rs         │
 │  audit.rs       │                 │                │
 │  migrations/    │                 │                │
 └─────────────────┴─────────────────┴───────────────┘
@@ -111,7 +111,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 ## Data Flow
 
 ```
-Message → Auth → Sanitize → Sandbox constraint → Memory (context + outcomes/lessons) → Provider → process_markers (SCHEDULE/SCHEDULE_ACTION/CANCEL_TASK/UPDATE_TASK/HEARTBEAT/SKILL_IMPROVE/REWARD/LESSON/...) → Memory (store) → Audit → Send → Task confirmation
+Message → Auth → Sanitize → Memory (context + outcomes/lessons) → Provider (protected_command) → process_markers (SCHEDULE/SCHEDULE_ACTION/CANCEL_TASK/UPDATE_TASK/HEARTBEAT/SKILL_IMPROVE/REWARD/LESSON/...) → Memory (store) → Audit → Send → Task confirmation
 
 Background:
   Scheduler: poll due_tasks → channel.send(reminder) → complete_task

@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use omega_core::{
-    config::SandboxMode,
     context::Context,
     error::OmegaError,
     message::{MessageMetadata, OutgoingMessage},
@@ -27,7 +26,6 @@ pub struct OllamaProvider {
     base_url: String,
     model: String,
     workspace_path: Option<PathBuf>,
-    sandbox_mode: SandboxMode,
 }
 
 impl OllamaProvider {
@@ -36,14 +34,12 @@ impl OllamaProvider {
         base_url: String,
         model: String,
         workspace_path: Option<PathBuf>,
-        sandbox_mode: SandboxMode,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
             base_url,
             model,
             workspace_path,
-            sandbox_mode,
         }
     }
 }
@@ -167,7 +163,7 @@ impl Provider for OllamaProvider {
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
-                let mut executor = ToolExecutor::new(ws.clone(), self.sandbox_mode);
+                let mut executor = ToolExecutor::new(ws.clone());
                 executor.connect_mcp_servers(&context.mcp_servers).await;
 
                 let result = self
@@ -411,7 +407,6 @@ mod tests {
             "http://localhost:11434".into(),
             "llama3".into(),
             None,
-            SandboxMode::Rwx,
         );
         assert_eq!(p.name(), "ollama");
         assert!(!p.requires_api_key());

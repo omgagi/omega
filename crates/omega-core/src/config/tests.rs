@@ -30,60 +30,6 @@ fn test_timeout_config_default_when_missing() {
 }
 
 #[test]
-fn test_sandbox_mode_default_is_sandbox() {
-    let mode = SandboxMode::default();
-    assert_eq!(mode, SandboxMode::Sandbox);
-    assert_eq!(mode.display_name(), "sandbox");
-}
-
-#[test]
-fn test_sandbox_mode_from_toml() {
-    let toml_str = r#"mode = "sandbox""#;
-    let cfg: SandboxConfig = toml::from_str(toml_str).unwrap();
-    assert_eq!(cfg.mode, SandboxMode::Sandbox);
-
-    let toml_str = r#"mode = "rx""#;
-    let cfg: SandboxConfig = toml::from_str(toml_str).unwrap();
-    assert_eq!(cfg.mode, SandboxMode::Rx);
-
-    let toml_str = r#"mode = "rwx""#;
-    let cfg: SandboxConfig = toml::from_str(toml_str).unwrap();
-    assert_eq!(cfg.mode, SandboxMode::Rwx);
-}
-
-#[test]
-fn test_sandbox_mode_default_when_missing() {
-    let toml_str = "";
-    let cfg: SandboxConfig = toml::from_str(toml_str).unwrap();
-    assert_eq!(cfg.mode, SandboxMode::Sandbox);
-}
-
-#[test]
-fn test_sandbox_mode_prompt_constraint() {
-    let ws = "/home/user/.omega/workspace";
-
-    let constraint = SandboxMode::Sandbox.prompt_constraint(ws);
-    assert!(constraint.is_some());
-    assert!(constraint.as_ref().unwrap().contains("SANDBOX mode"));
-    assert!(constraint.as_ref().unwrap().contains(ws));
-
-    let constraint = SandboxMode::Rx.prompt_constraint(ws);
-    assert!(constraint.is_some());
-    assert!(constraint.as_ref().unwrap().contains("READ-ONLY mode"));
-    assert!(constraint.as_ref().unwrap().contains(ws));
-
-    let constraint = SandboxMode::Rwx.prompt_constraint(ws);
-    assert!(constraint.is_none());
-}
-
-#[test]
-fn test_sandbox_mode_display_names() {
-    assert_eq!(SandboxMode::Sandbox.display_name(), "sandbox");
-    assert_eq!(SandboxMode::Rx.display_name(), "rx");
-    assert_eq!(SandboxMode::Rwx.display_name(), "rwx");
-}
-
-#[test]
 fn test_install_bundled_prompts_creates_files() {
     let tmp = std::env::temp_dir().join("__omega_test_bundled_prompts__");
     let _ = std::fs::remove_dir_all(&tmp);

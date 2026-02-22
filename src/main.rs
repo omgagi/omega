@@ -70,10 +70,6 @@ enum Commands {
         #[arg(long, env = "OMEGA_WHISPER_KEY")]
         whisper_key: Option<String>,
 
-        /// Sandbox mode: sandbox (default), rx, or rwx.
-        #[arg(long, env = "OMEGA_SANDBOX", default_value = "sandbox")]
-        sandbox: String,
-
         /// Path to Google OAuth client_secret.json file.
         #[arg(long, env = "OMEGA_GOOGLE_CREDENTIALS")]
         google_credentials: Option<String>,
@@ -122,7 +118,6 @@ async fn main() -> anyhow::Result<()> {
             allowed_users,
             claude_setup_token,
             whisper_key,
-            sandbox,
             google_credentials,
             google_email,
         } => {
@@ -133,7 +128,6 @@ async fn main() -> anyhow::Result<()> {
                     allowed_users.as_deref().unwrap_or(""),
                     claude_setup_token.as_deref(),
                     whisper_key.as_deref(),
-                    &sandbox,
                     google_credentials.as_deref(),
                     google_email.as_deref(),
                 )?;
@@ -213,7 +207,7 @@ async fn cmd_start(config_path: &str) -> anyhow::Result<()> {
     // Ensure projects dir exists (projects are hot-reloaded per message).
     omega_skills::ensure_projects_dir(&cfg.omega.data_dir);
 
-    // Create workspace directory for sandbox isolation.
+    // Create workspace directory.
     let workspace_path = {
         let expanded = shellexpand(&cfg.omega.data_dir);
         let ws = PathBuf::from(&expanded).join("workspace");
@@ -228,11 +222,7 @@ async fn cmd_start(config_path: &str) -> anyhow::Result<()> {
         provider_builder::build_provider(&cfg, &workspace_path)?;
     let provider: Arc<dyn omega_core::traits::Provider> = Arc::from(provider_box);
 
-    tracing::info!(
-        "sandbox mode: {} | workspace: {}",
-        cfg.sandbox.mode.display_name(),
-        workspace_path.display()
-    );
+    tracing::info!("workspace: {}", workspace_path.display());
 
     if !provider.is_available().await {
         anyhow::bail!("provider '{}' is not available", provider.name());
@@ -273,9 +263,11 @@ async fn cmd_start(config_path: &str) -> anyhow::Result<()> {
         anyhow::bail!("Self-check failed. Fix the issues above before starting.");
     }
 
-    // Compute sandbox prompt constraint.
-    let sandbox_mode = cfg.sandbox.mode;
-    let sandbox_prompt = sandbox_mode.prompt_constraint(&workspace_path.to_string_lossy());
+    // Create stores directory for domain-specific databases.
+    {
+        let stores_dir = PathBuf::from(&shellexpand(&cfg.omega.data_dir)).join("stores");
+        let _ = std::fs::create_dir_all(&stores_dir);
+    }
 
     // Build and run gateway.
     println!("OMEGA Ω — Starting agent...");
@@ -291,11 +283,8 @@ async fn cmd_start(config_path: &str) -> anyhow::Result<()> {
         prompts,
         cfg.omega.data_dir.clone(),
         skills,
-        sandbox_mode.display_name().to_string(),
-        sandbox_prompt,
         model_fast,
         model_complex,
-        sandbox_mode,
     ));
     gw.run().await
 }

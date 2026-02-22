@@ -30,8 +30,6 @@ pub struct Config {
     #[serde(default)]
     pub memory: MemoryConfig,
     #[serde(default)]
-    pub sandbox: SandboxConfig,
-    #[serde(default)]
     pub heartbeat: HeartbeatConfig,
     #[serde(default)]
     pub scheduler: SchedulerConfig,
@@ -91,58 +89,6 @@ impl Default for MemoryConfig {
             max_context_messages: default_max_context(),
         }
     }
-}
-
-/// Sandbox mode -- controls how far Claude Code can reach beyond the workspace.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SandboxMode {
-    /// Workspace only -- no host access (default, safest).
-    #[default]
-    Sandbox,
-    /// Read & execute on host, writes only inside workspace.
-    Rx,
-    /// Full host access (for power users).
-    Rwx,
-}
-
-impl SandboxMode {
-    /// Return the system prompt constraint for this mode, or `None` for unrestricted.
-    pub fn prompt_constraint(&self, workspace_path: &str) -> Option<String> {
-        match self {
-            Self::Sandbox => Some(format!(
-                "You are in SANDBOX mode. Your working directory is {workspace_path}.\n\
-                 You MUST only create, modify, and read files within this directory.\n\
-                 Do NOT access, read, or modify any files outside your working directory.\n\
-                 You have full network access (curl, wget, API calls).\n\
-                 Install dependencies locally (npm install, pip install --target, etc)."
-            )),
-            Self::Rx => Some(format!(
-                "You are in READ-ONLY mode. Your working directory is {workspace_path}.\n\
-                 You may READ files anywhere on the host filesystem to inspect and analyze.\n\
-                 You may EXECUTE read-only commands (ls, cat, grep, ps, etc).\n\
-                 You MUST only WRITE or CREATE files inside your working directory ({workspace_path}).\n\
-                 Do NOT modify, delete, or create files outside your working directory."
-            )),
-            Self::Rwx => None,
-        }
-    }
-
-    /// Human-readable name for display (e.g. in `/status`).
-    pub fn display_name(&self) -> &str {
-        match self {
-            Self::Sandbox => "sandbox",
-            Self::Rx => "rx",
-            Self::Rwx => "rwx",
-        }
-    }
-}
-
-/// Sandbox config.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SandboxConfig {
-    #[serde(default)]
-    pub mode: SandboxMode,
 }
 
 /// Heartbeat configuration -- periodic AI check-ins.
@@ -312,7 +258,6 @@ pub fn load(path: &str) -> Result<Config, OmegaError> {
             },
             channel: ChannelConfig::default(),
             memory: MemoryConfig::default(),
-            sandbox: SandboxConfig::default(),
             heartbeat: HeartbeatConfig::default(),
             scheduler: SchedulerConfig::default(),
             api: ApiConfig::default(),

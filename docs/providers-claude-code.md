@@ -53,7 +53,7 @@ The default model to pass to the Claude Code CLI via `--model <value>`. When `fr
 
 Controls how many agentic turns the Claude CLI is allowed to take in a single invocation. An "agentic turn" is one cycle of the CLI using a tool (running a command, reading a file, etc.) and then deciding what to do next. The default of `10` is a reasonable balance between capability and cost.
 
-If Claude hits the max turns limit and the response includes a `session_id`, Omega automatically resumes the session by retrying with `--session-id`, up to `max_resume_attempts` times (default: 5). This allows complex multi-turn tasks to continue seamlessly across turn limits. If no `session_id` is returned or the retry limit is reached, Omega extracts whatever partial response was generated.
+If Claude hits the max turns limit and the response includes a `session_id`, Omega automatically resumes the session by retrying with `--resume`, up to `max_resume_attempts` times (default: 5). Each retry waits with exponential backoff (2s, 4s, 8s, ...) to give the CLI session time to release. This allows complex multi-turn tasks to continue seamlessly across turn limits. If no `session_id` is returned or the retry limit is reached, Omega extracts whatever partial response was generated.
 
 ### `allowed_tools`
 
@@ -61,7 +61,7 @@ Controls which tools the Claude Code subprocess is permitted to use and how perm
 
 **Empty list (default, recommended):** `allowed_tools = []`
 
-When empty, Omega passes `--dangerously-skip-permissions` to the Claude Code CLI. This bypasses all permission prompts, giving the subprocess full access to every tool (Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Task/sub-agents, etc.). This is safe because the OS-level sandbox (Seatbelt on macOS, Landlock on Linux) enforces the real security boundary — the Claude Code permission system is redundant within a sandboxed environment.
+When empty, Omega passes `--dangerously-skip-permissions` to the Claude Code CLI. This bypasses all permission prompts, giving the subprocess full access to every tool (Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Task/sub-agents, etc.). This is safe because the OS-level system protection (Seatbelt blocklist on macOS, Landlock on Linux) blocks writes to dangerous system directories and OMEGA's core database — the Claude Code permission system is redundant within this protected environment.
 
 **Explicit list:** `allowed_tools = ["Bash", "Read", "Write", "Edit"]`
 
@@ -84,7 +84,7 @@ When non-empty, each tool is passed as a separate `--allowedTools` argument. Onl
 
 An optional `PathBuf` that sets the current working directory for the Claude Code CLI subprocess. When set, the CLI process is spawned with `current_dir` pointed at this path, which confines the AI's default file operations to the specified directory.
 
-In practice this is always set to `~/.omega/workspace/` (the sandbox workspace). The gateway resolves this path from the sandbox configuration and passes it to `from_config()`. This ensures that regardless of sandbox mode, the CLI starts in the workspace directory.
+In practice this is always set to `~/.omega/workspace/`. The gateway resolves this path from the data directory configuration and passes it to `from_config()`. The CLI always starts in the workspace directory.
 
 ### `timeout_secs`
 
@@ -103,7 +103,7 @@ If the CLI does not produce a response within the configured timeout, the subpro
 
 Controls how many times Omega will automatically retry a Claude Code CLI invocation when it hits the max turns limit (`error_max_turns`) and returns a `session_id`. The default is `5`.
 
-When the CLI hits max turns, Omega uses the returned `session_id` to resume the session with `--session-id`, allowing work to continue seamlessly. This loop repeats until the work completes, no `session_id` is returned, or the attempt limit is reached.
+When the CLI hits max turns, Omega uses the returned `session_id` to resume the session with `--resume`, allowing work to continue seamlessly. Each retry uses exponential backoff (2s, 4s, 8s, ...) to ensure the previous session has fully released. On transient errors, the loop retries instead of aborting. This repeats until the work completes, no `session_id` is returned, or the attempt limit is reached.
 
 ```toml
 [provider.claude-code]
@@ -203,7 +203,7 @@ if let Some(ref dir) = self.working_dir {
 }
 ```
 
-This ensures the Claude Code CLI starts in the sandbox workspace directory. Combined with the sandbox mode rules injected into the system prompt, this provides the filesystem isolation boundary for the AI provider.
+This ensures the Claude Code CLI starts in the workspace directory. Combined with OS-level system protection (blocklist of dangerous directories), this provides the filesystem isolation boundary for the AI provider.
 
 ---
 
@@ -237,7 +237,7 @@ OmegaError::Provider("claude CLI exited with exit status: 1: <stderr content>")
 
 ### Max turns exceeded
 
-When the CLI hits the max turns limit and returns a `session_id`, Omega automatically resumes the session using `--session-id`, up to `max_resume_attempts` times (default: 5). This allows complex tasks to continue across turn boundaries. If no `session_id` is returned or the resume limit is reached, Omega extracts whatever partial result was returned. The user gets a response -- it just might be incomplete if the resume loop was exhausted.
+When the CLI hits the max turns limit and returns a `session_id`, Omega automatically resumes the session using `--resume` with exponential backoff (2s, 4s, 8s, ...) between attempts, up to `max_resume_attempts` times (default: 5). Transient errors are retried instead of aborting the loop. This allows complex tasks to continue across turn boundaries. If no `session_id` is returned or the resume limit is reached, Omega extracts whatever partial result was returned. The user gets a response -- it just might be incomplete if the resume loop was exhausted.
 
 ### Malformed JSON output
 
@@ -258,7 +258,7 @@ Session IDs serve two purposes in the Claude Code CLI provider:
 
 ### 1. Auto-Resume (max_turns recovery)
 
-When the CLI returns `error_max_turns` with a `session_id`, the provider automatically retries using `run_cli_with_session()` which passes `--session-id <id>` to continue the same CLI session. This is handled entirely within the provider's `complete()` method — transparent to the gateway.
+When the CLI returns `error_max_turns` with a `session_id`, the provider automatically retries using `run_cli_with_session()` which passes `--resume <id>` to continue the same CLI session. Each retry uses exponential backoff (2s, 4s, 8s, ...) and transient errors are retried instead of aborting. This is handled entirely within the provider's `complete()` method — transparent to the gateway.
 
 ### 2. Session-Based Prompt Persistence (conversation continuity)
 

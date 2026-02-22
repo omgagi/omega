@@ -33,7 +33,6 @@ impl Gateway {
         skills: Vec<omega_skills::Skill>,
         prompts: Prompts,
         model_complex: String,
-        sandbox_prompt: Option<String>,
         heartbeat_interval: Arc<AtomicU64>,
         audit: AuditLogger,
         provider_name: String,
@@ -62,10 +61,6 @@ impl Gateway {
                                 "{}\n\n{}\n\n{}",
                                 prompts.identity, prompts.soul, prompts.system
                             );
-                            if let Some(ref sp) = sandbox_prompt {
-                                system.push_str("\n\n");
-                                system.push_str(sp);
-                            }
 
                             // Current time — so the AI always knows when it is.
                             system.push_str(&format!(
@@ -89,12 +84,20 @@ impl Gateway {
                                     system.push_str(&format!("\n- [{domain}] {rule}"));
                                 }
                             }
-                            let outcomes =
-                                store.get_recent_outcomes(sender_id, 10).await.unwrap_or_default();
+                            let outcomes = store
+                                .get_recent_outcomes(sender_id, 10)
+                                .await
+                                .unwrap_or_default();
                             if !outcomes.is_empty() {
                                 system.push_str("\n\nRecent outcomes:");
                                 for (score, domain, lesson, _ts) in &outcomes {
-                                    let sign = if *score > 0 { "+" } else if *score < 0 { "-" } else { "~" };
+                                    let sign = if *score > 0 {
+                                        "+"
+                                    } else if *score < 0 {
+                                        "-"
+                                    } else {
+                                        "~"
+                                    };
                                     system.push_str(&format!("\n- [{sign}] {domain}: {lesson}"));
                                 }
                             }
@@ -288,8 +291,15 @@ impl Gateway {
 
                                     // Process REWARD + LESSON markers from action response.
                                     for rl in extract_all_rewards(&text) {
-                                        if let Some((score, domain, lesson)) = parse_reward_line(&rl) {
-                                            if let Err(e) = store.store_outcome(sender_id, &domain, score, &lesson, "action").await {
+                                        if let Some((score, domain, lesson)) =
+                                            parse_reward_line(&rl)
+                                        {
+                                            if let Err(e) = store
+                                                .store_outcome(
+                                                    sender_id, &domain, score, &lesson, "action",
+                                                )
+                                                .await
+                                            {
                                                 error!("action task: store outcome: {e}");
                                             } else {
                                                 info!("action task outcome: {score:+} | {domain} | {lesson}");
@@ -299,7 +309,9 @@ impl Gateway {
                                     text = strip_reward_markers(&text);
                                     for ll in extract_all_lessons(&text) {
                                         if let Some((domain, rule)) = parse_lesson_line(&ll) {
-                                            if let Err(e) = store.store_lesson(sender_id, &domain, &rule).await {
+                                            if let Err(e) =
+                                                store.store_lesson(sender_id, &domain, &rule).await
+                                            {
                                                 error!("action task: store lesson: {e}");
                                             } else {
                                                 info!("action task lesson: {domain} | {rule}");

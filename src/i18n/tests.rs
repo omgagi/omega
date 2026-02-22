@@ -13,7 +13,6 @@ fn test_all_keys_have_english_fallback() {
         "commands_header",
         "uptime",
         "provider",
-        "sandbox",
         "database",
         "conversations",
         "messages",

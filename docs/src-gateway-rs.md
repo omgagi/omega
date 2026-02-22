@@ -170,19 +170,17 @@ Commands are fast, deterministic, and don't require AI reasoning. They provide s
 **Why This Exists:**
 Different platforms render text differently. WhatsApp does not support markdown tables or headers, while Telegram has full markdown support. Telling the AI about the platform prevents it from producing formatting that looks broken on the user's end.
 
-### Stage 3c: Sandbox Mode Prompt Injection
+### Stage 3c: Filesystem Protection (Always-On)
 
-**What happens:** The gateway injects sandbox mode rules into the system prompt so the AI provider knows its filesystem boundaries.
+**What happens:** Filesystem protection is always active via `omega_sandbox`'s blocklist approach. There is no configuration and no modes to select.
 
 **Implementation:**
-- Reads the `sandbox.mode` from the config (one of `sandbox`, `rx`, or `rwx`).
-- Appends a rules block to the system prompt describing what the AI is allowed to do:
-  - **sandbox mode**: "Your workspace is `~/.omega/workspace/`. You may only read, write, and execute within this directory. Do not attempt to access files or run commands outside the workspace."
-  - **rx mode**: "Your workspace is `~/.omega/workspace/`. You may read files and execute commands anywhere on the host, but you may only write files within the workspace."
-  - **rwx mode**: "You have full access to the host filesystem. You may read, write, and execute anywhere."
+- `omega_sandbox::protected_command()` wraps subprocess execution with OS-level protection (Seatbelt on macOS, Landlock on Linux), blocking writes to dangerous system directories and OMEGA's core database.
+- `omega_sandbox::is_write_blocked()` checks paths at the tool level, denying writes to protected locations.
+- The Claude Code CLI is started with `current_dir` set to `~/.omega/workspace/`.
 
 **Why This Exists:**
-The sandbox mode is enforced at two levels: the Claude Code CLI is started with `current_dir` set to the workspace, and the system prompt tells the AI about its boundaries. The prompt injection is the soft enforcement layer -- it relies on the AI provider respecting the instructions. This complements the hard enforcement of `current_dir`.
+The always-on blocklist approach provides OS-level write enforcement without requiring users to choose a security mode. Protection is automatic — dangerous system directories and the OMEGA database are blocked, while the workspace directory (`~/.omega/workspace/`) and `/tmp` remain writable.
 
 ### Stage 3d: Group Chat Rules
 
@@ -1011,13 +1009,9 @@ allowed_users = [123456789, 987654321]  # Empty = allow all
 
 Controls per-channel settings. For Telegram, the allowed_users list is a whitelist. An empty list allows anyone (useful for testing).
 
-### SandboxConfig
-```toml
-[sandbox]
-mode = "sandbox"   # "sandbox" | "rx" | "rwx"
-```
+### Filesystem Protection
 
-Controls the AI provider's filesystem access level. The gateway reads `sandbox.mode` and injects the corresponding rules into the system prompt during Stage 3c of the processing pipeline. The sandbox mode is also stored on the gateway struct so it can be passed to the `CommandContext` for the `/status` command.
+Filesystem protection is always-on via the `omega_sandbox` crate. There is no `[sandbox]` config section — protection is automatic. The `omega_sandbox::protected_command()` function wraps subprocess execution with OS-level blocklist enforcement (Seatbelt on macOS, Landlock on Linux), and `omega_sandbox::is_write_blocked()` provides tool-level write checking.
 
 ## Observability
 

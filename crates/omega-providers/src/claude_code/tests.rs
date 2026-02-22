@@ -2,7 +2,8 @@
 
 use super::mcp;
 use super::*;
-use omega_core::{config::SandboxMode, context::McpServer, traits::Provider};
+use omega_core::context::McpServer;
+use omega_core::traits::Provider;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -15,7 +16,6 @@ fn test_default_provider() {
     assert!(provider.allowed_tools.is_empty());
     assert_eq!(provider.timeout, Duration::from_secs(3600));
     assert!(provider.working_dir.is_none());
-    assert_eq!(provider.sandbox_mode, SandboxMode::Sandbox);
     assert_eq!(provider.max_resume_attempts, 5);
     assert!(provider.model.is_empty());
 }
@@ -27,7 +27,6 @@ fn test_from_config_with_timeout() {
         vec!["Bash".into()],
         300,
         None,
-        SandboxMode::default(),
         3,
         "claude-sonnet-4-6".into(),
     );
@@ -46,26 +45,10 @@ fn test_from_config_with_working_dir() {
         vec!["Bash".into()],
         600,
         Some(dir.clone()),
-        SandboxMode::Sandbox,
         5,
         String::new(),
     );
     assert_eq!(provider.working_dir, Some(dir));
-}
-
-#[test]
-fn test_from_config_with_sandbox_mode() {
-    let dir = PathBuf::from("/home/user/.omega/workspace");
-    let provider = ClaudeCodeProvider::from_config(
-        10,
-        vec!["Bash".into()],
-        600,
-        Some(dir),
-        SandboxMode::Rx,
-        5,
-        String::new(),
-    );
-    assert_eq!(provider.sandbox_mode, SandboxMode::Rx);
 }
 
 #[test]

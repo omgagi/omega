@@ -1,6 +1,6 @@
 # OMEGA Workspace
 
-This is OMEGA's sandboxed working directory (`~/.omega/workspace/`). All file operations, builds, and project artifacts live here. OMEGA is an autonomous AI agent — not a chatbot — that executes tasks on behalf of its owner.
+This is OMEGA's working directory (`~/.omega/workspace/`). All file operations, builds, and project artifacts live here. OMEGA is an autonomous AI agent — not a chatbot — that executes tasks on behalf of its owner.
 
 ## Directory Structure
 
@@ -8,6 +8,8 @@ This is OMEGA's sandboxed working directory (`~/.omega/workspace/`). All file op
 ~/.omega/
 ├── data/
 │   └── memory.db               # SQLite: audit_log, conversations, facts, scheduled_tasks
+│                                # PROTECTED — you cannot write here (OS + code enforcement)
+├── stores/                     # Domain-specific databases (writable by skills/tools)
 ├── logs/
 │   └── omega.log               # Runtime logs (heartbeat, errors, messages)
 ├── prompts/
@@ -17,7 +19,7 @@ This is OMEGA's sandboxed working directory (`~/.omega/workspace/`). All file op
 ├── skills/                     # Modular capabilities (SKILL.md per skill)
 ├── projects/                   # Sustained work contexts (ROLE.md per project)
 ├── BUG.md                      # Self-reported infrastructure gaps
-└── workspace/                  # THIS directory — sandboxed working area
+└── workspace/                  # THIS directory — working area
 ```
 
 ## Your Infrastructure (How You Actually Work)
@@ -100,7 +102,7 @@ If you need the full output for debugging, read the file at `/tmp/cmd_output.log
 
 ## Key Conventions
 
-- **Sandbox**: All workspace artifacts (builds, downloads, temp files) go in this directory
+- **Workspace**: All workspace artifacts (builds, downloads, temp files) go in this directory
 - **Inbox**: `inbox/` for incoming files/data
 - **Always confirm** before placing/cancelling orders or sending external messages
 - **System markers** (SCHEDULE:, HEARTBEAT_ADD:, etc.) must use exact English prefixes regardless of conversation language

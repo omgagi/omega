@@ -20,7 +20,6 @@ pub struct CommandContext<'a> {
     pub provider_name: &'a str,
     pub skills: &'a [omega_skills::Skill],
     pub projects: &'a [omega_skills::Project],
-    pub sandbox_mode: &'a str,
     pub heartbeat_enabled: bool,
     pub heartbeat_interval_mins: u64,
 }
@@ -89,14 +88,7 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
     let lang = resolve_lang(ctx.store, ctx.sender_id).await;
     match cmd {
         Command::Status => {
-            status::handle_status(
-                ctx.store,
-                ctx.uptime,
-                ctx.provider_name,
-                ctx.sandbox_mode,
-                &lang,
-            )
-            .await
+            status::handle_status(ctx.store, ctx.uptime, ctx.provider_name, &lang).await
         }
         Command::Memory => status::handle_memory(ctx.store, ctx.sender_id, &lang).await,
         Command::History => {

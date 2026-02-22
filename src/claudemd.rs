@@ -16,7 +16,7 @@
 //! Both use direct subprocess calls (not the Provider trait) since this is a
 //! meta-operation for workspace maintenance, not a user message.
 
-use omega_core::config::{bundled_workspace_claude, SandboxMode};
+use omega_core::config::bundled_workspace_claude;
 use std::path::Path;
 use tracing::{info, warn};
 
@@ -32,7 +32,7 @@ const DYNAMIC_MARKER: &str = "<!-- DYNAMIC CONTENT BELOW";
 /// standard rules are present even if `claude -p` fails), then spawns
 /// `claude -p` to append dynamic skills/projects content.
 /// Non-fatal: logs a warning on failure, never blocks startup.
-pub async fn ensure_claudemd(workspace: &Path, data_dir: &Path, sandbox_mode: SandboxMode) {
+pub async fn ensure_claudemd(workspace: &Path, data_dir: &Path) {
     let claudemd_path = workspace.join("CLAUDE.md");
     if claudemd_path.exists() {
         info!("workspace CLAUDE.md already exists, skipping init");
@@ -61,7 +61,7 @@ pub async fn ensure_claudemd(workspace: &Path, data_dir: &Path, sandbox_mode: Sa
         data_dir = data_dir.display(),
     );
 
-    if let Err(e) = run_claude(&prompt, workspace, data_dir, sandbox_mode).await {
+    if let Err(e) = run_claude(&prompt, workspace, data_dir).await {
         warn!("failed to enrich CLAUDE.md with dynamic content: {e} (template still deployed)");
     }
 }
@@ -70,11 +70,11 @@ pub async fn ensure_claudemd(workspace: &Path, data_dir: &Path, sandbox_mode: Sa
 /// dynamic content, then ask Claude Code to update dynamic sections.
 ///
 /// Non-fatal: logs a warning on failure.
-pub async fn refresh_claudemd(workspace: &Path, data_dir: &Path, sandbox_mode: SandboxMode) {
+pub async fn refresh_claudemd(workspace: &Path, data_dir: &Path) {
     let claudemd_path = workspace.join("CLAUDE.md");
     if !claudemd_path.exists() {
         // If somehow deleted between runs, re-create from scratch.
-        ensure_claudemd(workspace, data_dir, sandbox_mode).await;
+        ensure_claudemd(workspace, data_dir).await;
         return;
     }
 
@@ -114,7 +114,7 @@ pub async fn refresh_claudemd(workspace: &Path, data_dir: &Path, sandbox_mode: S
         data_dir = data_dir.display(),
     );
 
-    if let Err(e) = run_claude(&prompt, workspace, data_dir, sandbox_mode).await {
+    if let Err(e) = run_claude(&prompt, workspace, data_dir).await {
         warn!("failed to update dynamic content in CLAUDE.md: {e} (template preserved)");
     }
 }
@@ -143,13 +143,12 @@ fn extract_dynamic_content(file_content: &str) -> Option<String> {
 pub async fn claudemd_loop(
     workspace: std::path::PathBuf,
     data_dir: std::path::PathBuf,
-    sandbox_mode: SandboxMode,
     interval_hours: u64,
 ) {
     let interval = std::time::Duration::from_secs(interval_hours * 3600);
     loop {
         tokio::time::sleep(interval).await;
-        refresh_claudemd(&workspace, &data_dir, sandbox_mode).await;
+        refresh_claudemd(&workspace, &data_dir).await;
     }
 }
 
@@ -158,9 +157,8 @@ async fn run_claude(
     prompt: &str,
     workspace: &Path,
     data_dir: &Path,
-    sandbox_mode: SandboxMode,
 ) -> Result<(), String> {
-    let mut cmd = omega_sandbox::sandboxed_command("claude", sandbox_mode, data_dir);
+    let mut cmd = omega_sandbox::protected_command("claude", data_dir);
     cmd.current_dir(workspace)
         .env_remove("CLAUDECODE")
         .arg("-p")
@@ -200,7 +198,7 @@ mod tests {
         std::fs::write(tmp.join("CLAUDE.md"), "# Test").unwrap();
 
         // Should return immediately without error (no claude CLI needed).
-        ensure_claudemd(&tmp, &tmp, SandboxMode::Rwx).await;
+        ensure_claudemd(&tmp, &tmp).await;
 
         // Cleanup.
         let _ = std::fs::remove_dir_all(&tmp);

@@ -103,9 +103,8 @@ port = 3000
 api_key = ""                    # Bearer token auth. Empty = no auth (for local-only use).
 
 # --- Security ---
-
-[sandbox]
-mode = "sandbox"   # "sandbox" | "rx" | "rwx"
-# sandbox = workspace only, no host access (default, safest)
-# rx      = can read & execute on host, writes only in workspace
-# rwx     = full host access (for power users)
+# System protection is always active (no configuration needed).
+# OS-level: blocks writes to /System, /bin, /sbin, /usr/bin, /usr/sbin,
+#   /usr/lib, /usr/libexec, /private/etc, /Library, and ~/.omega/data/
+# Code-level: blocks writes to memory.db from HTTP provider tools
+# Domain data: use ~/.omega/stores/ for skill-specific databases

@@ -21,12 +21,10 @@ Routes requests through OpenRouter's API proxy, which provides access to many mo
 | `api_key` | `String` | OpenRouter API key |
 | `model` | `String` | Namespaced model (e.g., `anthropic/claude-sonnet-4`) |
 | `workspace_path` | `Option<PathBuf>` | Working directory for tool execution; `None` disables tool calling |
-| `sandbox_mode` | `SandboxMode` | Sandbox level passed to `ToolExecutor` |
-
 ### Constructor
 
 ```rust
-pub fn from_config(api_key: String, model: String, workspace_path: Option<PathBuf>, sandbox_mode: SandboxMode) -> Self
+pub fn from_config(api_key: String, model: String, workspace_path: Option<PathBuf>) -> Self
 ```
 
 ## Provider Trait Implementation

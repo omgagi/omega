@@ -6,9 +6,9 @@
 
 ## What is omega-sandbox?
 
-`omega-sandbox` is Omega's OS-level filesystem enforcement layer. It wraps the AI provider subprocess with platform-native write restrictions — Apple Seatbelt on macOS, Landlock LSM on Linux — so that even a confused AI cannot write files outside permitted directories.
+`omega-sandbox` is Omega's OS-level system protection layer. It blocks AI provider subprocesses from writing to dangerous system directories and OMEGA's core database using a blocklist approach -- Apple Seatbelt on macOS, Landlock LSM on Linux, and code-level enforcement on all platforms.
 
-The crate exports a single function, `sandboxed_command()`, which builds a `tokio::process::Command` with appropriate OS enforcement applied based on the sandbox mode.
+The crate exports two functions: `protected_command()` (OS-level protection for CLI provider) and `is_write_blocked()` (code-level enforcement for HTTP providers).
 
 ## How Workspace Inheritance Works
 
@@ -26,18 +26,14 @@ Package metadata fields (`version`, `edition`, `license`, `repository`) are also
 
 ### Internal
 
-| Dependency   | What It Provides                                                          |
-|--------------|---------------------------------------------------------------------------|
-| `omega-core` | `SandboxMode` enum, `OmegaError::Sandbox`, shared types and configuration |
+None. The crate is fully standalone -- it does not depend on `omega-core` or any other workspace crate.
 
 ### External
 
 | Dependency    | Version | What It Is Used For                                    |
 |---------------|---------|--------------------------------------------------------|
 | `tokio`       | 1       | Async runtime, `tokio::process::Command` for subprocess management |
-| `serde`       | 1       | Serialization of configuration types                    |
 | `tracing`     | 0.1     | Structured logging for fallback warnings and sandbox events |
-| `thiserror`   | 2       | Typed error definitions for sandbox failures            |
 | `anyhow`      | 1       | Ergonomic error propagation in Landlock setup           |
 
 ### Platform-Specific
@@ -48,17 +44,18 @@ Package metadata fields (`version`, `edition`, `license`, `repository`) are also
 
 The `landlock` dependency is declared under `[target.'cfg(target_os = "linux")'.dependencies]` and is only compiled on Linux. It uses a direct version declaration because target-specific dependencies cannot currently use workspace inheritance.
 
-The macOS implementation uses `sandbox-exec` which is a built-in macOS binary — no additional crate dependency is needed.
+The macOS implementation uses `sandbox-exec` which is a built-in macOS binary -- no additional crate dependency is needed.
 
 ## What is NOT Here (and Why)
 
 | Crate                | Why                                                |
 |----------------------|----------------------------------------------------|
-| `serde_json`         | No JSON parsing needed; typed structs suffice      |
-| `reqwest`            | HTTP is for API calls, not sandbox enforcement     |
-| `sqlx`               | Database access is in omega-memory                 |
-| `uuid`               | No unique identifiers needed                       |
-| `async-trait`        | No trait definitions; concrete functions only       |
+| `omega-core`         | No longer needed -- the crate has no mode enum or config types |
+| `serde`              | No serialization needed (no config types)           |
+| `thiserror`          | No typed error definitions (uses anyhow instead)    |
+| `serde_json`         | No JSON parsing needed                              |
+| `reqwest`            | HTTP is for API calls, not sandbox enforcement       |
+| `sqlx`               | Database access is in omega-memory                   |
 | `libc`               | macOS uses sandbox-exec (external binary), Linux uses landlock crate |
 
 ## How to Add a New Dependency

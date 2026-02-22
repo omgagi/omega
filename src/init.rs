@@ -110,26 +110,7 @@ pub async fn run() -> anyhow::Result<()> {
     // 8. Google Workspace setup.
     let google_email = init_wizard::run_google_setup()?;
 
-    // 9. Sandbox mode.
-    let sandbox_mode: &str = cliclack::select("Sandbox mode")
-        .item(
-            "sandbox",
-            "Sandbox (Recommended)",
-            "Workspace only — no host filesystem access",
-        )
-        .item(
-            "rx",
-            "Read-only",
-            "Read & execute on host, writes only in workspace",
-        )
-        .item(
-            "rwx",
-            "Full access",
-            "Unrestricted host access (power users)",
-        )
-        .interact()?;
-
-    // 10. Generate config.toml.
+    // 9. Generate config.toml.
     let config_path = "config.toml";
     if Path::new(config_path).exists() {
         cliclack::log::warning(
@@ -143,7 +124,6 @@ pub async fn run() -> anyhow::Result<()> {
             whisper_api_key.as_deref(),
             whatsapp_enabled,
             google_email.as_deref(),
-            sandbox_mode,
         );
         std::fs::write(config_path, config)?;
         cliclack::log::success("Generated config.toml")?;
@@ -201,14 +181,6 @@ pub fn parse_allowed_users(csv: &str) -> anyhow::Result<Vec<i64>> {
         .collect()
 }
 
-/// Validate that sandbox mode is one of the allowed values.
-pub fn validate_sandbox_mode(mode: &str) -> anyhow::Result<()> {
-    match mode {
-        "sandbox" | "rx" | "rwx" => Ok(()),
-        other => anyhow::bail!("invalid sandbox mode '{other}' — must be sandbox, rx, or rwx"),
-    }
-}
-
 /// Run non-interactive init for programmatic deployment.
 ///
 /// Generates config, deploys bundled prompts/skills, creates workspace,
@@ -218,14 +190,12 @@ pub fn run_noninteractive(
     allowed_users_csv: &str,
     claude_setup_token: Option<&str>,
     whisper_key: Option<&str>,
-    sandbox_mode: &str,
     google_credentials: Option<&str>,
     google_email: Option<&str>,
 ) -> anyhow::Result<()> {
     println!("OMEGA Ω — non-interactive init");
 
     // 1. Validate inputs.
-    validate_sandbox_mode(sandbox_mode)?;
     let user_ids = parse_allowed_users(allowed_users_csv)?;
 
     // 2. Create data directory.
@@ -307,7 +277,6 @@ pub fn run_noninteractive(
         whisper_key,
         false, // WhatsApp handled post-deployment
         google_email,
-        sandbox_mode,
     );
     std::fs::write(config_path, &config)?;
     println!("  Generated: config.toml");
@@ -354,7 +323,6 @@ pub fn generate_config(
     whisper_api_key: Option<&str>,
     whatsapp_enabled: bool,
     google_email: Option<&str>,
-    sandbox_mode: &str,
 ) -> String {
     let allowed_users = if user_ids.is_empty() {
         "[]".to_string()
@@ -409,9 +377,6 @@ allowed_users = []
 backend = "sqlite"
 db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
-
-[sandbox]
-mode = "{sandbox_mode}"
 "#
     );
 
@@ -439,7 +404,6 @@ mod tests {
             Some("sk-key"),
             true,
             Some("me@gmail.com"),
-            "sandbox",
         );
         assert!(config.contains("bot_token = \"123:ABC\""));
         assert!(config.contains("allowed_users = [42]"));
@@ -450,23 +414,23 @@ mod tests {
         assert!(config.contains("whisper_api_key = \"sk-key\""));
         assert!(config.contains("[channel.whatsapp]\nenabled = true"));
         assert!(config.contains("[google]\naccount = \"me@gmail.com\""));
-        assert!(config.contains("[sandbox]\nmode = \"sandbox\""));
+        assert!(!config.contains("[sandbox]"), "no sandbox section");
     }
 
     #[test]
     fn test_generate_config_minimal() {
-        let config = generate_config("", &[], None, false, None, "sandbox");
+        let config = generate_config("", &[], None, false, None);
         assert!(config.contains("bot_token = \"\""));
         assert!(config.contains("allowed_users = []"));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
         assert!(config.contains("[channel.whatsapp]\nenabled = false"));
         assert!(!config.contains("[google]"));
-        assert!(config.contains("mode = \"sandbox\""));
+        assert!(!config.contains("[sandbox]"));
     }
 
     #[test]
     fn test_generate_config_telegram_only() {
-        let config = generate_config("tok:EN", &[999], None, false, None, "sandbox");
+        let config = generate_config("tok:EN", &[999], None, false, None);
         assert!(config.contains("bot_token = \"tok:EN\""));
         assert!(config.contains("allowed_users = [999]"));
         assert!(config.contains("[channel.telegram]\nenabled = true"));
@@ -476,44 +440,35 @@ mod tests {
 
     #[test]
     fn test_generate_config_google_only() {
-        let config = generate_config("", &[], None, false, Some("test@example.com"), "sandbox");
+        let config = generate_config("", &[], None, false, Some("test@example.com"));
         assert!(config.contains("[google]\naccount = \"test@example.com\""));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
     }
 
     #[test]
     fn test_generate_config_whatsapp_only() {
-        let config = generate_config("", &[], None, true, None, "sandbox");
+        let config = generate_config("", &[], None, true, None);
         assert!(config.contains("[channel.whatsapp]\nenabled = true"));
         assert!(config.contains("[channel.telegram]\nenabled = false"));
         assert!(!config.contains("[google]"));
     }
 
     #[test]
-    fn test_generate_config_sandbox_modes() {
-        let rx = generate_config("", &[], None, false, None, "rx");
-        assert!(rx.contains("mode = \"rx\""));
-
-        let rwx = generate_config("", &[], None, false, None, "rwx");
-        assert!(rwx.contains("mode = \"rwx\""));
-    }
-
-    #[test]
     fn test_generate_config_with_whisper() {
-        let config = generate_config("tok:EN", &[42], Some("sk-abc"), false, None, "sandbox");
+        let config = generate_config("tok:EN", &[42], Some("sk-abc"), false, None);
         assert!(config.contains("whisper_api_key = \"sk-abc\""));
     }
 
     #[test]
     fn test_generate_config_without_whisper() {
-        let config = generate_config("tok:EN", &[42], None, false, None, "sandbox");
+        let config = generate_config("tok:EN", &[42], None, false, None);
         assert!(config.contains("# whisper_api_key"));
         assert!(config.contains("OPENAI_API_KEY"));
     }
 
     #[test]
     fn test_generate_config_multiple_users() {
-        let config = generate_config("tok:EN", &[111, 222, 333], None, false, None, "sandbox");
+        let config = generate_config("tok:EN", &[111, 222, 333], None, false, None);
         assert!(config.contains("allowed_users = [111, 222, 333]"));
     }
 
@@ -548,20 +503,4 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("invalid user ID"));
     }
 
-    #[test]
-    fn test_validate_sandbox_mode_valid() {
-        assert!(validate_sandbox_mode("sandbox").is_ok());
-        assert!(validate_sandbox_mode("rx").is_ok());
-        assert!(validate_sandbox_mode("rwx").is_ok());
-    }
-
-    #[test]
-    fn test_validate_sandbox_mode_invalid() {
-        let result = validate_sandbox_mode("rw");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("invalid sandbox mode"));
-    }
 }

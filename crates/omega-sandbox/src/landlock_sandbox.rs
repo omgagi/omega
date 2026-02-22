@@ -1,12 +1,14 @@
-//! Linux Landlock LSM enforcement.
+//! Linux Landlock LSM enforcement — broad allowlist approach.
 //!
-//! Uses the `landlock` crate to restrict file writes in the child process
-//! via a `pre_exec` hook. Requires Linux kernel 5.13+ with Landlock enabled.
-//! Writes are allowed to the Omega data directory (`~/.omega/`), `/tmp`,
-//! `~/.claude`, and `~/.cargo`.
+//! Landlock cannot deny subdirectories of an allowed parent, so we use a broad
+//! allowlist: read-only on `/` (covers system dirs), full access to `$HOME`,
+//! `/tmp`, `/var/tmp`, `/opt`, `/srv`, `/run`, `/media`, `/mnt`.
+//!
+//! Note: memory.db protection on Linux relies on `is_write_blocked()` (code-level),
+//! not Landlock (can't deny subdirs of allowed parent).
 
 use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::process::Command;
 use tracing::warn;
 
@@ -27,17 +29,17 @@ fn full_access() -> BitFlags<AccessFs> {
 
 /// Build a [`Command`] with Landlock write restrictions applied via `pre_exec`.
 ///
-/// The child process will be allowed to:
-/// - Read and execute from the entire filesystem (`/`)
-/// - Read, write, and create files in `data_dir` (`~/.omega/`), `/tmp`, `~/.claude`, and `~/.cargo`
+/// The child process will have:
+/// - Read and execute access to the entire filesystem (`/`)
+/// - Full access to `$HOME`, `/tmp`, `/var/tmp`, `/opt`, `/srv`, `/run`, `/media`, `/mnt`
+///
+/// System directories (`/bin`, `/sbin`, `/usr`, `/etc`, `/lib`, etc.) are implicitly
+/// read-only because only `/` gets read access and writable paths are explicitly listed.
 ///
 /// If the kernel does not support Landlock, logs a warning and falls back
 /// to a plain command.
-pub(crate) fn sandboxed_command(program: &str, data_dir: &Path) -> Command {
-    let data_dir = data_dir.to_path_buf();
+pub(crate) fn protected_command(program: &str, _data_dir: &std::path::Path) -> Command {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let claude_dir = PathBuf::from(&home).join(".claude");
-    let cargo_dir = PathBuf::from(&home).join(".cargo");
 
     let mut cmd = Command::new(program);
 
@@ -45,7 +47,7 @@ pub(crate) fn sandboxed_command(program: &str, data_dir: &Path) -> Command {
     // the landlock crate (which uses syscalls), no async or allocator abuse.
     unsafe {
         cmd.pre_exec(move || {
-            apply_landlock(&data_dir, &claude_dir, &cargo_dir).map_err(|e| {
+            apply_landlock(&home).map_err(|e| {
                 std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string())
             })
         });
@@ -55,30 +57,34 @@ pub(crate) fn sandboxed_command(program: &str, data_dir: &Path) -> Command {
 }
 
 /// Apply Landlock restrictions to the current process.
-fn apply_landlock(
-    data_dir: &Path,
-    claude_dir: &Path,
-    cargo_dir: &Path,
-) -> Result<(), anyhow::Error> {
-    let status = Ruleset::default()
+fn apply_landlock(home: &str) -> Result<(), anyhow::Error> {
+    let home_dir = PathBuf::from(home);
+
+    let mut ruleset = Ruleset::default()
         .handle_access(full_access())?
         .create()?
-        // Read + execute on entire filesystem.
+        // Read + execute on entire filesystem (system dirs become read-only).
         .add_rules(path_beneath_rules(&[PathBuf::from("/")], read_access()))?
-        // Full access to Omega data directory (workspace, skills, projects, etc.).
-        .add_rules(path_beneath_rules(&[data_dir], full_access()))?
+        // Full access to home directory.
+        .add_rules(path_beneath_rules(&[home_dir], full_access()))?
         // Full access to /tmp.
-        .add_rules(path_beneath_rules(&[PathBuf::from("/tmp")], full_access()))?
-        // Full access to ~/.claude.
-        .add_rules(path_beneath_rules(&[claude_dir], full_access()))?
-        // Full access to ~/.cargo (cargo registry cache, build artifacts).
-        .add_rules(path_beneath_rules(&[cargo_dir], full_access()))?
-        .restrict_self()?;
+        .add_rules(path_beneath_rules(&[PathBuf::from("/tmp")], full_access()))?;
+
+    // Optional writable paths — skip if they don't exist (common in containers).
+    let optional_paths = ["/var/tmp", "/opt", "/srv", "/run", "/media", "/mnt"];
+    for path in &optional_paths {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            ruleset = ruleset.add_rules(path_beneath_rules(&[p], full_access()))?;
+        }
+    }
+
+    let status = ruleset.restrict_self()?;
 
     if status.ruleset != RulesetStatus::FullyEnforced {
         warn!(
             "landlock: not all restrictions enforced (kernel may lack full support); \
-             best-effort sandbox active"
+             best-effort protection active"
         );
     }
 
@@ -107,8 +113,8 @@ mod tests {
 
     #[test]
     fn test_command_structure() {
-        let ws = PathBuf::from("/tmp/ws");
-        let cmd = sandboxed_command("claude", &ws);
+        let data_dir = PathBuf::from("/tmp/ws");
+        let cmd = protected_command("claude", &data_dir);
         let program = cmd.as_std().get_program().to_string_lossy().to_string();
         assert_eq!(program, "claude");
     }

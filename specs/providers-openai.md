@@ -22,12 +22,10 @@ OpenAI-compatible API provider. Works with OpenAI's API and any compatible endpo
 | `api_key` | `String` | Bearer token |
 | `model` | `String` | Model ID (default: `gpt-4o`) |
 | `workspace_path` | `Option<PathBuf>` | Working directory for tool execution; `None` disables tool calling |
-| `sandbox_mode` | `SandboxMode` | Sandbox level passed to `ToolExecutor` |
-
 ### Constructor
 
 ```rust
-pub fn from_config(base_url: String, api_key: String, model: String, workspace_path: Option<PathBuf>, sandbox_mode: SandboxMode) -> Self
+pub fn from_config(base_url: String, api_key: String, model: String, workspace_path: Option<PathBuf>) -> Self
 ```
 
 ## Provider Trait Implementation

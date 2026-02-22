@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use omega_core::{
-    config::SandboxMode,
     context::{ApiMessage, Context},
     error::OmegaError,
     message::{MessageMetadata, OutgoingMessage},
@@ -28,7 +27,6 @@ pub struct OpenAiProvider {
     api_key: String,
     model: String,
     workspace_path: Option<PathBuf>,
-    sandbox_mode: SandboxMode,
 }
 
 impl OpenAiProvider {
@@ -38,7 +36,6 @@ impl OpenAiProvider {
         api_key: String,
         model: String,
         workspace_path: Option<PathBuf>,
-        sandbox_mode: SandboxMode,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -46,7 +43,6 @@ impl OpenAiProvider {
             api_key,
             model,
             workspace_path,
-            sandbox_mode,
         }
     }
 }
@@ -334,7 +330,7 @@ impl Provider for OpenAiProvider {
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
-                let mut executor = ToolExecutor::new(ws.clone(), self.sandbox_mode);
+                let mut executor = ToolExecutor::new(ws.clone());
                 executor.connect_mcp_servers(&context.mcp_servers).await;
 
                 let result = openai_agentic_complete(
@@ -445,7 +441,6 @@ mod tests {
             "sk-test".into(),
             "gpt-4o".into(),
             None,
-            SandboxMode::Rwx,
         );
         assert_eq!(p.name(), "openai");
         assert!(p.requires_api_key());

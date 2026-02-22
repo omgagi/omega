@@ -238,11 +238,6 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
    - This directory serves as the sandbox working directory for the provider
    - Compute `workspace_path` as `Option<PathBuf>` for passing to `build_provider()`
 
-1d. **Sandbox mode logging**
-   - Read `cfg.sandbox.mode` to determine the active sandbox mode
-   - Log the sandbox mode at INFO level (e.g., `"Sandbox mode: sandbox"`)
-   - Compute `sandbox_prompt` via `cfg.sandbox.mode.prompt_constraint(&workspace_path_str)` for injection into the gateway
-
 2. **Build provider**
    - Call `build_provider(&cfg, workspace_path)` to instantiate with optional workspace directory
    - Wrap in Arc (atomic reference counting) for thread-safe sharing
@@ -275,7 +270,7 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
    - Projects are hot-reloaded per message in the gateway, not loaded at startup.
 
 8. **Start gateway**
-   - Create Gateway instance with provider, channels, memory, auth, channel config, projects, sandbox mode display name, sandbox prompt, `model_fast`, and `model_complex`
+   - Create Gateway instance with provider, channels, memory, auth, channel config, `model_fast`, and `model_complex`
    - Wrap gateway in `Arc::new()` for shared ownership across spawned tasks
    - Call `gw.run().await?` to enter event loop (method takes `self: Arc<Self>`)
    - Blocks indefinitely processing messages from channels

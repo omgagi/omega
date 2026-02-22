@@ -54,18 +54,17 @@ Executes built-in tools and routes MCP tool calls to the correct server.
 |-------|------|-------------|
 | `workspace_path` | `PathBuf` | Sandbox working directory (`~/.omega/workspace/`) |
 | `data_dir` | `PathBuf` | Omega data directory (`~/.omega/`); derived as parent of `workspace_path` |
-| `sandbox_mode` | `SandboxMode` | Active sandbox level controlling write permissions |
 | `mcp_clients` | `HashMap<String, McpClient>` | Connected MCP servers keyed by server name |
 | `mcp_tool_map` | `HashMap<String, String>` | Maps tool name to the server name that provides it |
 
 ## Methods
 
-### `new(workspace_path, sandbox_mode) -> Self`
+### `new(workspace_path) -> Self`
 
 Creates a new `ToolExecutor`. Derives `data_dir` as the parent of `workspace_path` (falls back to `workspace_path` itself if no parent). Both MCP maps start empty.
 
 ```rust
-pub fn new(workspace_path: PathBuf, sandbox_mode: SandboxMode) -> Self
+pub fn new(workspace_path: PathBuf) -> Self
 ```
 
 ### `connect_mcp_servers(servers: &[McpServer])`
@@ -104,22 +103,14 @@ pub async fn shutdown_mcp(&mut self)
 
 | Tool | Required Params | Optional Params | Behavior |
 |------|----------------|-----------------|----------|
-| `bash` | `command: String` | — | Executes via `bash -c <command>` in `workspace_path` using `sandboxed_command()`. Captures stdout + stderr combined. Returns exit-code string if both are empty. Truncated to `MAX_BASH_OUTPUT`. `is_error` set when exit status is non-zero. Times out after `BASH_TIMEOUT_SECS`. |
+| `bash` | `command: String` | — | Executes via `bash -c <command>` in `workspace_path` using `protected_command()`. Captures stdout + stderr combined. Returns exit-code string if both are empty. Truncated to `MAX_BASH_OUTPUT`. `is_error` set when exit status is non-zero. Times out after `BASH_TIMEOUT_SECS`. |
 | `read` | `file_path: String` | — | Reads file as UTF-8 string via `tokio::fs::read_to_string`. No sandbox restriction on reads. Truncated to `MAX_READ_OUTPUT`. |
-| `write` | `file_path: String`, `content: String` | — | Writes (creates or overwrites) file after `is_write_allowed()` check. Creates parent directories with `create_dir_all`. Returns byte count on success. |
-| `edit` | `file_path: String`, `old_string: String`, `new_string: String` | — | Reads file, finds first occurrence of `old_string`, replaces it with `new_string`, writes back. Fails if `old_string` not found. `is_write_allowed()` checked before read. Reports occurrence count in success message. |
+| `write` | `file_path: String`, `content: String` | — | Writes (creates or overwrites) file after `is_write_blocked()` check. Creates parent directories with `create_dir_all`. Returns byte count on success. |
+| `edit` | `file_path: String`, `old_string: String`, `new_string: String` | — | Reads file, finds first occurrence of `old_string`, replaces it with `new_string`, writes back. Fails if `old_string` not found. `is_write_blocked()` checked before write. Reports occurrence count in success message. |
 
-## Path Validation: `is_write_allowed(path) -> bool`
+## Path Validation: `is_write_blocked(path, data_dir) -> bool`
 
-Controls write access for the `write` and `edit` tools based on the active sandbox mode.
-
-| Sandbox Mode | Allowed Writes |
-|--------------|---------------|
-| `Rwx` | All paths unrestricted |
-| `Sandbox` | Paths under `data_dir` (`~/.omega/`) or under `/tmp` only |
-| `Rx` | Same as `Sandbox` (read-execute; writes restricted to `data_dir` and `/tmp`) |
-
-For relative paths in sandbox/rx mode, the path is resolved against `workspace_path` before checking. For absolute paths, checked as-is.
+Uses the always-on blocklist approach to check whether a write to the given path should be blocked. Writes to dangerous system directories and OMEGA's core database are blocked. Writes to the workspace (`~/.omega/workspace/`), the data directory (`~/.omega/`), and `/tmp` are allowed. For relative paths, the path is resolved against `workspace_path` before checking.
 
 ## Helper Functions
 
@@ -144,9 +135,8 @@ pub fn builtin_tool_defs() -> Vec<ToolDef>
 | `test_truncate_output_short` | Verifies short string returned unchanged |
 | `test_truncate_output_exact` | Verifies string at exactly `max_chars` returned unchanged |
 | `test_truncate_output_long` | Verifies long string truncated with truncation notice and total char count |
-| `test_is_write_allowed_rwx` | Verifies `Rwx` mode allows all paths including `/etc/passwd` |
-| `test_is_write_allowed_sandbox_inside_data_dir` | Verifies `Sandbox` mode allows writes inside `~/.omega/` and `/tmp` |
-| `test_is_write_allowed_sandbox_outside` | Verifies `Sandbox` mode denies writes to `/etc/passwd` and user home |
+| `test_is_write_blocked_allows_workspace` | Verifies writes inside `~/.omega/` and `/tmp` are not blocked |
+| `test_is_write_blocked_denies_system` | Verifies writes to `/etc/passwd` and other system paths are blocked |
 | `test_exec_bash_empty_command` | Verifies bash tool returns error when `command` param is absent |
 | `test_exec_bash_echo` | Verifies `echo hello` produces non-error output containing "hello" |
 | `test_exec_read_nonexistent` | Verifies read tool returns error for a nonexistent file path |

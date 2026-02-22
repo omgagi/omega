@@ -1980,9 +1980,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "landlock",
- "omega-core",
- "serde",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]

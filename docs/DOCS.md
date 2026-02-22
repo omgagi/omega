@@ -21,7 +21,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 
 ### Security
 - [security.md](security.md) — Auth, sanitization, root guard, prompt injection defense
-- [sandbox-lib.md](sandbox-lib.md) — Sandbox modes (sandbox/rx/rwx), workspace isolation, system prompt enforcement
+- [sandbox-lib.md](sandbox-lib.md) — Blocklist-based system protection (always-on, blocks writes to OS dirs + memory.db)
 
 ### Providers
 - [providers.md](providers.md) — AI backend configuration (Claude Code, Ollama, OpenAI, Anthropic, OpenRouter, Gemini)

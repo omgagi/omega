@@ -141,7 +141,6 @@ impl Gateway {
                 provider_name: self.provider.name(),
                 skills: &self.skills,
                 projects: &projects,
-                sandbox_mode: &self.sandbox_mode,
                 heartbeat_enabled: self.heartbeat_config.enabled,
                 heartbeat_interval_mins: self.heartbeat_interval.load(Ordering::Relaxed),
             };
@@ -425,11 +424,6 @@ impl Gateway {
                     "\n\nHeartbeat pulse: every {mins} minutes. You can report this when asked and change it with HEARTBEAT_INTERVAL: <1-1440>."
                 ));
             }
-        }
-
-        if let Some(ref constraint) = self.sandbox_prompt {
-            prompt.push_str("\n\n");
-            prompt.push_str(constraint);
         }
 
         prompt

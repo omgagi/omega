@@ -6,59 +6,77 @@
 |-------|-------|
 | **Path** | `crates/omega-sandbox/src/lib.rs` |
 | **Crate** | `omega-sandbox` |
-| **Role** | OS-level filesystem enforcement for provider subprocesses |
+| **Role** | OS-level system protection for provider subprocesses |
 
 ## Purpose
 
-`omega-sandbox` provides real OS-level write restrictions for the AI provider subprocess. It wraps the provider command with platform-native sandbox mechanisms so that even a determined or confused AI cannot write files outside permitted directories.
+`omega-sandbox` provides always-on OS-level protection that prevents AI provider subprocesses from writing to dangerous system directories and OMEGA's core database. It uses a **blocklist** approach: everything is allowed by default, then specific dangerous paths are denied.
 
-The crate exports a single public function, `sandboxed_command()`, which takes a program name, sandbox mode, and workspace path, and returns a `tokio::process::Command` with appropriate OS enforcement applied.
+The crate exports two public functions:
+- `protected_command()` — wraps a program with OS-level write restrictions
+- `is_write_blocked()` — code-level enforcement for HTTP provider tool executors
+
+No configuration is needed. Protection is always active.
 
 ## Architecture
 
-### Two-Layer Enforcement
+### Blocklist Approach
 
-| Layer | Mechanism | Scope |
-|-------|-----------|-------|
-| **OS-level** (this crate) | Seatbelt (macOS) / Landlock (Linux) | Restricts file **writes** to data dir (`~/.omega/`) + `/tmp` + `~/.claude` + `~/.cargo` |
-| **Prompt-level** (omega-core) | System prompt injection via `SandboxMode::prompt_constraint()` | Restricts file **reads** in Sandbox mode |
+Instead of an allowlist ("only write here"), the sandbox uses a blocklist ("write anywhere except here"):
 
-The OS sandbox restricts writes only. The claude CLI process needs to read system files, node.js runtime, etc. Read restriction in Sandbox mode stays prompt-level.
+| What's Blocked | Why |
+|----------------|-----|
+| `/System`, `/bin`, `/sbin`, `/usr/bin`, `/usr/sbin`, `/usr/lib`, `/usr/libexec` | OS binaries and system libraries |
+| `/private/etc`, `/Library` (macOS) | System configuration |
+| `/etc`, `/boot`, `/proc`, `/sys`, `/dev` | Linux system paths |
+| `{data_dir}/data/` | OMEGA's core database (memory.db) |
+
+Everything else is writable, including `$HOME`, `/tmp`, `/usr/local`, `{data_dir}/workspace/`, `{data_dir}/skills/`, `{data_dir}/projects/`, `{data_dir}/stores/`.
 
 ### Platform Dispatch
 
 ```
-sandboxed_command(program, mode, data_dir)
+protected_command(program, data_dir)
   │
-  ├── Rwx → plain Command::new(program)
+  ├── macOS → seatbelt::protected_command()
+  │     └── sandbox-exec -p <blocklist profile> -- <program>
   │
-  └── Sandbox / Rx → platform_command()
-        │
-        ├── macOS → seatbelt::sandboxed_command()
-        │     └── sandbox-exec -p <profile> -- <program>
-        │
-        ├── Linux → landlock_sandbox::sandboxed_command()
-        │     └── Command::new(program) + pre_exec Landlock
-        │
-        └── Other → warn + plain Command::new(program)
+  ├── Linux → landlock_sandbox::protected_command()
+  │     └── Command::new(program) + pre_exec Landlock
+  │
+  └── Other → warn + plain Command::new(program)
 ```
 
 ## Modules
 
 ### `lib.rs` — Public API
 
-**Public function:**
+**Public function: `protected_command`**
 
 ```rust
-pub fn sandboxed_command(program: &str, mode: SandboxMode, data_dir: &Path) -> Command
+pub fn protected_command(program: &str, data_dir: &Path) -> Command
 ```
 
-- `Rwx` → plain `Command::new(program)` (no restrictions)
-- `Sandbox` / `Rx` → delegates to `platform_command()`
+Builds a `tokio::process::Command` with OS-level system protection applied. Always active — no mode parameter needed.
 
-`data_dir` is the Omega data directory (e.g. `~/.omega/`) — writes are allowed to the entire tree (workspace, skills, projects, etc.).
+- `program` — the binary to wrap (e.g., `"claude"`)
+- `data_dir` — the Omega data directory (e.g., `~/.omega/`). Writes to `{data_dir}/data/` are blocked to protect memory.db. All other paths under `data_dir` remain writable.
 
-**Internal function:**
+**Public function: `is_write_blocked`**
+
+```rust
+pub fn is_write_blocked(path: &Path, data_dir: &Path) -> bool
+```
+
+Code-level write enforcement for HTTP provider tool executors. Returns `true` if the path targets a protected location:
+- Dangerous OS directories (`/System`, `/bin`, `/sbin`, `/usr/bin`, `/usr/sbin`, `/usr/lib`, `/usr/libexec`, `/private/etc`, `/Library`, `/etc`, `/boot`, `/proc`, `/sys`, `/dev`)
+- OMEGA's core data directory (`{data_dir}/data/`)
+
+Relative paths return `false` (cannot be resolved without a cwd).
+
+Used by the `ToolExecutor` in HTTP-based providers (OpenAI, Anthropic, Ollama, OpenRouter, Gemini) to enforce write restrictions on all platforms, including those without OS-level sandbox support.
+
+**Internal function: `platform_command`**
 
 ```rust
 fn platform_command(program: &str, data_dir: &Path) -> Command
@@ -70,22 +88,25 @@ Platform-dispatched via `#[cfg]` attributes.
 
 Uses Apple's Seatbelt framework via `sandbox-exec -p <profile>`.
 
-**Profile:**
+**Profile (blocklist):**
 ```scheme
 (version 1)
 (allow default)
-(deny file-write*)
-(allow file-write*
-  (subpath "{data_dir}")
-  (subpath "/private/tmp")
-  (subpath "/private/var/folders")
-  (subpath "{home}/.claude")
-  (subpath "{home}/.cargo")
-  (literal "/dev/null")
-  (literal "/dev/zero")
-  (subpath "/dev/fd")
+(deny file-write*
+  (subpath "/System")
+  (subpath "/bin")
+  (subpath "/sbin")
+  (subpath "/usr/bin")
+  (subpath "/usr/sbin")
+  (subpath "/usr/lib")
+  (subpath "/usr/libexec")
+  (subpath "/private/etc")
+  (subpath "/Library")
+  (subpath "{data_dir}/data")
 )
 ```
+
+Note: `(allow default)` permits everything, then `(deny file-write* ...)` blocks specific paths. This is the inverse of the previous allowlist approach.
 
 **Fallback:** If `/usr/bin/sandbox-exec` does not exist, logs a warning and returns a plain command.
 
@@ -93,88 +114,70 @@ Uses Apple's Seatbelt framework via `sandbox-exec -p <profile>`.
 
 Uses the Landlock LSM (kernel 5.13+) via the `landlock` crate. Applied in a `pre_exec` hook on the child process.
 
+Because Landlock cannot deny subdirectories of an allowed parent, a broad allowlist achieves the same blocklist effect:
+
 **Access rules:**
-- Read + execute on `/` (entire filesystem)
-- Full access to data dir (`~/.omega/`), `/tmp`, `~/.claude`, `~/.cargo`
+- Read + execute on `/` (entire filesystem — system dirs become read-only)
+- Full access to `$HOME` (covers `~/.omega/` and everything else under home)
+- Full access to `/tmp`
+- Optional full access to `/var/tmp`, `/opt`, `/srv`, `/run`, `/media`, `/mnt` (skipped if they don't exist)
+
+Note: memory.db protection on Linux relies on `is_write_blocked()` (code-level) rather than Landlock, since Landlock cannot deny a subdirectory of `$HOME`.
 
 **Fallback:** If the kernel does not support Landlock or enforcement is partial, logs a warning and continues with best-effort restrictions.
-
-## Configuration Surface
-
-The sandbox is configurable through `omega-core::config::SandboxConfig` and `omega-core::config::SandboxMode`:
-
-```rust
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SandboxMode {
-    #[default]
-    Sandbox,
-    Rx,
-    Rwx,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SandboxConfig {
-    #[serde(default)]
-    pub mode: SandboxMode,
-}
-```
-
-`SandboxMode` methods:
-- `prompt_constraint(&self, workspace_path: &str) -> Option<String>` — returns mode-specific system prompt constraint text.
-- `display_name(&self) -> &str` — returns `"sandbox"`, `"rx"`, or `"rwx"`.
-
-## Error Integration
-
-The unified error enum in `omega-core::error::OmegaError` includes a `Sandbox` variant:
-
-```rust
-#[error("sandbox error: {0}")]
-Sandbox(String),
-```
 
 ## Workspace Integration Points
 
 | Integration | Location | Description |
 |-------------|----------|-------------|
 | Root Cargo.toml | `Cargo.toml` | Listed as workspace member and dependency |
-| Config | `omega-core::config::SandboxConfig` | Configuration struct with `mode: SandboxMode` field |
-| SandboxMode enum | `omega-core::config::SandboxMode` | Mode enum with `prompt_constraint()` and `display_name()` methods |
-| Error | `omega-core::error::OmegaError::Sandbox` | Error variant for sandbox failures |
-| main.rs | `src/main.rs` | Creates `~/.omega/workspace/`, passes `sandbox_mode` to `build_provider()` |
-| Gateway | `src/gateway.rs` | Stores `sandbox_mode` and `sandbox_prompt` fields; injects sandbox constraint into system prompt |
-| Provider | `omega-providers::claude_code` | `ClaudeCodeProvider` calls `omega_sandbox::sandboxed_command()` in `run_cli()` |
-| Commands | `src/commands.rs` | `CommandContext` includes `sandbox_mode` field; `/status` displays it |
+| main.rs | `src/main.rs` | Creates `~/.omega/workspace/`, passes `data_dir` to `build_provider()` |
+| Gateway | `src/gateway.rs` | No sandbox-specific state needed (protection is always on) |
+| Provider (CLI) | `omega-providers::claude_code` | `ClaudeCodeProvider` calls `omega_sandbox::protected_command()` in `run_cli()` |
+| Provider (HTTP) | `omega-providers::tools` | `ToolExecutor` calls `omega_sandbox::is_write_blocked()` for write/edit/bash tools |
 | Binary | `Cargo.toml` (root) | Declared as a dependency of the binary |
 
-## Permitted Directories
+## Protected Paths
 
-For both Sandbox and Rx modes, OS enforcement allows writes to:
+### Blocked from writes (all platforms, via `is_write_blocked`)
 
-| Directory | Reason |
-|-----------|--------|
-| `~/.omega/` | Omega data directory (workspace, skills, projects, etc.) |
-| `/tmp` (macOS: `/private/tmp`) | Temporary files |
-| `/private/var/folders` (macOS only) | macOS temp directories |
-| `~/.claude` | Claude CLI session data |
-| `~/.cargo` | Cargo registry cache and build artifacts |
-| `/dev/null` | Essential device file for output redirection |
-| `/dev/zero` | Essential device file for data generation |
-| `/dev/fd/` | File descriptors for pipes and process substitution |
+| Path | Reason |
+|------|--------|
+| `{data_dir}/data/` | OMEGA's core database (memory.db, etc.) |
+| `/System` | macOS system |
+| `/bin`, `/sbin` | System binaries |
+| `/usr/bin`, `/usr/sbin`, `/usr/lib`, `/usr/libexec` | System binaries and libraries |
+| `/private/etc` | macOS system config |
+| `/Library` | macOS system libraries |
+| `/etc`, `/boot`, `/proc`, `/sys`, `/dev` | Linux system paths |
+
+### Always writable
+
+| Path | Reason |
+|------|--------|
+| `{data_dir}/workspace/` | Sandbox working directory |
+| `{data_dir}/skills/` | Skill definitions |
+| `{data_dir}/projects/` | Project contexts |
+| `{data_dir}/stores/` | Domain-specific databases |
+| `$HOME` | User's home directory |
+| `/tmp` | Temporary files |
+| `/usr/local` | Homebrew, user-installed software |
 
 ## Tests
 
-### `lib.rs` tests (3)
-- `test_rwx_returns_plain_command` — Rwx mode returns unwrapped command
-- `test_sandbox_mode_returns_command` — Sandbox mode returns a valid command
-- `test_rx_mode_returns_command` — Rx mode returns a valid command
+### `lib.rs` tests (6)
+- `test_protected_command_returns_command` — returns a valid command
+- `test_is_write_blocked_data_dir` — blocks writes to `{data_dir}/data/`
+- `test_is_write_blocked_allows_workspace` — allows writes to workspace, skills
+- `test_is_write_blocked_system_dirs` — blocks `/System`, `/bin`, `/usr/bin`, `/private/etc`, `/Library`
+- `test_is_write_blocked_allows_normal_paths` — allows `/tmp`, home, `/usr/local`
+- `test_is_write_blocked_relative_path` — relative paths return false
 
-### `seatbelt.rs` tests (6, macOS only)
-- `test_profile_contains_data_dir` — profile includes data directory path
-- `test_profile_denies_writes_then_allows` — profile has deny + allow structure
-- `test_profile_allows_claude_dir` — profile includes ~/.claude
-- `test_profile_allows_cargo_dir` — profile includes ~/.cargo
-- `test_profile_allows_dev_null` — profile includes /dev/null, /dev/zero, /dev/fd
+### `seatbelt.rs` tests (5, macOS only)
+- `test_profile_blocks_system_dirs` — profile denies writes to all system directories
+- `test_profile_blocks_data_dir` — profile denies writes to `{data_dir}/data/`
+- `test_profile_allows_usr_local` — `/usr/local` is not blocked
+- `test_profile_allows_by_default` — profile starts with `(allow default)`
 - `test_command_structure` — command program is sandbox-exec or claude (fallback)
 
 ### `landlock_sandbox.rs` tests (3, Linux only)
@@ -186,23 +189,22 @@ For both Sandbox and Rx modes, OS enforcement allows writes to:
 
 | Metric | Value |
 |--------|-------|
-| Lines of code (lib.rs) | ~85 |
-| Lines of code (seatbelt.rs) | ~95 |
-| Lines of code (landlock_sandbox.rs) | ~95 |
-| Public functions | 1 |
+| Lines of code (lib.rs) | ~180 |
+| Lines of code (seatbelt.rs) | ~120 |
+| Lines of code (landlock_sandbox.rs) | ~120 |
+| Public functions | 2 |
 | Modules | 2 (platform-conditional) |
-| Tests | 12 (3 cross-platform + 6 macOS + 3 Linux) |
+| Tests | 14 (6 cross-platform + 5 macOS + 3 Linux) |
 
 ## Implementation Status
 
 | Component | Status |
 |-----------|--------|
-| `sandboxed_command()` public API | Complete |
-| macOS Seatbelt enforcement (`seatbelt.rs`) | Complete |
-| Linux Landlock enforcement (`landlock_sandbox.rs`) | Complete |
+| `protected_command()` public API | Complete |
+| `is_write_blocked()` public API | Complete |
+| macOS Seatbelt blocklist enforcement (`seatbelt.rs`) | Complete |
+| Linux Landlock broad-allowlist enforcement (`landlock_sandbox.rs`) | Complete |
 | Unsupported platform fallback | Complete |
-| Provider integration (`ClaudeCodeProvider`) | Complete |
-| `main.rs` passes sandbox mode to provider | Complete |
+| CLI provider integration (`ClaudeCodeProvider`) | Complete |
+| HTTP provider integration (`ToolExecutor`) | Complete |
 | Unit tests | Complete |
-| Prompt-level enforcement (omega-core) | Complete |
-| Working directory confinement (omega-providers) | Complete |

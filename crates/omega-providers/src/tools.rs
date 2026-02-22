@@ -4,7 +4,7 @@
 //! plus MCP server tool routing. Used by all agentic loops.
 
 use crate::mcp_client::McpClient;
-use omega_core::{config::SandboxMode, context::McpServer};
+use omega_core::context::McpServer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -42,7 +42,6 @@ pub struct ToolResult {
 pub struct ToolExecutor {
     workspace_path: PathBuf,
     data_dir: PathBuf,
-    sandbox_mode: SandboxMode,
     mcp_clients: HashMap<String, McpClient>,
     mcp_tool_map: HashMap<String, String>,
 }
@@ -50,9 +49,9 @@ pub struct ToolExecutor {
 impl ToolExecutor {
     /// Create a new tool executor.
     ///
-    /// `workspace_path` is the sandbox working directory (`~/.omega/workspace/`).
-    /// `data_dir` is the Omega data directory (`~/.omega/`).
-    pub fn new(workspace_path: PathBuf, sandbox_mode: SandboxMode) -> Self {
+    /// `workspace_path` is the working directory (`~/.omega/workspace/`).
+    /// `data_dir` is derived as the parent of `workspace_path` (`~/.omega/`).
+    pub fn new(workspace_path: PathBuf) -> Self {
         // data_dir = parent of workspace
         let data_dir = workspace_path
             .parent()
@@ -61,7 +60,6 @@ impl ToolExecutor {
         Self {
             workspace_path,
             data_dir,
-            sandbox_mode,
             mcp_clients: HashMap::new(),
             mcp_tool_map: HashMap::new(),
         }
@@ -163,7 +161,7 @@ impl ToolExecutor {
 
         debug!("tool/bash: {command}");
 
-        let mut cmd = omega_sandbox::sandboxed_command("bash", self.sandbox_mode, &self.data_dir);
+        let mut cmd = omega_sandbox::protected_command("bash", &self.data_dir);
         cmd.arg("-c").arg(command);
         cmd.current_dir(&self.workspace_path);
 
@@ -242,12 +240,11 @@ impl ToolExecutor {
         }
 
         let path = Path::new(path_str);
-        if !self.is_write_allowed(path) {
+        if omega_sandbox::is_write_blocked(path, &self.data_dir) {
             return ToolResult {
                 content: format!(
-                    "Write denied: {} is outside allowed directories in {} mode",
+                    "Write denied: {} is a protected path",
                     path.display(),
-                    self.sandbox_mode.display_name()
                 ),
                 is_error: true,
             };
@@ -302,12 +299,11 @@ impl ToolExecutor {
         }
 
         let path = Path::new(path_str);
-        if !self.is_write_allowed(path) {
+        if omega_sandbox::is_write_blocked(path, &self.data_dir) {
             return ToolResult {
                 content: format!(
-                    "Write denied: {} is outside allowed directories in {} mode",
+                    "Write denied: {} is a protected path",
                     path.display(),
-                    self.sandbox_mode.display_name()
                 ),
                 is_error: true,
             };
@@ -349,20 +345,6 @@ impl ToolExecutor {
         }
     }
 
-    /// Check if a write to the given path is allowed under the current sandbox mode.
-    fn is_write_allowed(&self, path: &Path) -> bool {
-        match self.sandbox_mode {
-            SandboxMode::Rwx => true,
-            SandboxMode::Sandbox | SandboxMode::Rx => {
-                let abs = if path.is_absolute() {
-                    path.to_path_buf()
-                } else {
-                    self.workspace_path.join(path)
-                };
-                abs.starts_with(&self.data_dir) || abs.starts_with("/tmp")
-            }
-        }
-    }
 }
 
 /// Truncate output to `max_chars`, appending a note if truncated.
@@ -501,37 +483,9 @@ mod tests {
         assert!(result.contains("100 total chars"));
     }
 
-    #[test]
-    fn test_is_write_allowed_rwx() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp/ws"), SandboxMode::Rwx);
-        assert!(executor.is_write_allowed(Path::new("/etc/passwd")));
-        assert!(executor.is_write_allowed(Path::new("/tmp/test")));
-    }
-
-    #[test]
-    fn test_is_write_allowed_sandbox_inside_data_dir() {
-        let executor = ToolExecutor::new(
-            PathBuf::from("/home/user/.omega/workspace"),
-            SandboxMode::Sandbox,
-        );
-        assert!(executor.is_write_allowed(Path::new("/home/user/.omega/workspace/file.txt")));
-        assert!(executor.is_write_allowed(Path::new("/home/user/.omega/skills/test.md")));
-        assert!(executor.is_write_allowed(Path::new("/tmp/test")));
-    }
-
-    #[test]
-    fn test_is_write_allowed_sandbox_outside() {
-        let executor = ToolExecutor::new(
-            PathBuf::from("/home/user/.omega/workspace"),
-            SandboxMode::Sandbox,
-        );
-        assert!(!executor.is_write_allowed(Path::new("/etc/passwd")));
-        assert!(!executor.is_write_allowed(Path::new("/home/user/documents/file.txt")));
-    }
-
     #[tokio::test]
     async fn test_exec_bash_empty_command() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp"), SandboxMode::Rwx);
+        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
         let result = executor.exec_bash(&serde_json::json!({})).await;
         assert!(result.is_error);
         assert!(result.content.contains("required"));
@@ -539,7 +493,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_bash_echo() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp"), SandboxMode::Rwx);
+        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
         let result = executor
             .exec_bash(&serde_json::json!({"command": "echo hello"}))
             .await;
@@ -549,7 +503,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_read_nonexistent() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp"), SandboxMode::Rwx);
+        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
         let result = executor
             .exec_read(&serde_json::json!({"file_path": "/tmp/omega_test_nonexistent_xyz"}))
             .await;
@@ -558,7 +512,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_write_and_read() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp"), SandboxMode::Rwx);
+        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
         let path = "/tmp/omega_tool_test_write.txt";
         let write_result = executor
             .exec_write(&serde_json::json!({"file_path": path, "content": "test content"}))
@@ -577,7 +531,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_edit() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp"), SandboxMode::Rwx);
+        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
         let path = "/tmp/omega_tool_test_edit.txt";
         tokio::fs::write(path, "hello world").await.unwrap();
 
@@ -597,13 +551,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exec_write_denied_sandbox() {
-        let executor = ToolExecutor::new(
-            PathBuf::from("/home/user/.omega/workspace"),
-            SandboxMode::Sandbox,
-        );
+    async fn test_exec_write_denied_protected_path() {
+        let executor = ToolExecutor::new(PathBuf::from("/home/user/.omega/workspace"));
         let result = executor
-            .exec_write(&serde_json::json!({"file_path": "/etc/test", "content": "x"}))
+            .exec_write(&serde_json::json!({"file_path": "/home/user/.omega/data/memory.db", "content": "x"}))
             .await;
         assert!(result.is_error);
         assert!(result.content.contains("denied"));
@@ -611,7 +562,7 @@ mod tests {
 
     #[test]
     fn test_tool_executor_mcp_tool_map_routing() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp"), SandboxMode::Rwx);
+        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
         // Without MCP connected, unknown tools return error.
         // We can't easily test MCP routing without a real server,
         // but we can verify the map is empty initially.
@@ -621,7 +572,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_unknown_tool() {
-        let mut executor = ToolExecutor::new(PathBuf::from("/tmp"), SandboxMode::Rwx);
+        let mut executor = ToolExecutor::new(PathBuf::from("/tmp"));
         let result = executor
             .execute("nonexistent_tool", &serde_json::json!({}))
             .await;

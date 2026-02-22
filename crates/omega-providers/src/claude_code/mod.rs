@@ -11,7 +11,6 @@ mod response;
 #[cfg(test)]
 mod tests;
 
-use omega_core::config::SandboxMode;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -30,10 +29,8 @@ pub struct ClaudeCodeProvider {
     allowed_tools: Vec<String>,
     /// Subprocess timeout.
     timeout: Duration,
-    /// Working directory for the CLI subprocess (sandbox workspace).
+    /// Working directory for the CLI subprocess.
     working_dir: Option<PathBuf>,
-    /// Sandbox mode for OS-level filesystem enforcement.
-    sandbox_mode: SandboxMode,
     /// Max auto-resume attempts when Claude hits max_turns.
     max_resume_attempts: u32,
     /// Default model to pass via `--model` (empty = let CLI decide).
@@ -75,7 +72,6 @@ impl ClaudeCodeProvider {
             allowed_tools: vec![],
             timeout: DEFAULT_TIMEOUT,
             working_dir: None,
-            sandbox_mode: SandboxMode::default(),
             max_resume_attempts: 5,
             model: String::new(),
         }
@@ -87,7 +83,6 @@ impl ClaudeCodeProvider {
         allowed_tools: Vec<String>,
         timeout_secs: u64,
         working_dir: Option<PathBuf>,
-        sandbox_mode: SandboxMode,
         max_resume_attempts: u32,
         model: String,
     ) -> Self {
@@ -96,7 +91,6 @@ impl ClaudeCodeProvider {
             allowed_tools,
             timeout: Duration::from_secs(timeout_secs),
             working_dir,
-            sandbox_mode,
             max_resume_attempts,
             model,
         }

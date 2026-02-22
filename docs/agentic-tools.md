@@ -147,18 +147,17 @@ a single tool result from exhausting the provider's context window.
 
 ## Sandbox Enforcement
 
-The `ToolExecutor` receives the current `SandboxMode` at construction time and applies it to every
-tool execution:
+Filesystem protection is always-on. The `ToolExecutor` uses `omega_sandbox::is_write_blocked()` to
+check every write operation, and `omega_sandbox::protected_command()` wraps subprocess execution
+with OS-level protection:
 
-| Mode | `bash` writes | `write` / `edit` |
-|------|--------------|------------------|
-| `Rwx` | Unrestricted | Unrestricted |
-| `Sandbox` | Restricted to `~/.omega/` + `/tmp` | Restricted to `~/.omega/` + `/tmp` |
-| `Rx` | Restricted to `~/.omega/` + `/tmp` | Restricted to `~/.omega/` + `/tmp` |
+- **`bash` tool:** Subprocess launched via `protected_command()`, which applies OS-level blocklist
+  enforcement (Seatbelt on macOS, Landlock on Linux).
+- **`write` / `edit` tools:** Path checked via `is_write_blocked()` before any write operation.
+  Writes to dangerous system directories and OMEGA's core database are blocked. Writes to the
+  workspace (`~/.omega/workspace/`), data directory (`~/.omega/`), and `/tmp` are allowed.
 
-The OS-level enforcement (Seatbelt on macOS, Landlock on Linux) applies to the Omega process as a
-whole and is a separate layer. The tool-level enforcement is an additional software check inside
-the agentic loop.
+No configuration is needed -- protection is automatic.
 
 ---
 

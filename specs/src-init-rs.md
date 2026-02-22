@@ -10,9 +10,8 @@ Interactive setup wizard and non-interactive deployment for new Omega users. Pro
 The `init.rs` module contains:
 - `run()` — Main interactive wizard orchestration function
 - `run_noninteractive(args) -> Result<()>` — Non-interactive deployment path, triggered when `--telegram-token` or `--allowed-users` CLI args are provided
-- `generate_config(bot_token, user_ids, whatsapp_enabled, google_email, sandbox_mode) -> String` — Public pure function that builds `config.toml` content (extracted for testability). Note: `user_id: Option<i64>` was changed to `user_ids: &[i64]` to support multiple allowed users.
+- `generate_config(bot_token, user_ids, whisper_key, whatsapp_enabled, google_email) -> String` — Public pure function that builds `config.toml` content (extracted for testability). Note: `user_id: Option<i64>` was changed to `user_ids: &[i64]` to support multiple allowed users.
 - `parse_allowed_users(input) -> Result<Vec<i64>>` — Public function that parses a comma-separated string of user IDs into a Vec, with validation (rejects non-numeric, empty segments)
-- `validate_sandbox_mode(mode) -> Result<String>` — Public function that validates a sandbox mode string is one of `sandbox`, `rx`, or `rwx`
 - Uses `omega_core::shellexpand()` for home directory expansion (imported, not local)
 - Uses `omega_channels::whatsapp` for WhatsApp pairing flow
 
@@ -221,29 +220,17 @@ See [Google Workspace Setup Flow](#google-workspace-setup-flow-run_google_setup)
 
 ---
 
-### Phase 8: Sandbox Mode Selection
-**Action:** Prompt user to choose sandbox mode via `cliclack::select`
-
-**Logic Flow:**
-1. Display `cliclack::select("Sandbox mode")` with three options:
-   - `"Sandbox (Recommended)"` — Workspace only, no host filesystem access (default, safest)
-   - `"Read-only"` — Read & execute on host, writes only in workspace
-   - `"Full access"` — Unrestricted host access (power users)
-2. Store selected mode string (`"sandbox"`, `"rx"`, or `"rwx"`)
-
-**Purpose:** Lets users choose the security boundary for Claude Code CLI execution. The workspace directory (`~/.omega/workspace/`) is created on startup. Default is `sandbox` for maximum safety.
-
----
-
-### Phase 9: Config File Generation
+### Phase 8: Config File Generation
 **Action:** Create or skip `config.toml` based on existing file
+
+> **Note:** Sandbox mode selection has been removed. Filesystem protection is now always-on via `omega_sandbox`'s blocklist approach -- no configuration needed.
 
 **Location:** Current working directory, file named `config.toml`
 
 **Logic Flow:**
 1. Check if `config.toml` already exists
 2. If exists: Warn via `cliclack::log::warning(...)` and skip generation
-3. If missing: Call `generate_config(bot_token, user_ids, whatsapp_enabled, google_email, sandbox_mode)` and write to file
+3. If missing: Call `generate_config(bot_token, user_ids, whisper_key, whatsapp_enabled, google_email)` and write to file
 
 **Skip Output (if exists):**
 ```
@@ -262,7 +249,7 @@ See [Google Workspace Setup Flow](#google-workspace-setup-flow-run_google_setup)
 
 ---
 
-### Phase 10: Service Installation Offer
+### Phase 9: Service Installation Offer
 **Action:** Prompt user to install Omega as a system service
 
 **Logic Flow:**
@@ -278,7 +265,7 @@ See [Google Workspace Setup Flow](#google-workspace-setup-flow-run_google_setup)
 
 ---
 
-### Phase 11: Summary and Next Steps
+### Phase 10: Summary and Next Steps
 **Action:** Display next steps via `cliclack::note` and close session with `cliclack::outro`
 
 **Logic Flow:**
@@ -432,8 +419,7 @@ Programmatic deployment path triggered when `--telegram-token` or `--allowed-use
 
 ### Flow
 1. Parse and validate `--allowed-users` via `parse_allowed_users()` (comma-separated i64 values)
-2. Validate `--sandbox` mode via `validate_sandbox_mode()` (defaults to `"sandbox"`)
-3. Create `~/.omega` data directory if missing
+2. Create `~/.omega` data directory if missing
 4. Validate Claude CLI is accessible (`claude --version`)
 5. If `--claude-setup-token` is provided, run `claude setup-token <token>`
 6. If `--google-credentials` is provided, run `gog auth credentials <path>`
@@ -449,13 +435,11 @@ Programmatic deployment path triggered when `--telegram-token` or `--allowed-use
 | `--allowed-users` | `OMEGA_ALLOWED_USERS` | Comma-separated Telegram user IDs |
 | `--claude-setup-token` | `OMEGA_CLAUDE_SETUP_TOKEN` | Anthropic setup token for headless auth |
 | `--whisper-key` | `OMEGA_WHISPER_KEY` | OpenAI API key for Whisper transcription |
-| `--sandbox` | `OMEGA_SANDBOX` | Sandbox mode: `sandbox`, `rx`, or `rwx` |
 | `--google-credentials` | `OMEGA_GOOGLE_CREDENTIALS` | Path to Google OAuth `client_secret.json` |
 | `--google-email` | `OMEGA_GOOGLE_EMAIL` | Gmail address for Google Workspace |
 
 ### Error Handling
 - Invalid `--allowed-users` format (non-numeric values) returns an error
-- Invalid `--sandbox` mode returns an error
 - Missing Claude CLI is fatal (same as interactive mode)
 - Google credential/auth failures are non-fatal
 
@@ -466,9 +450,6 @@ Programmatic deployment path triggered when `--telegram-token` or `--allowed-use
 ### `parse_allowed_users(input: &str) -> Result<Vec<i64>>`
 Parses a comma-separated string of user IDs into a vector. Trims whitespace around each ID. Rejects non-numeric values with a descriptive error. Empty input returns an empty vector.
 
-### `validate_sandbox_mode(mode: &str) -> Result<String>`
-Validates that the provided sandbox mode is one of `sandbox`, `rx`, or `rwx`. Returns the validated string on success, or an error with the list of valid options.
-
 ---
 
 ## Config Generation (`generate_config`)
@@ -478,9 +459,9 @@ Validates that the provided sandbox mode is one of `sandbox`, `rx`, or `rwx`. Re
 pub fn generate_config(
     bot_token: &str,
     user_ids: &[i64],
+    whisper_key: Option<&str>,
     whatsapp_enabled: bool,
     google_email: Option<&str>,
-    sandbox_mode: &str,
 ) -> String
 ```
 
@@ -495,11 +476,12 @@ Public pure function that builds the `config.toml` content string. Extracted fro
 | `bot_token` (non-empty) | `[channel.telegram] enabled = true`, `bot_token = "<value>"` |
 | `user_ids` (non-empty) | `allowed_users = [<id1>, <id2>, ...]` |
 | `user_ids` (empty) | `allowed_users = []` |
+| `whisper_key = Some(key)` | `whisper_api_key = "<key>"` |
+| `whisper_key = None` | `# whisper_api_key = ""` (commented out with hint) |
 | `whatsapp_enabled = true` | `[channel.whatsapp] enabled = true` |
 | `whatsapp_enabled = false` | `[channel.whatsapp] enabled = false` |
 | `google_email = Some(email)` | Appends `[google] account = "<email>"` section |
 | `google_email = None` | No `[google]` section in output |
-| `sandbox_mode` | `[sandbox] mode = "<value>"` (`"sandbox"`, `"rx"`, or `"rwx"`) |
 
 ### Configuration Template Structure
 
@@ -534,9 +516,6 @@ backend = "sqlite"
 db_path = "~/.omega/data/memory.db"
 max_context_messages = 50
 
-[sandbox]
-mode = "{sandbox_mode}"
-
 # Appended only when google_email is Some:
 [google]
 account = "{email}"
@@ -550,8 +529,8 @@ account = "{email}"
 - Memory backend: `sqlite`
 - Max context messages: `50`
 - Auth: Enabled
-- Sandbox mode: `sandbox` (recommended default, workspace-only isolation)
 - WhatsApp allowed_users: always `[]` (configured separately)
+- Filesystem protection: always-on via `omega_sandbox` blocklist (no config needed)
 
 ---
 
@@ -559,26 +538,23 @@ account = "{email}"
 
 ### Test Suite: `tests` (18 tests)
 
-Tests exercise `generate_config()`, `parse_allowed_users()`, and `validate_sandbox_mode()` in `init.rs`. Browser-related tests (`detect_private_browsers`, `create_incognito_script`, `PRIVATE_BROWSERS`) have moved to `init_wizard.rs`. No I/O mocking required.
+Tests exercise `generate_config()` and `parse_allowed_users()` in `init.rs`. Browser-related tests (`detect_private_browsers`, `create_incognito_script`, `PRIVATE_BROWSERS`) have moved to `init_wizard.rs`. No I/O mocking required.
 
 | Test | Parameters | Assertions |
 |------|-----------|------------|
-| `test_generate_config_full` | `("123:ABC", &[42], true, Some("me@gmail.com"), "sandbox")` | Token present, user ID in array, telegram enabled, whatsapp enabled, google section present with email, sandbox mode present |
-| `test_generate_config_minimal` | `("", &[], false, None, "sandbox")` | Empty token, empty allowed_users, telegram disabled, whatsapp disabled, no google section, sandbox mode present |
-| `test_generate_config_telegram_only` | `("tok:EN", &[999], false, None, "sandbox")` | Token present, user ID in array, telegram enabled, whatsapp disabled, no google section |
-| `test_generate_config_google_only` | `("", &[], false, Some("test@example.com"), "sandbox")` | Telegram disabled, google section present with email |
-| `test_generate_config_whatsapp_only` | `("", &[], true, None, "sandbox")` | Whatsapp enabled, telegram disabled, no google section |
-| `test_generate_config_sandbox_modes` | rx and rwx modes | Verifies `mode = "rx"` and `mode = "rwx"` appear correctly |
+| `test_generate_config_full` | `("123:ABC", &[42], Some("sk-key"), true, Some("me@gmail.com"))` | Token present, user ID in array, telegram enabled, whatsapp enabled, google section present with email, no sandbox section |
+| `test_generate_config_minimal` | `("", &[], None, false, None)` | Empty token, empty allowed_users, telegram disabled, whatsapp disabled, no google section, no sandbox section |
+| `test_generate_config_telegram_only` | `("tok:EN", &[999], None, false, None)` | Token present, user ID in array, telegram enabled, whatsapp disabled, no google section |
+| `test_generate_config_google_only` | `("", &[], None, false, Some("test@example.com"))` | Telegram disabled, google section present with email |
+| `test_generate_config_whatsapp_only` | `("", &[], None, true, None)` | Whatsapp enabled, telegram disabled, no google section |
 | `test_generate_config_with_whisper` | `("tok:EN", &[42], Some("sk-abc"), ...)` | Whisper API key present in config |
 | `test_generate_config_without_whisper` | `("tok:EN", &[42], None, ...)` | Commented whisper_api_key with OPENAI_API_KEY hint |
-| `test_generate_config_multiple_users` | `("tok:EN", &[111, 222, 333], false, None, "sandbox")` | All three user IDs appear in allowed_users array |
+| `test_generate_config_multiple_users` | `("tok:EN", &[111, 222, 333], None, false, None)` | All three user IDs appear in allowed_users array |
 | `test_parse_allowed_users_single` | `"842277204"` | Returns `vec![842277204]` |
 | `test_parse_allowed_users_multiple` | `"842277204,123456"` | Returns `vec![842277204, 123456]` |
 | `test_parse_allowed_users_with_spaces` | `" 842277204 , 123456 "` | Returns `vec![842277204, 123456]` (whitespace trimmed) |
 | `test_parse_allowed_users_empty` | `""` | Returns empty vec |
 | `test_parse_allowed_users_invalid` | `"abc,123"` | Returns error (non-numeric value rejected) |
-| `test_validate_sandbox_mode_valid` | `"sandbox"`, `"rx"`, `"rwx"` | All return Ok with the validated string |
-| `test_validate_sandbox_mode_invalid` | `"full"` | Returns error with list of valid options |
 | `test_private_browsers_constant_has_entries` | — | *(Moved to init_wizard.rs)* |
 | `test_detect_private_browsers_returns_valid_indices` | — | *(Moved to init_wizard.rs)* |
 | `test_create_incognito_script` | — | *(Moved to init_wizard.rs)* |

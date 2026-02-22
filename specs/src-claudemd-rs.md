@@ -22,13 +22,12 @@ Both operations use direct subprocess calls to `claude -p` (not the Provider tra
 
 ## Functions
 
-### `pub async fn ensure_claudemd(workspace: &Path, data_dir: &Path, sandbox_mode: SandboxMode)`
+### `pub async fn ensure_claudemd(workspace: &Path, data_dir: &Path)`
 **Purpose:** Ensure `CLAUDE.md` exists in the workspace directory using the bundled template + dynamic enrichment.
 
 **Parameters:**
 - `workspace: &Path` — Path to `~/.omega/workspace/`.
-- `data_dir: &Path` — Path to `~/.omega/` (for sandbox enforcement and prompt context).
-- `sandbox_mode: SandboxMode` — Active sandbox mode for OS-level enforcement.
+- `data_dir: &Path` — Path to `~/.omega/` (for filesystem protection and prompt context).
 
 **Returns:** None (void).
 
@@ -40,7 +39,7 @@ Both operations use direct subprocess calls to `claude -p` (not the Provider tra
 
 **Error Handling:** Non-fatal — warns on failure, never blocks startup. Graceful degradation: template is always deployed even if enrichment fails.
 
-### `pub async fn refresh_claudemd(workspace: &Path, data_dir: &Path, sandbox_mode: SandboxMode)`
+### `pub async fn refresh_claudemd(workspace: &Path, data_dir: &Path)`
 **Purpose:** Re-deploy the bundled template (preserving dynamic content), then ask Claude Code to update dynamic sections.
 
 **Parameters:** Same as `ensure_claudemd`.
@@ -68,13 +67,12 @@ Both operations use direct subprocess calls to `claude -p` (not the Provider tra
 3. Extract and trim everything after that line.
 4. Return `None` if empty, `Some(trimmed_content)` otherwise.
 
-### `pub async fn claudemd_loop(workspace: PathBuf, data_dir: PathBuf, sandbox_mode: SandboxMode, interval_hours: u64)`
+### `pub async fn claudemd_loop(workspace: PathBuf, data_dir: PathBuf, interval_hours: u64)`
 **Purpose:** Background loop that periodically refreshes the workspace CLAUDE.md.
 
 **Parameters:**
 - `workspace: PathBuf` — Path to `~/.omega/workspace/`.
 - `data_dir: PathBuf` — Path to `~/.omega/`.
-- `sandbox_mode: SandboxMode` — Active sandbox mode.
 - `interval_hours: u64` — Hours between refreshes (default: 24).
 
 **Returns:** Never returns (infinite loop, aborted on shutdown).
@@ -84,19 +82,18 @@ Both operations use direct subprocess calls to `claude -p` (not the Provider tra
 2. Call `refresh_claudemd()`.
 3. Repeat.
 
-### `async fn run_claude(prompt: &str, workspace: &Path, data_dir: &Path, sandbox_mode: SandboxMode) -> Result<(), String>`
+### `async fn run_claude(prompt: &str, workspace: &Path, data_dir: &Path) -> Result<(), String>`
 **Purpose:** Run `claude -p` as a direct subprocess for CLAUDE.md maintenance.
 
 **Parameters:**
 - `prompt: &str` — The prompt to send to Claude Code.
 - `workspace: &Path` — Working directory for the subprocess.
-- `data_dir: &Path` — Data directory for sandbox enforcement.
-- `sandbox_mode: SandboxMode` — Sandbox mode for OS-level enforcement.
+- `data_dir: &Path` — Data directory for filesystem protection.
 
 **Returns:** `Result<(), String>` — Ok on success, Err with description on failure.
 
 **Logic:**
-1. Build command via `omega_sandbox::sandboxed_command("claude", sandbox_mode, data_dir)`.
+1. Build command via `omega_sandbox::protected_command("claude", data_dir)`.
 2. Set `current_dir(workspace)`, remove `CLAUDECODE` env var.
 3. Pass `-p`, `--output-format json`, `--dangerously-skip-permissions`.
 4. Execute with 120s timeout via `tokio::time::timeout()`.
@@ -154,8 +151,7 @@ Verifies that the refresh logic preserves both template sections (diagnostic pro
 
 ### Internal Dependencies
 - `omega_core::config::bundled_workspace_claude` — Bundled template accessor.
-- `omega_core::config::SandboxMode` — Sandbox mode enum.
-- `omega_sandbox::sandboxed_command` — OS-level sandbox enforcement.
+- `omega_sandbox::protected_command` — OS-level filesystem protection (always-on blocklist).
 
 ## Design Decisions
 

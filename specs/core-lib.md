@@ -80,8 +80,6 @@ omega_core
 | `TelegramConfig` | Debug, Clone, Serialize, Deserialize | Telegram bot settings (enabled, bot_token, allowed_users) |
 | `WhatsAppConfig` | Debug, Clone, Serialize, Deserialize | WhatsApp bridge settings (enabled, bridge_url, phone_number) |
 | `MemoryConfig` | Debug, Clone, Serialize, Deserialize | Memory backend settings (backend, db_path, max_context_messages) |
-| `SandboxConfig` | Debug, Clone, Default, Serialize, Deserialize | Sandbox settings (mode: SandboxMode) |
-| `SandboxMode` | Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize | Sandbox mode enum (Sandbox, Rx, Rwx) |
 
 **Public Functions:**
 
@@ -130,8 +128,6 @@ pub struct Config {
     pub channel: ChannelConfig,
     #[serde(default)]
     pub memory: MemoryConfig,
-    #[serde(default)]
-    pub sandbox: SandboxConfig,
 }
 ```
 
@@ -140,7 +136,6 @@ All fields except `omega` carry `#[serde(default)]`, meaning they can be entirel
 **Notable Serde Attributes:**
 - `ProviderConfig.claude_code` is renamed to `claude-code` in TOML via `#[serde(rename = "claude-code")]`.
 - `AuthConfig.enabled` defaults to `true` via `#[serde(default = "default_true")]`.
-- `SandboxConfig.enabled` also defaults to `true`.
 
 ---
 
@@ -469,7 +464,6 @@ All items are accessed via their module path since `lib.rs` contains no re-expor
 | `omega_core::config::TelegramConfig` | Struct |
 | `omega_core::config::WhatsAppConfig` | Struct |
 | `omega_core::config::MemoryConfig` | Struct |
-| `omega_core::config::SandboxConfig` | Struct |
 | `omega_core::config::load` | Function |
 | `omega_core::context::ContextEntry` | Struct |
 | `omega_core::context::Context` | Struct |
