@@ -407,6 +407,8 @@ cargo build --release        # Optimized binary
 - Skills: `~/.omega/skills/*/SKILL.md` (auto-deployed on first run, TOML or YAML frontmatter + instructions, scanned at startup)
 - Projects: `~/.omega/projects/*/ROLE.md` (user-created or AI-created, directory name = project name, hot-reloaded per message)
 - Workspace: `~/.omega/workspace/` (working directory for AI subprocess, created on startup)
+- Workspace builds: `~/.omega/workspace/builds/<project-name>/` (user-requested builds — each with `specs/`, `docs/`, `backend/`, `backend/data/db/`, optional `frontend/`. CLI-first design mandatory. Default language: Rust. After build, a skill is auto-created at `~/.omega/skills/<project-name>/SKILL.md` with trigger keywords and full CLI reference. Convention enforced via `WORKSPACE_CLAUDE.md`)
+- Workspace tmp: `~/.omega/workspace/tmp/` (ephemeral artifacts, safe to clean)
 - Stores: `~/.omega/stores/` (domain-specific databases, e.g. `stores/trading/store.db`, created on startup)
 - Workspace CLAUDE.md: `~/.omega/workspace/CLAUDE.md` (deployed from bundled template on first run, dynamic content appended by `claude -p`, refreshed every 24h — template re-deployed + dynamic sections updated)
 - Inbox: `~/.omega/workspace/inbox/` (temporary storage for incoming image attachments, auto-cleaned after provider response)

@@ -8,7 +8,8 @@ When OMEGA runs with the Claude Code CLI provider, the subprocess is invoked in 
 
 The workspace CLAUDE.md uses a **bundled template** (`prompts/WORKSPACE_CLAUDE.md`) that is compiled into the binary. This template contains all standard operational rules that OMEGA's subprocess needs:
 
-- **Directory Structure** — layout of `~/.omega/`
+- **Directory Structure** — layout of `~/.omega/` including workspace subdirectories (`builds/`, `inbox/`, `tmp/`)
+- **Build Convention** — mandatory structure for user-requested builds: `builds/<project-name>/` with `specs/`, `docs/`, `backend/` (with `data/db/`), optional `frontend/`. Default language: Rust
 - **Infrastructure** — background loops (heartbeat, scheduler, CLAUDE.md refresh), critical distinctions, permissions
 - **Diagnostic Protocol** — mandatory log investigation steps before claiming issues
 - **Known False Diagnoses** — documented wrong claims to never repeat

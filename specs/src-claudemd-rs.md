@@ -104,10 +104,11 @@ Both operations use direct subprocess calls to `claude -p` (not the Provider tra
 The template is stored at `prompts/WORKSPACE_CLAUDE.md` and bundled into the binary via `include_str!` in `omega-core/src/config.rs`. It contains:
 
 - `# OMEGA Workspace` — intro
-- `## Directory Structure` — static layout of `~/.omega/`
+- `## Directory Structure` — static layout of `~/.omega/` including workspace subdirectories (`builds/`, `inbox/`, `tmp/`)
 - `## Your Infrastructure` — background loops, critical distinctions, permissions
 - `## Diagnostic Protocol` — mandatory log investigation steps
 - `## Known False Diagnoses` — documented wrong claims to never repeat
+- `## Build Convention` — mandatory file structure for user-requested builds (`builds/<project-name>/` with `specs/`, `docs/`, `backend/`, optional `frontend/`, default language Rust)
 - `## Key Conventions` — sandbox, markers, DB path
 - `<!-- DYNAMIC CONTENT BELOW ... -->` — marker line
 
