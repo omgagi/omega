@@ -102,6 +102,7 @@ pub(super) fn handle_help(lang: &str) -> String {
          {}\n\
          {}\n\
          {}\n\
+         {}\n\
          {}",
         i18n::t("commands_header", lang),
         i18n::t("help_status", lang),
@@ -118,6 +119,7 @@ pub(super) fn handle_help(lang: &str) -> String {
         i18n::t("help_projects", lang),
         i18n::t("help_project", lang),
         i18n::t("help_whatsapp", lang),
+        i18n::t("help_learning", lang),
         i18n::t("help_heartbeat", lang),
         i18n::t("help_help", lang),
     )

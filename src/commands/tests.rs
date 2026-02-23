@@ -70,6 +70,10 @@ fn test_parse_all_commands() {
         Command::parse("/heartbeat"),
         Some(Command::Heartbeat)
     ));
+    assert!(matches!(
+        Command::parse("/learning"),
+        Some(Command::Learning)
+    ));
     assert!(matches!(Command::parse("/help"), Some(Command::Help)));
 }
 
@@ -288,5 +292,102 @@ fn test_help_includes_heartbeat() {
     assert!(
         result.contains("/heartbeat"),
         "help should list /heartbeat: {result}"
+    );
+}
+
+#[test]
+fn test_parse_learning_command() {
+    assert!(matches!(
+        Command::parse("/learning"),
+        Some(Command::Learning)
+    ));
+    assert!(matches!(
+        Command::parse("/learning@omega_bot"),
+        Some(Command::Learning)
+    ));
+}
+
+#[tokio::test]
+async fn test_learning_empty() {
+    let store = test_store().await;
+    let result = learning::handle_learning(&store, "user1", "English").await;
+    assert!(
+        result.contains("No learning data yet"),
+        "should show empty state: {result}"
+    );
+}
+
+#[tokio::test]
+async fn test_learning_with_data() {
+    let store = test_store().await;
+    store
+        .store_outcome(
+            "user1",
+            "training",
+            1,
+            "User prefers morning workouts",
+            "conversation",
+            "",
+        )
+        .await
+        .unwrap();
+    store
+        .store_lesson(
+            "user1",
+            "scheduling",
+            "Remind 1h before, not at exact time",
+            "",
+        )
+        .await
+        .unwrap();
+
+    let result = learning::handle_learning(&store, "user1", "English").await;
+    assert!(result.contains("Learning"), "should have header: {result}");
+    assert!(
+        result.contains("Behavioral rules"),
+        "should show rules section: {result}"
+    );
+    assert!(
+        result.contains("scheduling"),
+        "should show lesson domain: {result}"
+    );
+    assert!(
+        result.contains("Remind 1h before"),
+        "should show lesson rule: {result}"
+    );
+    assert!(
+        result.contains("Recent outcomes"),
+        "should show outcomes section: {result}"
+    );
+    assert!(
+        result.contains("training"),
+        "should show outcome domain: {result}"
+    );
+}
+
+#[tokio::test]
+async fn test_learning_localized() {
+    let store = test_store().await;
+    store
+        .store_lesson("user1", "crypto", "Track BTC daily", "")
+        .await
+        .unwrap();
+    let result = learning::handle_learning(&store, "user1", "Spanish").await;
+    assert!(
+        result.contains("Aprendizaje"),
+        "should have Spanish header: {result}"
+    );
+    assert!(
+        result.contains("Reglas de comportamiento"),
+        "should have Spanish rules label: {result}"
+    );
+}
+
+#[test]
+fn test_help_includes_learning() {
+    let result = status::handle_help("English");
+    assert!(
+        result.contains("/learning"),
+        "help should list /learning: {result}"
     );
 }

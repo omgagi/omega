@@ -314,6 +314,41 @@ Project deactivated. Conversation cleared.
 
 ---
 
+### `/learning` — Self-Learning Status
+
+**What It Does:** Displays Omega's learned behavioral rules (long-term memory) and recent reward outcomes (working memory) for your account. This lets you see exactly what Omega has learned about your preferences and interaction patterns.
+
+**Response Example (With Data):**
+```
+*OMEGA Ω* Learning
+
+*Behavioral rules*
+- [scheduling] Remind 1h before, not at exact time
+- [training] (fitness) User completes workouts by 6am
+
+*Recent outcomes*
+- [+] training: User prefers morning workouts (2h ago)
+- [-] crypto: Price alerts too frequent (1d ago)
+- [~] scheduling: Neutral feedback on task timing (3d ago)
+```
+
+**Response Example (Empty):**
+```
+No learning data yet. Interact with me so I can learn.
+```
+
+**Understanding the Output:**
+- **Behavioral rules:** Distilled long-term patterns Omega follows when interacting with you. Each rule has a domain (e.g., `scheduling`, `training`) and optionally a project scope.
+- **Recent outcomes:** Raw feedback signals from recent conversations. Score icons: `+` (helpful), `-` (redundant/annoying), `~` (neutral). Timestamps show relative time (e.g., "2h ago").
+
+**Use Cases:**
+- See exactly what Omega has learned about your preferences
+- Verify that behavioral rules are accurate and helpful
+- Monitor the reward-based learning system
+- Debug unexpected AI behavior by checking learned patterns
+
+---
+
 ### `/heartbeat` — Heartbeat Status and Watchlist
 
 **What It Does:** Shows the current heartbeat monitoring status, check interval, and all items being monitored by the heartbeat loop.
@@ -370,6 +405,7 @@ No watchlist items. Configure ~/.omega/prompts/HEARTBEAT.md
 /projects   — List available projects
 /project    — Show, activate, or deactivate a project
 /whatsapp   — Connect WhatsApp via QR code
+/learning  — Show learned rules and recent outcomes
 /heartbeat  — Heartbeat status and watchlist
 /help       — This message
 ```

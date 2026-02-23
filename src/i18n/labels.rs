@@ -85,6 +85,37 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             _ => "*OMEGA \u{03a9}* Commands",
         },
 
+        "learning_header" => match lang {
+            "Spanish" => "Aprendizaje de *OMEGA \u{03a9}*",
+            "Portuguese" => "Aprendizado do *OMEGA \u{03a9}*",
+            "French" => "Apprentissage de *OMEGA \u{03a9}*",
+            "German" => "*OMEGA \u{03a9}* Lernverlauf",
+            "Italian" => "Apprendimento di *OMEGA \u{03a9}*",
+            "Dutch" => "*OMEGA \u{03a9}* Leerproces",
+            "Russian" => "\u{041e}\u{0431}\u{0443}\u{0447}\u{0435}\u{043d}\u{0438}\u{0435} *OMEGA \u{03a9}*",
+            _ => "*OMEGA \u{03a9}* Learning",
+        },
+        "learning_rules" => match lang {
+            "Spanish" => "Reglas de comportamiento",
+            "Portuguese" => "Regras comportamentais",
+            "French" => "R\u{00e8}gles comportementales",
+            "German" => "Verhaltensregeln",
+            "Italian" => "Regole comportamentali",
+            "Dutch" => "Gedragsregels",
+            "Russian" => "\u{041f}\u{0440}\u{0430}\u{0432}\u{0438}\u{043b}\u{0430} \u{043f}\u{043e}\u{0432}\u{0435}\u{0434}\u{0435}\u{043d}\u{0438}\u{044f}",
+            _ => "Behavioral rules",
+        },
+        "learning_outcomes" => match lang {
+            "Spanish" => "Resultados recientes",
+            "Portuguese" => "Resultados recentes",
+            "French" => "R\u{00e9}sultats r\u{00e9}cents",
+            "German" => "Aktuelle Ergebnisse",
+            "Italian" => "Risultati recenti",
+            "Dutch" => "Recente resultaten",
+            "Russian" => "\u{041d}\u{0435}\u{0434}\u{0430}\u{0432}\u{043d}\u{0438}\u{0435} \u{0440}\u{0435}\u{0437}\u{0443}\u{043b}\u{044c}\u{0442}\u{0430}\u{0442}\u{044b}",
+            _ => "Recent outcomes",
+        },
+
         // --- Labels ---
         "uptime" => match lang {
             "Spanish" | "Portuguese" | "French" | "Italian" => "Uptime:",
@@ -194,6 +225,16 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             "Dutch" => "Nog geen gespreksgeschiedenis.",
             "Russian" => "\u{0418}\u{0441}\u{0442}\u{043e}\u{0440}\u{0438}\u{0438} \u{0440}\u{0430}\u{0437}\u{0433}\u{043e}\u{0432}\u{043e}\u{0440}\u{043e}\u{0432} \u{043f}\u{043e}\u{043a}\u{0430} \u{043d}\u{0435}\u{0442}.",
             _ => "No conversation history yet.",
+        },
+        "no_learning" => match lang {
+            "Spanish" => "A\u{00fa}n no hay datos de aprendizaje. Interact\u{00fa}a conmigo para que aprenda.",
+            "Portuguese" => "Ainda n\u{00e3}o h\u{00e1} dados de aprendizado. Interaja comigo para eu aprender.",
+            "French" => "Pas encore de donn\u{00e9}es d'apprentissage. Interagissez avec moi pour que j'apprenne.",
+            "German" => "Noch keine Lerndaten. Interagiere mit mir, damit ich lerne.",
+            "Italian" => "Nessun dato di apprendimento. Interagisci con me per farmi imparare.",
+            "Dutch" => "Nog geen leerdata. Communiceer met me zodat ik kan leren.",
+            "Russian" => "\u{0414}\u{0430}\u{043d}\u{043d}\u{044b}\u{0445} \u{043e}\u{0431}\u{0443}\u{0447}\u{0435}\u{043d}\u{0438}\u{044f} \u{043f}\u{043e}\u{043a}\u{0430} \u{043d}\u{0435}\u{0442}. \u{041e}\u{0431}\u{0449}\u{0430}\u{0439}\u{0442}\u{0435}\u{0441}\u{044c} \u{0441}\u{043e} \u{043c}\u{043d}\u{043e}\u{0439}, \u{0447}\u{0442}\u{043e}\u{0431}\u{044b} \u{044f} \u{0443}\u{0447}\u{0438}\u{043b}\u{0441}\u{044f}.",
+            _ => "No learning data yet. Interact with me so I can learn.",
         },
         "no_skills" => match lang {
             "Spanish" => "No hay skills instalados. Crea un directorio en ~/.omega/skills/ con un archivo SKILL.md.",

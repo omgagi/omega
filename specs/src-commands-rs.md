@@ -27,6 +27,7 @@ pub enum Command {
     Projects,
     Project,
     Heartbeat,
+    Learning,
     Help,
 }
 ```
@@ -45,6 +46,7 @@ pub enum Command {
 | `Projects` | List available projects, marking the active one |
 | `Project` | Show, activate, or deactivate a project |
 | `Heartbeat` | Show heartbeat status, interval, and watchlist items |
+| `Learning` | Show learned behavioral rules and recent outcomes |
 | `Help` | Display all available commands |
 
 ---
@@ -76,6 +78,7 @@ pub enum Command {
 - `/projects` → `Command::Projects`
 - `/project` → `Command::Project`
 - `/heartbeat` → `Command::Heartbeat`
+- `/learning` → `Command::Learning`
 - `/help` → `Command::Help`
 
 **Example Behavior:**
@@ -527,6 +530,42 @@ No watchlist items. Configure ~/.omega/prompts/HEARTBEAT.md
 
 ---
 
+### /learning — `handle_learning(store, sender_id, lang)`
+
+**Behavior:**
+- Calls `store.get_recent_outcomes(sender_id, 20, None)` to fetch up to 20 recent outcomes across all projects
+- Calls `store.get_lessons(sender_id, None)` to fetch all distilled behavioral rules
+- If both are empty, returns localized `i18n::t("no_learning")` empty state
+- Displays lessons first (behavioral rules), then recent outcomes
+
+**Response Format (With Data):**
+```
+*OMEGA Ω* Learning
+
+*Behavioral rules*
+- [scheduling] Remind 1h before, not at exact time
+- [training] (fitness) User completes workouts by 6am
+
+*Recent outcomes*
+- [+] training: User prefers morning workouts (2h ago)
+- [-] crypto: Price alerts too frequent (1d ago)
+- [~] scheduling: Neutral feedback on task timing (3d ago)
+```
+
+**Response Format (Empty):**
+```
+No learning data yet. Interact with me so I can learn.
+```
+
+**Score Icons:**
+- `+` = helpful (score +1)
+- `-` = redundant/annoying (score -1)
+- `~` = neutral (score 0)
+
+**Time Formatting:** Timestamps are displayed as relative time (e.g., "2h ago", "1d ago").
+
+---
+
 ### /help — `handle_help(lang)`
 
 **Behavior:**
@@ -552,6 +591,7 @@ No watchlist items. Configure ~/.omega/prompts/HEARTBEAT.md
 /projects — List available projects
 /project  — Show, activate, or deactivate a project
 /whatsapp — Connect WhatsApp via QR code
+/learning — Show learned rules and recent outcomes
 /heartbeat — Heartbeat status and watchlist
 /help     — This message
 ```
@@ -617,6 +657,8 @@ All command handlers interact with the `omega_memory::Store` trait/type:
 | `handle_project()` | `store.store_fact(sender_id, "active_project", name)` | `Result<()>` | Set active project |
 | `handle_project()` | `store.delete_fact(sender_id, "active_project")` | `Result<bool>` | Deactivate project |
 | `handle_project()` | `store.close_current_conversation(channel, sender_id)` | `Result<bool>` | Clear conversation on project switch |
+| `handle_learning()` | `store.get_recent_outcomes(sender_id, 20, None)` | `Result<Vec<(i32, String, String, String)>>` | Fetch recent reward outcomes |
+| `handle_learning()` | `store.get_lessons(sender_id, None)` | `Result<Vec<(String, String, String)>>` | Fetch distilled behavioral rules |
 | `handle_heartbeat()` | *(no store access — reads config and filesystem only)* | — | Show heartbeat status and watchlist |
 
 All store operations are async and return `Result` types with proper error handling.

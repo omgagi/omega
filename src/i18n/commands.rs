@@ -153,6 +153,16 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             "Russian" => "/help     \u{2014} \u{042d}\u{0442}\u{043e} \u{0441}\u{043e}\u{043e}\u{0431}\u{0449}\u{0435}\u{043d}\u{0438}\u{0435}",
             _ => "/help     \u{2014} This message",
         },
+        "help_learning" => match lang {
+            "Spanish" => "/learning \u{2014} Ver reglas aprendidas y resultados recientes",
+            "Portuguese" => "/learning \u{2014} Ver regras aprendidas e resultados recentes",
+            "French" => "/learning \u{2014} Voir les r\u{00e8}gles apprises et r\u{00e9}sultats r\u{00e9}cents",
+            "German" => "/learning \u{2014} Gelernte Regeln und aktuelle Ergebnisse anzeigen",
+            "Italian" => "/learning \u{2014} Vedi regole apprese e risultati recenti",
+            "Dutch" => "/learning \u{2014} Geleerde regels en recente resultaten bekijken",
+            "Russian" => "/learning \u{2014} \u{041f}\u{043e}\u{043a}\u{0430}\u{0437}\u{0430}\u{0442}\u{044c} \u{0438}\u{0437}\u{0443}\u{0447}\u{0435}\u{043d}\u{043d}\u{044b}\u{0435} \u{043f}\u{0440}\u{0430}\u{0432}\u{0438}\u{043b}\u{0430} \u{0438} \u{043d}\u{0435}\u{0434}\u{0430}\u{0432}\u{043d}\u{0438}\u{0435} \u{0440}\u{0435}\u{0437}\u{0443}\u{043b}\u{044c}\u{0442}\u{0430}\u{0442}\u{044b}",
+            _ => "/learning \u{2014} Show learned rules and recent outcomes",
+        },
         "help_heartbeat" => match lang {
             "Spanish" => "/heartbeat \u{2014} Estado y lista de monitoreo",
             "Portuguese" => "/heartbeat \u{2014} Estado e lista de monitoramento",

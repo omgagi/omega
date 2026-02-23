@@ -1,5 +1,6 @@
 //! Built-in bot commands — instant responses, no provider call.
 
+mod learning;
 mod settings;
 mod status;
 mod tasks;
@@ -41,6 +42,7 @@ pub enum Command {
     Purge,
     WhatsApp,
     Heartbeat,
+    Learning,
     Help,
 }
 
@@ -67,6 +69,7 @@ impl Command {
             "/purge" => Some(Self::Purge),
             "/whatsapp" => Some(Self::WhatsApp),
             "/heartbeat" => Some(Self::Heartbeat),
+            "/learning" => Some(Self::Learning),
             "/help" => Some(Self::Help),
             _ => None,
         }
@@ -124,6 +127,7 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
         Command::Heartbeat => {
             settings::handle_heartbeat(ctx.heartbeat_enabled, ctx.heartbeat_interval_mins, &lang)
         }
+        Command::Learning => learning::handle_learning(ctx.store, ctx.sender_id, &lang).await,
         Command::Help => status::handle_help(&lang),
     }
 }
