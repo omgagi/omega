@@ -302,7 +302,7 @@ If sandbox:        + sandbox constraint (unchanged)
 4. Inject `ACTION_OUTCOME:` verification instruction into system prompt.
 5. Invoke provider with full tool/MCP access.
 6. Parse `ACTION_OUTCOME:` marker from response (`Success`, `Failed(reason)`, or missing).
-7. Process response markers (SCHEDULE, SCHEDULE_ACTION, CANCEL_TASK, UPDATE_TASK, REWARD, LESSON, HEARTBEAT) — all with `project` scope from the parent task.
+7. Process response markers (SCHEDULE, SCHEDULE_ACTION, CANCEL_TASK, UPDATE_TASK, PROJECT_ACTIVATE/DEACTIVATE, FORGET_CONVERSATION, REWARD, LESSON, HEARTBEAT) — all with `project` scope from the parent task. PROJECT_ACTIVATE sets the `active_project` fact (after verifying the project exists). PROJECT_DEACTIVATE deletes it. FORGET_CONVERSATION closes the current project-scoped conversation and clears the session.
 8. Write audit log entry with `[ACTION]` prefix, elapsed time, status.
 9. On success (or missing marker): call `complete_task()`, send response.
 10. On failure: call `fail_task()` (up to `MAX_ACTION_RETRIES=3` retries, 2-minute delay), notify user.

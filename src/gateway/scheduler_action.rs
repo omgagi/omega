@@ -429,6 +429,41 @@ async fn process_action_markers(
     }
     *text = strip_update_task(text);
 
+    // PROJECT_ACTIVATE / PROJECT_DEACTIVATE markers.
+    if let Some(project_name) = extract_project_activate(text) {
+        let data_dir = omega_core::config::shellexpand("~/.omega");
+        let fresh_projects = omega_skills::load_projects(&data_dir);
+        if omega_skills::get_project_instructions(&fresh_projects, &project_name).is_some() {
+            if let Err(e) = store
+                .store_fact(sender_id, "active_project", &project_name)
+                .await
+            {
+                error!("action task: failed to activate project {project_name}: {e}");
+            } else {
+                info!("action task: activated project {project_name}");
+            }
+        } else {
+            warn!("action task: project {project_name} not found, ignoring activate");
+        }
+    } else if has_project_deactivate(text) {
+        if let Err(e) = store.delete_fact(sender_id, "active_project").await {
+            error!("action task: failed to deactivate project: {e}");
+        } else {
+            info!("action task: deactivated project");
+        }
+    }
+    *text = strip_project_markers(text);
+
+    // FORGET_CONVERSATION marker.
+    if has_forget_marker(text) {
+        let _ = store
+            .close_current_conversation(channel_name, sender_id, project)
+            .await;
+        let _ = store.clear_session(channel_name, sender_id, project).await;
+        *text = strip_forget_marker(text);
+        info!("action task: forgot conversation for project '{project}'");
+    }
+
     // REWARD + LESSON markers (project-tagged).
     for rl in extract_all_rewards(text) {
         if let Some((score, domain, lesson)) = parse_reward_line(&rl) {
