@@ -1692,3 +1692,234 @@ async fn test_find_idle_conversations_includes_project() {
     assert_eq!(idle[0].0, "old1");
     assert_eq!(idle[0].3, "trader", "should include project field");
 }
+
+// --- Multi-lesson edge case tests (migration 013) ---
+
+#[tokio::test]
+async fn test_lessons_dedup_reorders_by_updated_at() {
+    let store = test_store().await;
+
+    // Store 3 lessons, then set explicit timestamps so ordering is deterministic.
+    store
+        .store_lesson("user1", "cooking", "Rule A", "")
+        .await
+        .unwrap();
+    store
+        .store_lesson("user1", "cooking", "Rule B", "")
+        .await
+        .unwrap();
+    store
+        .store_lesson("user1", "cooking", "Rule C", "")
+        .await
+        .unwrap();
+
+    // Manually set distinct timestamps: A oldest, C newest.
+    sqlx::query("UPDATE lessons SET updated_at = '2026-01-01 00:00:00' WHERE rule = 'Rule A'")
+        .execute(store.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE lessons SET updated_at = '2026-01-01 00:01:00' WHERE rule = 'Rule B'")
+        .execute(store.pool())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE lessons SET updated_at = '2026-01-01 00:02:00' WHERE rule = 'Rule C'")
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    // Before reinforce: Rule C is newest (first in results).
+    let before = store.get_lessons("user1", None).await.unwrap();
+    assert_eq!(before[0].1, "Rule C", "newest should be first");
+    assert_eq!(before[2].1, "Rule A", "oldest should be last");
+
+    // Reinforce "Rule A" — dedup bumps updated_at to now (well past 2026-01-01).
+    store
+        .store_lesson("user1", "cooking", "Rule A", "")
+        .await
+        .unwrap();
+
+    // After reinforce: Rule A should float to the top.
+    let after = store.get_lessons("user1", None).await.unwrap();
+    assert_eq!(after.len(), 3, "dedup should not create a 4th row");
+    assert_eq!(
+        after[0].1, "Rule A",
+        "reinforced lesson should be first (most recent updated_at)"
+    );
+}
+
+#[tokio::test]
+async fn test_lessons_reinforced_survives_cap() {
+    let store = test_store().await;
+
+    // Store 10 lessons with explicit timestamps so ordering is deterministic.
+    for i in 0..10 {
+        store
+            .store_lesson("user1", "trading", &format!("Rule {i}"), "")
+            .await
+            .unwrap();
+        sqlx::query(&format!(
+            "UPDATE lessons SET updated_at = '2026-01-01 00:{:02}:00' WHERE rule = 'Rule {}'",
+            i, i
+        ))
+        .execute(store.pool())
+        .await
+        .unwrap();
+    }
+
+    // Reinforce the oldest ("Rule 0") — bumps its updated_at to now (past all others).
+    store
+        .store_lesson("user1", "trading", "Rule 0", "")
+        .await
+        .unwrap();
+
+    // Now add an 11th distinct rule — cap prunes the oldest (which is no longer "Rule 0").
+    store
+        .store_lesson("user1", "trading", "Rule 10", "")
+        .await
+        .unwrap();
+
+    let lessons = store.get_lessons("user1", None).await.unwrap();
+    assert_eq!(lessons.len(), 10, "cap should keep 10");
+    let rules: Vec<&str> = lessons.iter().map(|l| l.1.as_str()).collect();
+    assert!(
+        rules.contains(&"Rule 0"),
+        "reinforced Rule 0 should survive cap (its updated_at was bumped)"
+    );
+    assert!(
+        !rules.contains(&"Rule 1"),
+        "Rule 1 (now oldest) should be pruned"
+    );
+    assert!(
+        rules.contains(&"Rule 10"),
+        "newest Rule 10 should be present"
+    );
+}
+
+#[tokio::test]
+async fn test_lessons_dedup_cross_project_isolation() {
+    let store = test_store().await;
+
+    // Same rule text in two different projects — should NOT dedup.
+    store
+        .store_lesson("user1", "risk", "Never risk more than 2%", "project-a")
+        .await
+        .unwrap();
+    store
+        .store_lesson("user1", "risk", "Never risk more than 2%", "project-b")
+        .await
+        .unwrap();
+
+    // Each project should have its own row.
+    let a: Vec<(String,)> = sqlx::query_as(
+        "SELECT rule FROM lessons WHERE sender_id = 'user1' AND project = 'project-a'",
+    )
+    .fetch_all(store.pool())
+    .await
+    .unwrap();
+    let b: Vec<(String,)> = sqlx::query_as(
+        "SELECT rule FROM lessons WHERE sender_id = 'user1' AND project = 'project-b'",
+    )
+    .fetch_all(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(a.len(), 1, "project-a should have its own row");
+    assert_eq!(b.len(), 1, "project-b should have its own row");
+
+    // Both should have occurrences = 1 (no dedup across projects).
+    let (occ_a,): (i64,) = sqlx::query_as(
+        "SELECT occurrences FROM lessons WHERE sender_id = 'user1' AND project = 'project-a'",
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let (occ_b,): (i64,) = sqlx::query_as(
+        "SELECT occurrences FROM lessons WHERE sender_id = 'user1' AND project = 'project-b'",
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(occ_a, 1, "project-a occurrences should be 1");
+    assert_eq!(occ_b, 1, "project-b occurrences should be 1");
+}
+
+#[tokio::test]
+async fn test_lessons_dedup_cross_sender_isolation() {
+    let store = test_store().await;
+
+    // Same rule text from two different senders — should NOT dedup.
+    store
+        .store_lesson("user1", "cooking", "Salt the water", "")
+        .await
+        .unwrap();
+    store
+        .store_lesson("user2", "cooking", "Salt the water", "")
+        .await
+        .unwrap();
+
+    let u1: Vec<(String,)> =
+        sqlx::query_as("SELECT rule FROM lessons WHERE sender_id = 'user1' AND domain = 'cooking'")
+            .fetch_all(store.pool())
+            .await
+            .unwrap();
+    let u2: Vec<(String,)> =
+        sqlx::query_as("SELECT rule FROM lessons WHERE sender_id = 'user2' AND domain = 'cooking'")
+            .fetch_all(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(u1.len(), 1, "user1 should have its own row");
+    assert_eq!(u2.len(), 1, "user2 should have its own row");
+}
+
+#[tokio::test]
+async fn test_get_lessons_limit_50() {
+    let store = test_store().await;
+
+    // Store 55 lessons across multiple domains (cap is per domain, LIMIT 50 is on query).
+    for i in 0..11 {
+        for domain in &["a", "b", "c", "d", "e"] {
+            store
+                .store_lesson("user1", domain, &format!("Rule {domain}-{i}"), "")
+                .await
+                .unwrap();
+        }
+    }
+
+    // Total in DB: 5 domains * 10 (capped) = 50. Exactly at limit.
+    // Add 5 more in a 6th domain to push past 50 total.
+    for i in 0..5 {
+        store
+            .store_lesson("user1", "f", &format!("Rule f-{i}"), "")
+            .await
+            .unwrap();
+    }
+
+    let lessons = store.get_lessons("user1", None).await.unwrap();
+    assert!(
+        lessons.len() <= 50,
+        "get_lessons should return at most 50, got {}",
+        lessons.len()
+    );
+}
+
+#[tokio::test]
+async fn test_get_all_lessons_limit_50() {
+    let store = test_store().await;
+
+    // Store lessons across multiple users and domains to exceed 50 total.
+    for user in &["u1", "u2", "u3", "u4", "u5", "u6"] {
+        for i in 0..10 {
+            store
+                .store_lesson(user, "general", &format!("Rule {user}-{i}"), "")
+                .await
+                .unwrap();
+        }
+    }
+
+    // Total in DB: 6 users * 10 = 60. Query should cap at 50.
+    let all = store.get_all_lessons(None).await.unwrap();
+    assert!(
+        all.len() <= 50,
+        "get_all_lessons should return at most 50, got {}",
+        all.len()
+    );
+}
