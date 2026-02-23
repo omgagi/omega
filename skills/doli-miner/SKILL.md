@@ -19,30 +19,32 @@ Day-to-day operations for a DOLI blockchain producer (miner).
 
 ## Install
 
+Download pre-built binaries from [GitHub Releases](https://github.com/e-weil/doli/releases/latest). Each package includes `doli-node` (full node) and `doli` (wallet CLI).
+
+**macOS (Apple Silicon):**
 ```bash
-# Prerequisites — Rust (minimum 1.85)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
-
-# System deps (macOS)
-xcode-select --install
-brew install gmp cmake protobuf
-
-# System deps (Ubuntu/Debian)
-sudo apt install -y build-essential cmake pkg-config libssl-dev \
-  libgmp-dev protobuf-compiler clang libclang-dev
-
-# Clone and build
-git clone https://github.com/e-weil/doli.git
-cd doli
-cargo build --release
-
-# Verify
-./target/release/doli-node --version
-./target/release/doli --version
+sudo installer -pkg doli-v0.3.2-aarch64-apple-darwin.pkg -target /
 ```
 
-Binaries: `doli-node` (full node) and `doli` (wallet CLI), both in `target/release/`.
+**Ubuntu/Debian:**
+```bash
+curl -LO https://github.com/e-weil/doli/releases/latest/download/doli-v0.3.2-x86_64-unknown-linux-gnu.deb
+sudo dpkg -i doli-v0.3.2-*.deb
+```
+
+**Fedora/RHEL:**
+```bash
+curl -LO https://github.com/e-weil/doli/releases/latest/download/doli-v0.3.2-x86_64-unknown-linux-gnu.rpm
+sudo rpm -i doli-v0.3.2-*.rpm
+```
+
+**From tarball (any platform):**
+```bash
+tar -xzf doli-v0.3.2-*.tar.gz
+sudo cp doli-v0.3.2-*/doli-node doli-v0.3.2-*/doli /usr/local/bin/
+```
+
+Verify: `doli --version && doli-node --version`
 
 Data directories: `~/.doli/mainnet/`, `~/.doli/testnet/`, `~/.doli/devnet/`.
 
