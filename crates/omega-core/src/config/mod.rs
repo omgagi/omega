@@ -238,6 +238,68 @@ pub fn migrate_layout(data_dir: &str, config_path: &str) {
     }
 }
 
+/// Patch `interval_minutes` in config.toml's `[heartbeat]` section.
+///
+/// Text-based patching preserves comments and formatting (same approach as `migrate_layout`).
+/// Non-fatal: logs on error but never panics.
+pub fn patch_heartbeat_interval(config_path: &str, minutes: u64) {
+    let path = Path::new(config_path);
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("patch_heartbeat_interval: failed to read {config_path}: {e}");
+            return;
+        }
+    };
+
+    let new_line = format!("interval_minutes = {minutes}");
+    let patched = if let Some(pos) = content.find("[heartbeat]") {
+        // Find the section body (after the header line).
+        let section_start = content[pos..]
+            .find('\n')
+            .map(|i| pos + i + 1)
+            .unwrap_or(content.len());
+        // Look for existing `interval_minutes` within this section (before next section header).
+        let section_end = content[section_start..]
+            .find("\n[")
+            .map(|i| section_start + i)
+            .unwrap_or(content.len());
+        let section_body = &content[section_start..section_end];
+
+        if let Some(key_offset) = section_body.find("interval_minutes") {
+            // Replace the existing line.
+            let abs_start = section_start + key_offset;
+            let line_end = content[abs_start..]
+                .find('\n')
+                .map(|i| abs_start + i)
+                .unwrap_or(content.len());
+            format!(
+                "{}{}{}",
+                &content[..abs_start],
+                new_line,
+                &content[line_end..]
+            )
+        } else {
+            // Section exists but no interval_minutes — insert after header.
+            format!(
+                "{}{}\n{}",
+                &content[..section_start],
+                new_line,
+                &content[section_start..]
+            )
+        }
+    } else {
+        // No [heartbeat] section — append it.
+        format!("{}\n[heartbeat]\n{}\n", content.trim_end(), new_line)
+    };
+
+    if let Err(e) = std::fs::write(path, patched) {
+        warn!("patch_heartbeat_interval: failed to write {config_path}: {e}");
+    } else {
+        info!("heartbeat interval_minutes persisted to config: {minutes}");
+    }
+}
+
 /// Load configuration from a TOML file.
 ///
 /// Falls back to defaults if the file does not exist.

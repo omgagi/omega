@@ -310,6 +310,29 @@ This is different from `ProviderConfig::default()` which would set `claude_code`
 
 ---
 
+## `patch_heartbeat_interval()` Function
+
+```rust
+pub fn patch_heartbeat_interval(config_path: &str, minutes: u64)
+```
+
+### Behavior
+
+Text-based config patching (same philosophy as `migrate_layout()`) — preserves comments, formatting, and field ordering. Non-fatal: logs on error, never panics.
+
+1. Reads `config_path` as text. On failure: warns and returns.
+2. If `[heartbeat]` section exists and contains `interval_minutes`:
+   - Replaces the entire line with `interval_minutes = {minutes}`.
+3. If `[heartbeat]` section exists but no `interval_minutes` key:
+   - Inserts `interval_minutes = {minutes}` after the section header.
+4. If no `[heartbeat]` section at all:
+   - Appends `[heartbeat]\ninterval_minutes = {minutes}` to end of file.
+5. Writes the patched content back. On failure: warns and returns.
+
+Called from `process_markers.rs` after the `HEARTBEAT_INTERVAL:` marker updates the in-memory `AtomicU64`.
+
+---
+
 ## Environment Variable Overrides
 
 The config module itself does **not** implement env-var overrides. However, several values are documented in `config.example.toml` as having env-var alternatives:

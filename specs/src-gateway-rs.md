@@ -82,7 +82,8 @@ pub struct Gateway {
 - `model_complex`: Model identifier used for multi-step/complex messages (e.g., `"claude-opus-4-6"`). Set from `ClaudeCodeConfig.model_complex` at startup. Injected into `context.model` by `classify_and_route()` for step-based execution.
 - `uptime`: Tracks server start time for uptime calculations in commands.
 - `active_senders`: A `Mutex<HashMap<String, Vec<IncomingMessage>>>` that tracks which senders currently have an active provider call in flight. When a new message arrives for a sender that is already being processed, the message is buffered here. After the active call completes, buffered messages are dispatched in order.
-- `heartbeat_interval`: An `Arc<AtomicU64>` holding the current heartbeat interval in minutes. Initialized from `heartbeat_config.interval_minutes` and shared with the heartbeat loop and scheduler loop. Updated at runtime via `HEARTBEAT_INTERVAL:` markers. Resets to config value on restart.
+- `heartbeat_interval`: An `Arc<AtomicU64>` holding the current heartbeat interval in minutes. Initialized from `heartbeat_config.interval_minutes` and shared with the heartbeat loop and scheduler loop. Updated at runtime via `HEARTBEAT_INTERVAL:` markers. Changes are persisted to `config.toml` via `config::patch_heartbeat_interval()` so they survive service restarts.
+- `config_path`: Path to `config.toml` — used for persisting runtime changes (e.g. heartbeat interval) via text-based patching.
 - `cli_sessions`: Thread-safe map of `channel:sender_id` to CLI session_id. Used for session-based prompt persistence -- subsequent messages in the same conversation skip the heavy system prompt (~2282 tokens) and send only a minimal context update. Cleared on `/forget`, `FORGET_CONVERSATION` marker, and idle conversation timeout.
 
 ## Token-Efficient Prompt Architecture (Keyword-Gated Conditional Injection)

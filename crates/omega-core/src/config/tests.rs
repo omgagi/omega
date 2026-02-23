@@ -349,3 +349,128 @@ fn test_migrate_layout_fresh_install() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn test_patch_heartbeat_interval_replaces_existing() {
+    let tmp = std::env::temp_dir().join("__omega_test_patch_hb_replace__");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let cfg_path = tmp.join("config.toml");
+    std::fs::write(
+        &cfg_path,
+        "[heartbeat]\nenabled = true\ninterval_minutes = 30\nchannel = \"telegram\"\n",
+    )
+    .unwrap();
+
+    patch_heartbeat_interval(cfg_path.to_str().unwrap(), 60);
+
+    let content = std::fs::read_to_string(&cfg_path).unwrap();
+    assert!(
+        content.contains("interval_minutes = 60"),
+        "should update to 60, got: {content}"
+    );
+    assert!(
+        !content.contains("interval_minutes = 30"),
+        "old value should be gone"
+    );
+    assert!(
+        content.contains("enabled = true"),
+        "should preserve other fields"
+    );
+    assert!(
+        content.contains("channel = \"telegram\""),
+        "should preserve fields after patched line"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn test_patch_heartbeat_interval_inserts_when_missing_key() {
+    let tmp = std::env::temp_dir().join("__omega_test_patch_hb_insert__");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let cfg_path = tmp.join("config.toml");
+    std::fs::write(&cfg_path, "[heartbeat]\nenabled = true\n").unwrap();
+
+    patch_heartbeat_interval(cfg_path.to_str().unwrap(), 15);
+
+    let content = std::fs::read_to_string(&cfg_path).unwrap();
+    assert!(
+        content.contains("interval_minutes = 15"),
+        "should insert interval_minutes, got: {content}"
+    );
+    assert!(
+        content.contains("[heartbeat]"),
+        "should keep section header"
+    );
+    assert!(
+        content.contains("enabled = true"),
+        "should preserve other fields"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn test_patch_heartbeat_interval_appends_section() {
+    let tmp = std::env::temp_dir().join("__omega_test_patch_hb_append__");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let cfg_path = tmp.join("config.toml");
+    std::fs::write(&cfg_path, "[omega]\nname = \"OMEGA\"\n").unwrap();
+
+    patch_heartbeat_interval(cfg_path.to_str().unwrap(), 120);
+
+    let content = std::fs::read_to_string(&cfg_path).unwrap();
+    assert!(
+        content.contains("[heartbeat]"),
+        "should append heartbeat section"
+    );
+    assert!(
+        content.contains("interval_minutes = 120"),
+        "should contain new value"
+    );
+    assert!(
+        content.contains("[omega]"),
+        "should preserve existing sections"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn test_patch_heartbeat_interval_preserves_comments() {
+    let tmp = std::env::temp_dir().join("__omega_test_patch_hb_comments__");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let cfg_path = tmp.join("config.toml");
+    std::fs::write(
+        &cfg_path,
+        "# My config\n[heartbeat]\nenabled = true\ninterval_minutes = 30 # default\nchannel = \"telegram\"\n\n[api]\nenabled = false\n",
+    )
+    .unwrap();
+
+    patch_heartbeat_interval(cfg_path.to_str().unwrap(), 45);
+
+    let content = std::fs::read_to_string(&cfg_path).unwrap();
+    assert!(
+        content.contains("# My config"),
+        "should preserve top comment"
+    );
+    assert!(
+        content.contains("interval_minutes = 45"),
+        "should update value"
+    );
+    assert!(content.contains("[api]"), "should preserve next section");
+    assert!(
+        content.contains("enabled = false"),
+        "should preserve api section content"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}

@@ -192,4 +192,3 @@ pub fn task_save_failed(lang: &str, n: usize) -> String {
         _ => format!("\u{2717} Failed to save {n} task(s). Please try again."),
     }
 }
-

@@ -145,7 +145,6 @@ fn test_format_helpers() {
     // tasks_updated_confirmed
     assert!(tasks_updated_confirmed("English", 3).contains("3 tasks"));
     assert!(tasks_updated_confirmed("Spanish", 2).contains("2 tareas"));
-
 }
 
 #[test]

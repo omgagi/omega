@@ -285,6 +285,7 @@ async fn cmd_start(config_path: &str) -> anyhow::Result<()> {
         skills,
         model_fast,
         model_complex,
+        config_path.to_string(),
     ));
     gw.run().await
 }

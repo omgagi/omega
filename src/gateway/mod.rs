@@ -58,6 +58,8 @@ pub struct Gateway {
     /// Active CLI sessions per sender (channel:sender_id → session_id).
     /// Used for session-based prompt persistence with Claude Code CLI.
     pub(super) cli_sessions: Arc<std::sync::Mutex<HashMap<String, String>>>,
+    /// Path to config.toml — used for persisting runtime changes (e.g. heartbeat interval).
+    pub(super) config_path: String,
 }
 
 impl Gateway {
@@ -77,6 +79,7 @@ impl Gateway {
         skills: Vec<omega_skills::Skill>,
         model_fast: String,
         model_complex: String,
+        config_path: String,
     ) -> Self {
         let audit = AuditLogger::new(memory.pool().clone());
         let heartbeat_interval = Arc::new(AtomicU64::new(heartbeat_config.interval_minutes));
@@ -99,6 +102,7 @@ impl Gateway {
             active_senders: Mutex::new(HashMap::new()),
             heartbeat_interval,
             cli_sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            config_path,
         }
     }
 

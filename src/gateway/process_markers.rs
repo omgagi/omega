@@ -4,7 +4,7 @@ use super::keywords::SYSTEM_FACT_KEYS;
 use super::Gateway;
 use crate::markers::*;
 use crate::task_confirmation::{self, MarkerResult};
-use omega_core::{config::shellexpand, message::IncomingMessage};
+use omega_core::{config, config::shellexpand, message::IncomingMessage};
 use std::sync::atomic::Ordering;
 use tracing::{error, info, warn};
 
@@ -307,6 +307,7 @@ impl Gateway {
                     }
                     HeartbeatAction::SetInterval(mins) => {
                         self.heartbeat_interval.store(*mins, Ordering::Relaxed);
+                        config::patch_heartbeat_interval(&self.config_path, *mins);
                         info!("heartbeat: interval changed to {mins} minutes");
                         // No separate notification — the AI's response text already
                         // confirms the change to the user.
