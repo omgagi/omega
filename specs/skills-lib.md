@@ -4,9 +4,20 @@
 
 | Field | Value |
 |-------|-------|
-| **Path** | `crates/omega-skills/src/lib.rs` |
+| **Path** | `crates/omega-skills/src/lib.rs` (re-export orchestrator) |
 | **Crate** | `omega-skills` |
 | **Role** | Generic skill loader — scans `~/.omega/skills/*/SKILL.md` and exposes them to the system prompt |
+
+## Module Structure
+
+The crate is split into 3 focused submodules; `lib.rs` is a thin re-export orchestrator:
+
+| File | Responsibility |
+|------|---------------|
+| `lib.rs` | `mod` declarations + `pub use` re-exports — all consumers use `omega_skills::*` paths |
+| `skills.rs` | Skill loading, parsing, bundled install, migration, trigger matching, MCP activation |
+| `projects.rs` | Project loading, parsing, `ensure_projects_dir`, `get_project_instructions` |
+| `parse.rs` | Shared `pub(crate)` parsing utilities: `expand_tilde`, `unquote`, `parse_yaml_list`, `extract_bins_from_metadata`, `which_exists`, `data_path` |
 
 ## Purpose
 

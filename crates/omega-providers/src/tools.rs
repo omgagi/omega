@@ -5,6 +5,7 @@
 
 use crate::mcp_client::McpClient;
 use omega_core::context::McpServer;
+use omega_core::message::{MessageMetadata, OutgoingMessage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -434,6 +435,44 @@ pub fn builtin_tool_defs() -> Vec<ToolDef> {
             }),
         },
     ]
+}
+
+// --- Shared provider utilities ---
+
+/// Build the standard OutgoingMessage for agentic loop responses.
+///
+/// Used by all HTTP provider agentic loops (success path and max-turns path).
+pub(crate) fn build_response(
+    text: String,
+    provider_name: &str,
+    total_tokens: u64,
+    elapsed_ms: u64,
+    model: Option<String>,
+) -> OutgoingMessage {
+    OutgoingMessage {
+        text,
+        metadata: MessageMetadata {
+            provider_used: provider_name.to_string(),
+            tokens_used: if total_tokens > 0 {
+                Some(total_tokens)
+            } else {
+                None
+            },
+            processing_time_ms: elapsed_ms,
+            model,
+            session_id: None,
+        },
+        reply_target: None,
+    }
+}
+
+/// Check whether tools are enabled for this request context.
+pub(crate) fn tools_enabled(context: &omega_core::context::Context) -> bool {
+    context
+        .allowed_tools
+        .as_ref()
+        .map(|t| !t.is_empty())
+        .unwrap_or(true)
 }
 
 #[cfg(test)]

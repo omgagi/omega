@@ -4,18 +4,13 @@
 //! Uses `functionCall` / `functionResponse` parts for tool calling.
 
 use async_trait::async_trait;
-use omega_core::{
-    context::Context,
-    error::OmegaError,
-    message::{MessageMetadata, OutgoingMessage},
-    traits::Provider,
-};
+use omega_core::{context::Context, error::OmegaError, message::OutgoingMessage, traits::Provider};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::tools::{ToolDef, ToolExecutor};
+use crate::tools::{build_response, tools_enabled, ToolDef, ToolExecutor};
 
 const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -167,12 +162,7 @@ impl Provider for GeminiProvider {
         let effective_model = context.model.as_deref().unwrap_or(&self.model);
         let max_turns = context.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
 
-        // Determine if tools should be enabled.
-        let has_tools = context
-            .allowed_tools
-            .as_ref()
-            .map(|t| !t.is_empty())
-            .unwrap_or(true);
+        let has_tools = tools_enabled(context);
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
@@ -245,20 +235,20 @@ impl Provider for GeminiProvider {
             .map_err(|e| OmegaError::Provider(format!("gemini: failed to parse response: {e}")))?;
 
         let text = extract_text_from_response(&parsed);
-        let tokens = parsed.usage_metadata.as_ref().map(|u| u.total_token_count);
+        let tokens = parsed
+            .usage_metadata
+            .as_ref()
+            .map(|u| u.total_token_count)
+            .unwrap_or(0);
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
-        Ok(OutgoingMessage {
+        Ok(build_response(
             text,
-            metadata: MessageMetadata {
-                provider_used: "gemini".to_string(),
-                tokens_used: tokens,
-                processing_time_ms: elapsed_ms,
-                model: Some(effective_model.to_string()),
-                session_id: None,
-            },
-            reply_target: None,
-        })
+            "gemini",
+            tokens,
+            elapsed_ms,
+            Some(effective_model.to_string()),
+        ))
     }
 
     async fn is_available(&self) -> bool {
@@ -414,40 +404,24 @@ impl GeminiProvider {
             };
 
             let elapsed_ms = start.elapsed().as_millis() as u64;
-            return Ok(OutgoingMessage {
+            return Ok(build_response(
                 text,
-                metadata: MessageMetadata {
-                    provider_used: "gemini".to_string(),
-                    tokens_used: if total_tokens > 0 {
-                        Some(total_tokens)
-                    } else {
-                        None
-                    },
-                    processing_time_ms: elapsed_ms,
-                    model: Some(model.to_string()),
-                    session_id: None,
-                },
-                reply_target: None,
-            });
+                "gemini",
+                total_tokens,
+                elapsed_ms,
+                Some(model.to_string()),
+            ));
         }
 
         // Max turns exhausted.
         let elapsed_ms = start.elapsed().as_millis() as u64;
-        Ok(OutgoingMessage {
-            text: format!("gemini: reached max turns ({max_turns}) without final response"),
-            metadata: MessageMetadata {
-                provider_used: "gemini".to_string(),
-                tokens_used: if total_tokens > 0 {
-                    Some(total_tokens)
-                } else {
-                    None
-                },
-                processing_time_ms: elapsed_ms,
-                model: Some(model.to_string()),
-                session_id: None,
-            },
-            reply_target: None,
-        })
+        Ok(build_response(
+            format!("gemini: reached max turns ({max_turns}) without final response"),
+            "gemini",
+            total_tokens,
+            elapsed_ms,
+            Some(model.to_string()),
+        ))
     }
 }
 

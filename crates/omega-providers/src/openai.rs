@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use omega_core::{
     context::{ApiMessage, Context},
     error::OmegaError,
-    message::{MessageMetadata, OutgoingMessage},
+    message::OutgoingMessage,
     traits::Provider,
 };
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::tools::{ToolDef, ToolExecutor};
+use crate::tools::{build_response, tools_enabled, ToolDef, ToolExecutor};
 
 /// Default max agentic loop iterations.
 const DEFAULT_MAX_TURNS: u32 = 50;
@@ -268,40 +268,24 @@ pub(crate) async fn openai_agentic_complete(
             .unwrap_or_else(|| format!("No response from {provider_name}."));
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
-        return Ok(OutgoingMessage {
+        return Ok(build_response(
             text,
-            metadata: MessageMetadata {
-                provider_used: provider_name.to_string(),
-                tokens_used: if total_tokens > 0 {
-                    Some(total_tokens)
-                } else {
-                    None
-                },
-                processing_time_ms: elapsed_ms,
-                model: last_model,
-                session_id: None,
-            },
-            reply_target: None,
-        });
+            provider_name,
+            total_tokens,
+            elapsed_ms,
+            last_model,
+        ));
     }
 
     // Max turns exhausted.
     let elapsed_ms = start.elapsed().as_millis() as u64;
-    Ok(OutgoingMessage {
-        text: format!("{provider_name}: reached max turns ({max_turns}) without final response"),
-        metadata: MessageMetadata {
-            provider_used: provider_name.to_string(),
-            tokens_used: if total_tokens > 0 {
-                Some(total_tokens)
-            } else {
-                None
-            },
-            processing_time_ms: elapsed_ms,
-            model: last_model,
-            session_id: None,
-        },
-        reply_target: None,
-    })
+    Ok(build_response(
+        format!("{provider_name}: reached max turns ({max_turns}) without final response"),
+        provider_name,
+        total_tokens,
+        elapsed_ms,
+        last_model,
+    ))
 }
 
 #[async_trait]
@@ -321,12 +305,7 @@ impl Provider for OpenAiProvider {
         let auth = format!("Bearer {}", self.api_key);
         let max_turns = context.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
 
-        // Determine if tools should be enabled.
-        let has_tools = context
-            .allowed_tools
-            .as_ref()
-            .map(|t| !t.is_empty())
-            .unwrap_or(true); // None = tools enabled
+        let has_tools = tools_enabled(context);
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
@@ -392,20 +371,20 @@ impl Provider for OpenAiProvider {
             .and_then(|m| m.content.clone())
             .unwrap_or_else(|| "No response from OpenAI.".to_string());
 
-        let tokens = parsed.usage.as_ref().and_then(|u| u.total_tokens);
+        let tokens = parsed
+            .usage
+            .as_ref()
+            .and_then(|u| u.total_tokens)
+            .unwrap_or(0);
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
-        Ok(OutgoingMessage {
+        Ok(build_response(
             text,
-            metadata: MessageMetadata {
-                provider_used: "openai".to_string(),
-                tokens_used: tokens,
-                processing_time_ms: elapsed_ms,
-                model: parsed.model,
-                session_id: None,
-            },
-            reply_target: None,
-        })
+            "openai",
+            tokens,
+            elapsed_ms,
+            parsed.model,
+        ))
     }
 
     async fn is_available(&self) -> bool {

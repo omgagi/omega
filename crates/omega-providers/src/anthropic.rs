@@ -4,18 +4,13 @@
 //! Uses content blocks (text/tool_use/tool_result) for tool calling.
 
 use async_trait::async_trait;
-use omega_core::{
-    context::Context,
-    error::OmegaError,
-    message::{MessageMetadata, OutgoingMessage},
-    traits::Provider,
-};
+use omega_core::{context::Context, error::OmegaError, message::OutgoingMessage, traits::Provider};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::tools::{ToolDef, ToolExecutor};
+use crate::tools::{build_response, tools_enabled, ToolDef, ToolExecutor};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -155,12 +150,7 @@ impl Provider for AnthropicProvider {
         let effective_model = context.model.as_deref().unwrap_or(&self.model);
         let max_turns = context.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
 
-        // Determine if tools should be enabled.
-        let has_tools = context
-            .allowed_tools
-            .as_ref()
-            .map(|t| !t.is_empty())
-            .unwrap_or(true);
+        let has_tools = tools_enabled(context);
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
@@ -229,20 +219,17 @@ impl Provider for AnthropicProvider {
         let tokens = parsed
             .usage
             .as_ref()
-            .map(|u| u.input_tokens + u.output_tokens);
+            .map(|u| u.input_tokens + u.output_tokens)
+            .unwrap_or(0);
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
-        Ok(OutgoingMessage {
+        Ok(build_response(
             text,
-            metadata: MessageMetadata {
-                provider_used: "anthropic".to_string(),
-                tokens_used: tokens,
-                processing_time_ms: elapsed_ms,
-                model: parsed.model,
-                session_id: None,
-            },
-            reply_target: None,
-        })
+            "anthropic",
+            tokens,
+            elapsed_ms,
+            parsed.model,
+        ))
     }
 
     async fn is_available(&self) -> bool {
@@ -390,40 +377,24 @@ impl AnthropicProvider {
             };
 
             let elapsed_ms = start.elapsed().as_millis() as u64;
-            return Ok(OutgoingMessage {
+            return Ok(build_response(
                 text,
-                metadata: MessageMetadata {
-                    provider_used: "anthropic".to_string(),
-                    tokens_used: if total_tokens > 0 {
-                        Some(total_tokens)
-                    } else {
-                        None
-                    },
-                    processing_time_ms: elapsed_ms,
-                    model: last_model,
-                    session_id: None,
-                },
-                reply_target: None,
-            });
+                "anthropic",
+                total_tokens,
+                elapsed_ms,
+                last_model,
+            ));
         }
 
         // Max turns exhausted.
         let elapsed_ms = start.elapsed().as_millis() as u64;
-        Ok(OutgoingMessage {
-            text: format!("anthropic: reached max turns ({max_turns}) without final response"),
-            metadata: MessageMetadata {
-                provider_used: "anthropic".to_string(),
-                tokens_used: if total_tokens > 0 {
-                    Some(total_tokens)
-                } else {
-                    None
-                },
-                processing_time_ms: elapsed_ms,
-                model: last_model,
-                session_id: None,
-            },
-            reply_target: None,
-        })
+        Ok(build_response(
+            format!("anthropic: reached max turns ({max_turns}) without final response"),
+            "anthropic",
+            total_tokens,
+            elapsed_ms,
+            last_model,
+        ))
     }
 }
 

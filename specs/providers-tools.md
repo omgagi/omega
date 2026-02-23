@@ -126,6 +126,28 @@ Returns the definitions of the 4 built-in tools as a `Vec<ToolDef>` with JSON Sc
 pub fn builtin_tool_defs() -> Vec<ToolDef>
 ```
 
+### `build_response(text, provider_name, total_tokens, elapsed_ms, model) -> OutgoingMessage`
+
+Shared `pub(crate)` utility that constructs an `OutgoingMessage` with `MessageMetadata`. Used by all 5 HTTP providers (openai, anthropic, gemini, ollama, openrouter) to eliminate duplicated response construction.
+
+```rust
+pub(crate) fn build_response(
+    text: String,
+    provider_name: &str,
+    total_tokens: u64,
+    elapsed_ms: u64,
+    model: Option<String>,
+) -> OutgoingMessage
+```
+
+### `tools_enabled(context) -> bool`
+
+Shared `pub(crate)` utility that checks whether tool calling is enabled for a given context. Returns `false` when `context.allowed_tools` is an explicit empty list; `true` otherwise (including when `None`). Used by all 5 HTTP providers to replace duplicated `has_tools` logic.
+
+```rust
+pub(crate) fn tools_enabled(context: &Context) -> bool
+```
+
 ## Tests
 
 | Test | Description |

@@ -4,12 +4,7 @@
 //! Only the base URL and provider name differ.
 
 use async_trait::async_trait;
-use omega_core::{
-    context::Context,
-    error::OmegaError,
-    message::{MessageMetadata, OutgoingMessage},
-    traits::Provider,
-};
+use omega_core::{context::Context, error::OmegaError, message::OutgoingMessage, traits::Provider};
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::{debug, warn};
@@ -17,7 +12,7 @@ use tracing::{debug, warn};
 use crate::openai::{
     build_openai_messages, openai_agentic_complete, ChatCompletionRequest, ChatCompletionResponse,
 };
-use crate::tools::ToolExecutor;
+use crate::tools::{build_response, tools_enabled, ToolExecutor};
 
 const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
@@ -61,12 +56,7 @@ impl Provider for OpenRouterProvider {
         let auth = format!("Bearer {}", self.api_key);
         let max_turns = context.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
 
-        // Determine if tools should be enabled.
-        let has_tools = context
-            .allowed_tools
-            .as_ref()
-            .map(|t| !t.is_empty())
-            .unwrap_or(true);
+        let has_tools = tools_enabled(context);
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
@@ -131,20 +121,20 @@ impl Provider for OpenRouterProvider {
             .and_then(|m| m.content.clone())
             .unwrap_or_else(|| "No response from OpenRouter.".to_string());
 
-        let tokens = parsed.usage.as_ref().and_then(|u| u.total_tokens);
+        let tokens = parsed
+            .usage
+            .as_ref()
+            .and_then(|u| u.total_tokens)
+            .unwrap_or(0);
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
-        Ok(OutgoingMessage {
+        Ok(build_response(
             text,
-            metadata: MessageMetadata {
-                provider_used: "openrouter".to_string(),
-                tokens_used: tokens,
-                processing_time_ms: elapsed_ms,
-                model: parsed.model,
-                session_id: None,
-            },
-            reply_target: None,
-        })
+            "openrouter",
+            tokens,
+            elapsed_ms,
+            parsed.model,
+        ))
     }
 
     async fn is_available(&self) -> bool {

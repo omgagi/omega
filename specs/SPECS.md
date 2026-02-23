@@ -13,7 +13,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 
 ### Milestone 2: Binary (`src/`)
 - [binary-main.md](binary-main.md) — Entry point, CLI parsing, root guard, provider/channel bootstrap
-- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`src/gateway/`) — 11-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords
+- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`src/gateway/`) — 12-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, tests
 - [src-markers-rs.md](src-markers-rs.md) — Marker extraction, parsing, stripping (40+ functions extracted from gateway)
 - [src-task-confirmation-rs.md](src-task-confirmation-rs.md) — Task scheduling confirmation (anti-hallucination, duplicate detection, localized confirmation messages)
 - [binary-commands.md](binary-commands.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, purge, help)
@@ -64,7 +64,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [memory-migration-012.md](memory-migration-012.md) — Project-scoped sessions (project_sessions table, project column on conversations)
 
 ### Milestone 7: omega-skills
-- [skills-lib.md](skills-lib.md) — Skill loader + project loader + MCP trigger matching (skills from `~/.omega/skills/*/SKILL.md`, projects from `~/.omega/projects/*/ROLE.md`)
+- [skills-lib.md](skills-lib.md) — Skill loader + project loader + MCP trigger matching (skills from `~/.omega/skills/*/SKILL.md`, projects from `~/.omega/projects/*/ROLE.md`). Split into `skills.rs`, `projects.rs`, `parse.rs` submodules; `lib.rs` is a thin re-export orchestrator
 - [skills-cargo-toml.md](skills-cargo-toml.md) — omega-skills crate Cargo.toml
 
 ### Milestone 8: omega-sandbox
@@ -103,9 +103,10 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 │                 │ tools.rs        │               │
 ├─────────────────┼─────────────────┼───────────────┤
 │  omega-memory   │ omega-skills    │ omega-sandbox  │
-│  store.rs       │ lib.rs (loader) │ lib.rs         │
-│  audit.rs       │                 │                │
-│  migrations/    │                 │                │
+│  store.rs       │ lib.rs (re-exp) │ lib.rs         │
+│  audit.rs       │ skills.rs       │                │
+│  migrations/    │ projects.rs     │                │
+│                 │ parse.rs        │                │
 └─────────────────┴─────────────────┴───────────────┘
 ```
 

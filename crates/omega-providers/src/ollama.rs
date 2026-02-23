@@ -4,18 +4,13 @@
 //! Tool calling format is similar to OpenAI but has no `tool_call_id`.
 
 use async_trait::async_trait;
-use omega_core::{
-    context::Context,
-    error::OmegaError,
-    message::{MessageMetadata, OutgoingMessage},
-    traits::Provider,
-};
+use omega_core::{context::Context, error::OmegaError, message::OutgoingMessage, traits::Provider};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::tools::{ToolDef, ToolExecutor};
+use crate::tools::{build_response, tools_enabled, ToolDef, ToolExecutor};
 
 /// Default max agentic loop iterations.
 const DEFAULT_MAX_TURNS: u32 = 50;
@@ -150,12 +145,7 @@ impl Provider for OllamaProvider {
         let max_turns = context.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
         let start = Instant::now();
 
-        // Determine if tools should be enabled.
-        let has_tools = context
-            .allowed_tools
-            .as_ref()
-            .map(|t| !t.is_empty())
-            .unwrap_or(true);
+        let has_tools = tools_enabled(context);
 
         if has_tools {
             if let Some(ref ws) = self.workspace_path {
@@ -226,24 +216,20 @@ impl Provider for OllamaProvider {
             .unwrap_or_else(|| "No response from Ollama.".to_string());
 
         let tokens = match (parsed.eval_count, parsed.prompt_eval_count) {
-            (Some(e), Some(p)) => Some(e + p),
-            (Some(e), None) => Some(e),
-            _ => None,
+            (Some(e), Some(p)) => e + p,
+            (Some(e), None) => e,
+            _ => 0,
         };
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
-        Ok(OutgoingMessage {
+        Ok(build_response(
             text,
-            metadata: MessageMetadata {
-                provider_used: "ollama".to_string(),
-                tokens_used: tokens,
-                processing_time_ms: elapsed_ms,
-                model: parsed.model,
-                session_id: None,
-            },
-            reply_target: None,
-        })
+            "ollama",
+            tokens,
+            elapsed_ms,
+            parsed.model,
+        ))
     }
 
     async fn is_available(&self) -> bool {
@@ -356,40 +342,24 @@ impl OllamaProvider {
                 .unwrap_or_else(|| "No response from Ollama.".to_string());
 
             let elapsed_ms = start.elapsed().as_millis() as u64;
-            return Ok(OutgoingMessage {
+            return Ok(build_response(
                 text,
-                metadata: MessageMetadata {
-                    provider_used: "ollama".to_string(),
-                    tokens_used: if total_tokens > 0 {
-                        Some(total_tokens)
-                    } else {
-                        None
-                    },
-                    processing_time_ms: elapsed_ms,
-                    model: last_model,
-                    session_id: None,
-                },
-                reply_target: None,
-            });
+                "ollama",
+                total_tokens,
+                elapsed_ms,
+                last_model,
+            ));
         }
 
         // Max turns exhausted.
         let elapsed_ms = start.elapsed().as_millis() as u64;
-        Ok(OutgoingMessage {
-            text: format!("ollama: reached max turns ({max_turns}) without final response"),
-            metadata: MessageMetadata {
-                provider_used: "ollama".to_string(),
-                tokens_used: if total_tokens > 0 {
-                    Some(total_tokens)
-                } else {
-                    None
-                },
-                processing_time_ms: elapsed_ms,
-                model: last_model,
-                session_id: None,
-            },
-            reply_target: None,
-        })
+        Ok(build_response(
+            format!("ollama: reached max turns ({max_turns}) without final response"),
+            "ollama",
+            total_tokens,
+            elapsed_ms,
+            last_model,
+        ))
     }
 }
 
