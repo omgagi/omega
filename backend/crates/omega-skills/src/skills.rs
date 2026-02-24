@@ -13,23 +13,23 @@ use tracing::{info, warn};
 const BUNDLED_SKILLS: &[(&str, &str)] = &[
     (
         "claude-code",
-        include_str!("../../../skills/claude-code/SKILL.md"),
+        include_str!("../../../../skills/claude-code/SKILL.md"),
     ),
     (
         "google-workspace",
-        include_str!("../../../skills/google-workspace/SKILL.md"),
+        include_str!("../../../../skills/google-workspace/SKILL.md"),
     ),
     (
         "playwright-mcp",
-        include_str!("../../../skills/playwright-mcp/SKILL.md"),
+        include_str!("../../../../skills/playwright-mcp/SKILL.md"),
     ),
     (
         "skill-creator",
-        include_str!("../../../skills/skill-creator/SKILL.md"),
+        include_str!("../../../../skills/skill-creator/SKILL.md"),
     ),
     (
         "ibkr-trader",
-        include_str!("../../../skills/ibkr-trader/SKILL.md"),
+        include_str!("../../../../skills/ibkr-trader/SKILL.md"),
     ),
 ];
 

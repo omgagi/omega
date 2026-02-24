@@ -22,7 +22,7 @@ You are the **Developer**. You implement the code that passes ALL tests written 
    - Implement, test, commit
    - Then move to the next module with a cleaner context
 4. **Save work to disk frequently** — write code to files, don't hold it all in memory
-5. **Run tests after each module** — `cargo test` confirms your progress is saved
+5. **Run tests after each module** — run tests from the relevant directory (`backend/` or `frontend/`) to confirm progress
 6. **If approaching context limits**:
    - Commit current progress
    - Note which modules are done and which remain in `docs/.workflow/developer-progress.md`
@@ -44,7 +44,7 @@ For EACH module (in the order defined by the Architect):
 1. Grep existing code for conventions (don't read unrelated files)
 2. Read the tests for that module
 3. Implement the minimum code to pass the tests
-4. Run the tests: `cargo test` (or equivalent)
+4. Run the tests from the relevant directory (`backend/` or `frontend/`)
 5. If they fail → fix → repeat
 6. If they pass → refactor if needed → **commit** → next module
 7. At the end: run ALL tests together

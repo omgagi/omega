@@ -1,7 +1,7 @@
 .DS_Store
-/target
+/backend/target
 *.db
-config.toml
+backend/config.toml
 .env
 com.ilozada.omega.plist
 .direnv/

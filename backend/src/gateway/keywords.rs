@@ -141,6 +141,38 @@ pub(super) const OUTCOMES_KW: &[&str] = &[
     "resultaat",
 ];
 
+/// Keywords that trigger the builds context section.
+pub(super) const BUILDS_KW: &[&str] = &[
+    "build me",
+    "build a ",
+    "build an ",
+    "scaffold",
+    "code me",
+    "code a ",
+    "code an ",
+    "develop a",
+    "develop an",
+    "make me a",
+    "write me a",
+    "new tool",
+    "new app",
+    "new service",
+    "new api",
+    "new library",
+    "new cli",
+    // Spanish
+    "constrúyeme",
+    "construye un",
+    "hazme un",
+    "hazme una",
+    "desarroll",
+    "codifica",
+    // Portuguese
+    "construa um",
+    "crie um",
+    "desenvolva",
+];
+
 /// Keywords that trigger the meta context section.
 pub(super) const META_KW: &[&str] = &[
     "skill",

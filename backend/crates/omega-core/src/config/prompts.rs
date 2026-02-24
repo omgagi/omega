@@ -19,6 +19,8 @@ pub struct Prompts {
     pub scheduling: String,
     /// Project management rules — conditionally injected when projects are relevant.
     pub projects_rules: String,
+    /// Build rules — conditionally injected when user asks to build something.
+    pub builds: String,
     /// Meta rules (skill improvement, bug reporting, WhatsApp, heartbeat) — conditionally injected.
     pub meta: String,
     /// Conversation summarization instruction.
@@ -69,6 +71,8 @@ impl Default for Prompts {
                          Initial due_at: set to the NEXT upcoming occurrence. Scheduler uses UTC.".into(),
             projects_rules: "Projects path: ~/.omega/projects/<name>/ROLE.md. Directory name = project name (lowercase, hyphenated).\n\
                              Use PROJECT_ACTIVATE: <name> / PROJECT_DEACTIVATE to switch.".into(),
+            builds: "Build directory: ~/.omega/workspace/builds/<project-name>/. Default language: Rust. Default DB: SQLite.\n\
+                     Validation: cargo build → cargo clippy --workspace → cargo test --workspace.".into(),
             meta: "SKILL_IMPROVE: <name> | <lesson> to update skills after mistakes.\n\
                    BUG_REPORT: <description> for infrastructure gaps.\n\
                    WHATSAPP_QR to trigger WhatsApp setup.".into(),
@@ -106,13 +110,13 @@ struct WelcomeFile {
 }
 
 /// Bundled system prompt, embedded at compile time.
-const BUNDLED_SYSTEM_PROMPT: &str = include_str!("../../../../prompts/SYSTEM_PROMPT.md");
+const BUNDLED_SYSTEM_PROMPT: &str = include_str!("../../../../../prompts/SYSTEM_PROMPT.md");
 
 /// Bundled welcome messages, embedded at compile time.
-const BUNDLED_WELCOME_TOML: &str = include_str!("../../../../prompts/WELCOME.toml");
+const BUNDLED_WELCOME_TOML: &str = include_str!("../../../../../prompts/WELCOME.toml");
 
 /// Bundled workspace CLAUDE.md template, embedded at compile time.
-const BUNDLED_WORKSPACE_CLAUDE: &str = include_str!("../../../../prompts/WORKSPACE_CLAUDE.md");
+const BUNDLED_WORKSPACE_CLAUDE: &str = include_str!("../../../../../prompts/WORKSPACE_CLAUDE.md");
 
 /// Return the bundled workspace CLAUDE.md template.
 ///
@@ -176,6 +180,9 @@ impl Prompts {
             }
             if let Some(v) = sections.get("Projects") {
                 prompts.projects_rules = v.clone();
+            }
+            if let Some(v) = sections.get("Builds") {
+                prompts.builds = v.clone();
             }
             if let Some(v) = sections.get("Meta") {
                 prompts.meta = v.clone();

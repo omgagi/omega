@@ -36,11 +36,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y pkg-config libsqlite3-dev
 
       - name: Build release binary
+        working-directory: backend
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package binary
         run: |
-          cp target/${{ matrix.target }}/release/omega ${{ matrix.name }}
+          cp backend/target/${{ matrix.target }}/release/omega ${{ matrix.name }}
           chmod +x ${{ matrix.name }}
           tar czf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
 

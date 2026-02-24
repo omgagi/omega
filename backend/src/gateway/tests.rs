@@ -36,7 +36,7 @@ fn test_prompts_default_welcome_fallback() {
 
 #[test]
 fn test_bundled_system_prompt_contains_identity_soul_system() {
-    let content = include_str!("../../prompts/SYSTEM_PROMPT.md");
+    let content = include_str!("../../../prompts/SYSTEM_PROMPT.md");
     assert!(
         content.contains("## Identity"),
         "bundled system prompt should contain Identity section"
@@ -57,7 +57,7 @@ fn test_bundled_system_prompt_contains_identity_soul_system() {
 
 #[test]
 fn test_bundled_facts_prompt_guided_schema() {
-    let content = include_str!("../../prompts/SYSTEM_PROMPT.md");
+    let content = include_str!("../../../prompts/SYSTEM_PROMPT.md");
     assert!(
         content.contains("preferred_name"),
         "bundled facts section should list preferred_name"
@@ -399,7 +399,7 @@ fn test_prompt_injection_multilingual_portuguese() {
 
 #[test]
 fn test_bundled_prompt_has_conditional_sections() {
-    let content = include_str!("../../prompts/SYSTEM_PROMPT.md");
+    let content = include_str!("../../../prompts/SYSTEM_PROMPT.md");
     assert!(
         content.contains("## Scheduling"),
         "bundled prompt should have ## Scheduling section"

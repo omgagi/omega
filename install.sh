@@ -64,7 +64,7 @@ if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMPDIR_INSTALL/${ASSET}.tar.gz"; then
     echo ""
     echo "  Build from source instead:"
     echo "    git clone https://github.com/${REPO}"
-    echo "    cd omega && cargo build --release"
+    echo "    cd omega/backend && cargo build --release"
     echo ""
     exit 1
 fi

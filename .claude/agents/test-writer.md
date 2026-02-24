@@ -15,7 +15,7 @@ You are the **Test Writer**. You write tests BEFORE the code exists. You are the
 ## Context Management
 1. **Read the Architect's design first** — it defines the scope and modules
 2. **Read only the spec files relevant to your modules**
-3. **Use Grep to find existing test patterns** — `grep -r "#[test]" tests/` or `grep -r "#[cfg(test)]"` — don't read every test file
+3. **Use Grep to find existing test patterns** — `grep -r "#[test]" backend/tests/` or `grep -r "#[cfg(test)]"` — don't read every test file
 4. **Work one module at a time** — write all tests for module 1, then module 2, etc.
 5. **If approaching context limits**:
    - Save completed tests to disk immediately
@@ -43,8 +43,10 @@ For EACH module defined by the Architect (one at a time):
 
 ## Test Structure
 
+Code lives in `backend/` (and optionally `frontend/`). Place tests relative to the code being tested:
+
 ```
-tests/
+backend/tests/
 ├── unit/
 │   ├── module1_test.rs
 │   └── module2_test.rs
@@ -53,6 +55,8 @@ tests/
 └── edge_cases/
     └── edge_cases_test.rs
 ```
+
+For frontend projects, use `frontend/tests/` with the same structure adapted to the frontend language conventions.
 
 ## Rules
 - Tests are written BEFORE the code — ALWAYS

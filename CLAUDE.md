@@ -53,7 +53,7 @@ All workflow commands accept an optional scope to limit context usage:
 /workflow:feature "add retry logic" --scope="omega-providers"
 /workflow:audit --scope="milestone 3: omega-core"
 /workflow:sync --scope="omega-memory"
-/workflow:bugfix "scheduler crash" --scope="src/gateway/scheduler.rs"
+/workflow:bugfix "scheduler crash" --scope="backend/src/gateway/scheduler.rs"
 ```
 
 When no scope is provided, the analyst determines the minimal scope needed based on the task description.

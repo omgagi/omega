@@ -188,6 +188,7 @@ impl Gateway {
         let needs_recall = kw_match(&msg_lower, RECALL_KW);
         let needs_tasks = needs_scheduling || kw_match(&msg_lower, TASKS_KW);
         let needs_projects = kw_match(&msg_lower, PROJECTS_KW);
+        let needs_builds = kw_match(&msg_lower, BUILDS_KW);
         let needs_meta = kw_match(&msg_lower, META_KW);
         let needs_profile = kw_match(&msg_lower, PROFILE_KW)
             || needs_scheduling // timezone/location needed
@@ -197,12 +198,13 @@ impl Gateway {
         let needs_outcomes = kw_match(&msg_lower, OUTCOMES_KW);
 
         info!(
-            "[{}] prompt needs: scheduling={} recall={} tasks={} projects={} meta={} profile={} summaries={} outcomes={}",
+            "[{}] prompt needs: scheduling={} recall={} tasks={} projects={} builds={} meta={} profile={} summaries={} outcomes={}",
             incoming.channel,
             needs_scheduling,
             needs_recall,
             needs_tasks,
             needs_projects,
+            needs_builds,
             needs_meta,
             needs_profile,
             needs_summaries,
@@ -216,6 +218,7 @@ impl Gateway {
             &projects,
             needs_scheduling,
             needs_projects,
+            needs_builds,
             needs_meta,
         );
 
@@ -285,6 +288,10 @@ impl Gateway {
                 if needs_projects {
                     minimal.push_str("\n\n");
                     minimal.push_str(&self.prompts.projects_rules);
+                }
+                if needs_builds {
+                    minimal.push_str("\n\n");
+                    minimal.push_str(&self.prompts.builds);
                 }
                 if needs_meta {
                     minimal.push_str("\n\n");
@@ -384,6 +391,7 @@ impl Gateway {
         projects: &[omega_skills::Project],
         needs_scheduling: bool,
         needs_projects: bool,
+        needs_builds: bool,
         needs_meta: bool,
     ) -> String {
         let mut prompt = format!(
@@ -436,6 +444,10 @@ impl Gateway {
         if needs_projects {
             prompt.push_str("\n\n");
             prompt.push_str(&self.prompts.projects_rules);
+        }
+        if needs_builds {
+            prompt.push_str("\n\n");
+            prompt.push_str(&self.prompts.builds);
         }
         if needs_meta {
             prompt.push_str("\n\n");

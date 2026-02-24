@@ -53,7 +53,7 @@ Cargo workspace with 6 crates:
 
 ```bash
 # Build (requires Rust nightly for WhatsApp dependency)
-cargo +nightly build --release
+cd backend && cargo +nightly build --release
 
 # Interactive setup -- walks you through everything
 ./target/release/omega init
@@ -65,8 +65,8 @@ cargo +nightly build --release
 Or manual setup:
 
 ```bash
-cp config.example.toml config.toml   # Edit with your settings
-./target/release/omega start
+cp backend/config.example.toml backend/config.toml   # Edit with your settings
+cd backend && ./target/release/omega start
 ```
 
 ## How It Works
@@ -192,6 +192,7 @@ max_context_messages = 50
 ## Development
 
 ```bash
+cd backend
 cargo clippy --workspace     # Lint (zero warnings required)
 cargo test --workspace       # All tests must pass
 cargo fmt --check            # Formatting check

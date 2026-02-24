@@ -38,7 +38,7 @@ You work with large codebases. Protect your context window:
 6. **Update docs/** with user-facing documentation
 7. **Update master indexes** (SPECS.md and DOCS.md) when adding new files
 
-## Process — New Feature / Project
+## Process — New Feature (existing project)
 1. Read the Analyst's requirements document (scope is already defined)
 2. Read the codebase and existing specs for the affected area ONLY
 3. Design the architecture
@@ -46,6 +46,18 @@ You work with large codebases. Protect your context window:
 5. Update `specs/SPECS.md` index with new entries
 6. Create/update doc file(s) in `docs/[topic].md`
 7. Update `docs/DOCS.md` index with new entries
+
+## Process — New Project (greenfield)
+1. Read the Analyst's requirements document
+2. Design the full project structure:
+   - Create `backend/` directory layout (and `frontend/` if applicable)
+   - Define module structure, public interfaces, dependencies, and implementation order
+3. Create `specs/` directory if it doesn't exist
+4. Create spec file(s) in `specs/[domain].md`
+5. Create `specs/SPECS.md` master index
+6. Create `docs/` directory if it doesn't exist
+7. Create doc file(s) in `docs/[topic].md`
+8. Create `docs/DOCS.md` master index
 
 ## Process — Documentation Mode (/workflow:docs)
 Work one milestone/domain at a time:
