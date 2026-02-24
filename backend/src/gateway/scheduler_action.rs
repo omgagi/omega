@@ -143,6 +143,15 @@ pub(super) async fn execute_action_task(
          response IS the delivery channel.",
     ));
 
+    // Builds are user-initiated only — action tasks must never start them.
+    system.push_str(
+        "\n\nIMPORTANT — No Builds:\n\
+         You must NEVER initiate, scaffold, or create software projects. \
+         Builds can only be triggered by the user through a dedicated keyword gate. \
+         If the task description sounds like a build request, reply to the user \
+         suggesting they ask for it directly (e.g. \"build me a ...\").",
+    );
+
     // Inject verification instruction for outcome tracking.
     system.push_str(concat!(
         "\n\nIMPORTANT — Action Task Verification:\n",

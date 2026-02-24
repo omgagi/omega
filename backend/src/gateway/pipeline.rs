@@ -183,6 +183,57 @@ impl Gateway {
             .ok()
             .flatten();
 
+        // --- 4a. PENDING BUILD CONFIRMATION CHECK ---
+        // If user previously triggered a build keyword, we stored their request (with
+        // a Unix timestamp prefix) and asked for an explicit confirmation phrase.
+        // Format: "<unix_timestamp>|<original request text>"
+        let pending_build: Option<String> = self
+            .memory
+            .get_fact(&incoming.sender_id, "pending_build_request")
+            .await
+            .ok()
+            .flatten();
+
+        if let Some(stored_value) = pending_build {
+            // Always clear the pending state — one-shot.
+            let _ = self
+                .memory
+                .delete_fact(&incoming.sender_id, "pending_build_request")
+                .await;
+
+            // Parse "timestamp|request_text" and check TTL.
+            let (stored_ts, stored_request) = stored_value
+                .split_once('|')
+                .unwrap_or(("0", &stored_value));
+            let created_at: i64 = stored_ts.parse().unwrap_or(0);
+            let now = chrono::Utc::now().timestamp();
+            let expired = (now - created_at) > BUILD_CONFIRM_TTL_SECS;
+
+            if expired {
+                info!(
+                    "[{}] pending build expired ({}s ago) — ignoring",
+                    incoming.channel,
+                    now - created_at
+                );
+            } else if is_build_confirmed(&clean_incoming.text) {
+                info!(
+                    "[{}] build CONFIRMED → multi-phase pipeline",
+                    incoming.channel
+                );
+                let mut build_incoming = incoming.clone();
+                build_incoming.text = stored_request.to_string();
+                self.handle_build_request(&build_incoming, typing_handle)
+                    .await;
+                return;
+            } else {
+                info!(
+                    "[{}] build NOT confirmed — proceeding with normal pipeline",
+                    incoming.channel
+                );
+            }
+            // Fall through to normal message processing.
+        }
+
         let msg_lower = clean_incoming.text.to_lowercase();
         let needs_scheduling = kw_match(&msg_lower, SCHEDULING_KW);
         let needs_recall = kw_match(&msg_lower, RECALL_KW);
@@ -211,15 +262,38 @@ impl Gateway {
             needs_outcomes,
         );
 
-        // --- 4a. BUILD REQUESTS — early exit to multi-phase pipeline ---
-        // Skip expensive context building (DB queries, prompt assembly, session lookup)
-        // since builds create their own isolated Context per phase.
+        // --- 4b. BUILD REQUESTS — store request and ask for explicit confirmation ---
+        // Never start a build without user confirmation. Store the request text as a
+        // pending fact and send a localized confirmation prompt.
         if needs_builds {
             info!(
-                "[{}] classification: BUILD → multi-phase pipeline",
+                "[{}] build keyword detected → asking for confirmation",
                 incoming.channel
             );
-            self.handle_build_request(&incoming, typing_handle).await;
+
+            let user_lang = self
+                .memory
+                .get_fact(&incoming.sender_id, "preferred_language")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "English".to_string());
+
+            let stamped = format!("{}|{}", chrono::Utc::now().timestamp(), incoming.text);
+            let _ = self
+                .memory
+                .store_fact(
+                    &incoming.sender_id,
+                    "pending_build_request",
+                    &stamped,
+                )
+                .await;
+
+            let confirm_msg = build_confirm_message(&user_lang, &incoming.text);
+            if let Some(h) = typing_handle {
+                h.abort();
+            }
+            self.send_text(&incoming, &confirm_msg).await;
             return;
         }
 

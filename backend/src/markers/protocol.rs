@@ -196,6 +196,20 @@ pub fn strip_project_markers(text: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// BUILD_PROPOSAL
+// ---------------------------------------------------------------------------
+
+/// Extract the build description from a `BUILD_PROPOSAL: <description>` marker.
+pub fn extract_build_proposal(text: &str) -> Option<String> {
+    super::extract_inline_marker_value(text, "BUILD_PROPOSAL:")
+}
+
+/// Strip all `BUILD_PROPOSAL:` lines from response text.
+pub fn strip_build_proposal(text: &str) -> String {
+    super::strip_inline_marker(text, "BUILD_PROPOSAL:")
+}
+
+// ---------------------------------------------------------------------------
 // WHATSAPP_QR
 // ---------------------------------------------------------------------------
 

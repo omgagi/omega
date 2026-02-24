@@ -72,7 +72,10 @@ impl Default for Prompts {
             projects_rules: "Projects path: ~/.omega/projects/<name>/ROLE.md. Directory name = project name (lowercase, hyphenated).\n\
                              Use PROJECT_ACTIVATE: <name> / PROJECT_DEACTIVATE to switch.".into(),
             builds: "Build directory: ~/.omega/workspace/builds/<project-name>/. Default language: Rust. Default DB: SQLite.\n\
-                     Validation: cargo build → cargo clippy --workspace → cargo test --workspace.".into(),
+                     Validation: cargo build → cargo clippy --workspace → cargo test --workspace.\n\
+                     You CANNOT start builds yourself. Only the user can trigger a build through a keyword gate.\n\
+                     If you think something should be built, emit BUILD_PROPOSAL: <1-sentence description> and \
+                     the system will ask the user to confirm with a simple 'yes'. Never scaffold or create project files directly.".into(),
             meta: "SKILL_IMPROVE: <name> | <lesson> to update skills after mistakes.\n\
                    BUG_REPORT: <description> for infrastructure gaps.\n\
                    WHATSAPP_QR to trigger WhatsApp setup.".into(),

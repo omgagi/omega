@@ -103,7 +103,9 @@ impl Gateway {
         // Phase 2: Architecture
         let phase2_prompt = PHASE_2_TEMPLATE
             .replace("{project_dir}", &project_dir_str)
-            .replace("{brief_text}", &brief_text);
+            .replace("{brief_text}", &brief_text)
+            .replace("{language}", &brief.language)
+            .replace("{project_name}", &brief.name);
         if let Err(e) = self
             .run_build_phase(
                 &phase2_prompt,
@@ -139,7 +141,9 @@ impl Gateway {
         self.send_text(incoming, "Architecture defined.").await;
 
         // Phase 3: Implementation
-        let phase3_prompt = PHASE_3_TEMPLATE.replace("{project_dir}", &project_dir_str);
+        let phase3_prompt = PHASE_3_TEMPLATE
+            .replace("{project_dir}", &project_dir_str)
+            .replace("{project_name}", &brief.name);
         if let Err(e) = self
             .run_build_phase(
                 &phase3_prompt,
@@ -166,7 +170,9 @@ impl Gateway {
             .await;
 
         // Phase 4: Verification (with one retry loop)
-        let phase4_prompt = PHASE_4_TEMPLATE.replace("{project_dir}", &project_dir_str);
+        let phase4_prompt = PHASE_4_TEMPLATE
+            .replace("{project_dir}", &project_dir_str)
+            .replace("{language}", &brief.language);
         let verification = match self
             .run_build_phase(
                 &phase4_prompt,
@@ -261,7 +267,8 @@ impl Gateway {
         let phase5_prompt = PHASE_5_TEMPLATE
             .replace("{project_dir}", &project_dir_str)
             .replace("{skills_dir}", &skills_dir_str)
-            .replace("{project_name}", &brief.name);
+            .replace("{project_name}", &brief.name)
+            .replace("{language}", &brief.language);
 
         let delivery_text = match self
             .run_build_phase(

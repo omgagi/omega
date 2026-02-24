@@ -48,6 +48,9 @@ You are analyzing a build request. Extract and decide:
 - Key components (list of modules/features)
 - Whether a frontend is needed (yes/no)
 
+The project will follow a CLI-first architecture: every feature is a CLI subcommand \
+and ALL output is structured JSON. Keep this in mind when defining components and scope.
+
 Do NOT ask questions. Make reasonable defaults for anything ambiguous.
 Output ONLY a structured brief in this exact format:
 
@@ -67,12 +70,45 @@ Your working directory is: {project_dir}
 Project brief:
 {brief_text}
 
-Your tasks:
-1. Create the directory structure
-2. Write specs/architecture.md with module descriptions, data flow, API design
-3. Write specs/requirements.md with functional requirements
-4. If Rust: initialize with cargo init and set up Cargo.toml with dependencies
-5. Create stub files for each module (empty files with doc comments)
+## Directory Convention (mandatory)
+
+Create exactly this directory tree:
+```
+{project_dir}/
+  specs/            # Technical specifications
+  docs/             # User-facing documentation
+  backend/          # All server/CLI source code
+  backend/data/db/  # SQLite or other DB files (if applicable)
+  backend/scripts/  # Test and verification scripts
+  frontend/         # Only if FRONTEND: yes in the brief
+```
+
+## Architecture Convention — CLI-first, JSON output
+
+- The project is a CLI application. Every feature = a CLI subcommand.
+- ALL output from every command MUST be structured JSON:
+  - Success: {{\"status\":\"ok\",\"data\":...}}
+  - Error:   {{\"status\":\"error\",\"message\":\"...\"}}
+- No plain-text or human-readable output. JSON only.
+
+## Your Tasks
+
+1. Create the directory structure above.
+2. Initialize the project for {language}:
+   - Rust   → `cargo init` inside `backend/`, set up Cargo.toml with dependencies.
+   - Python → create `backend/pyproject.toml` with project metadata.
+   - TypeScript → `npm init -y` inside `backend/`, set up package.json.
+   - Other  → appropriate init for the language.
+3. Write `specs/architecture.md` with module descriptions, data flow, CLI subcommands.
+4. Write `specs/requirements.md` with functional requirements.
+5. Write `specs/commands.md` documenting EVERY CLI subcommand and its JSON output structure. \
+Example entry:
+   ```
+   ## {project_name} list
+   Lists all items.
+   Output: {{\"status\":\"ok\",\"data\":[{{\"id\":1,\"name\":\"...\"}},...]}}
+   ```
+6. Create stub files for each module (empty files with doc comments only).
 
 Do NOT implement any logic. Only create structure and specifications.
 When done, output: ARCHITECTURE_COMPLETE";
@@ -81,11 +117,25 @@ pub(super) const PHASE_3_TEMPLATE: &str = "\
 You are implementing a software project. You have full tool access.
 Your working directory is: {project_dir}
 
-Read the specifications in specs/ to understand what to build. Implement the project module by module:
-1. Read specs/architecture.md and specs/requirements.md
-2. Implement each module described in the architecture
-3. Write tests alongside the code
-4. Ensure all code compiles
+## Mandatory Conventions
+
+- **CLI-first**: every feature = a CLI subcommand.
+- **JSON output**: ALL command output follows this convention:
+  - Success: {{\"status\":\"ok\",\"data\":...}}
+  - Error:   {{\"status\":\"error\",\"message\":\"...\"}}
+- **No file may exceed 500 lines** (excluding tests). Split into modules proactively.
+- **Test scripts**: for every major feature, create a test script in `backend/scripts/` \
+that invokes the CLI and validates JSON output. Scripts must be executable (`chmod +x`).
+
+## Your Tasks
+
+1. Read `specs/architecture.md`, `specs/requirements.md`, and `specs/commands.md`.
+2. Implement each module described in the architecture, one at a time.
+3. Every CLI subcommand MUST produce JSON matching the structure in `specs/commands.md`.
+4. Write unit tests alongside the code.
+5. Create test scripts in `backend/scripts/` (e.g. `backend/scripts/test-{project_name}.sh`) \
+that exercise every CLI subcommand and verify JSON output via `jq`.
+6. Ensure all code compiles.
 
 Do NOT write documentation. Do NOT create skills. Focus only on working code.
 When done, output: IMPLEMENTATION_COMPLETE";
@@ -101,6 +151,7 @@ Read the code, fix the issues, and ensure:
 1. The code compiles without errors
 2. All lint warnings are fixed
 3. All tests pass
+4. All CLI commands output valid JSON ({{\"status\":\"ok\",...}} or {{\"status\":\"error\",...}})
 
 When done, output: IMPLEMENTATION_COMPLETE";
 
@@ -108,12 +159,43 @@ pub(super) const PHASE_4_TEMPLATE: &str = "\
 You are verifying a software project. You have full tool access.
 Your working directory is: {project_dir}
 
-Run the complete validation pipeline:
-1. cargo build (or equivalent) — must compile with zero errors
-2. cargo clippy --workspace (or equivalent linter) — fix ALL warnings
-3. cargo test --workspace (or equivalent) — all tests must pass
+## Step 1 — Build and Lint
 
-If any step fails, fix the issue and re-run.
+Run the language-appropriate build and lint commands:
+- **Rust**:       `cargo build` then `cargo clippy --workspace` — fix ALL warnings.
+- **Python**:     `python -m py_compile` on all .py files, then `ruff check .` or `flake8`.
+- **TypeScript**: `npx tsc --noEmit` then `npx eslint .`.
+- **Other**:      use the standard build + lint for {language}.
+
+All must pass with zero errors and zero warnings.
+
+## Step 2 — Unit Tests
+
+Run the language-appropriate test runner:
+- **Rust**:       `cargo test --workspace`
+- **Python**:     `pytest`
+- **TypeScript**: `npx jest` or `npx vitest run`
+- **Other**:      standard test runner for {language}.
+
+## Step 3 — Integration / Script Tests
+
+Run every executable script in `backend/scripts/`:
+```
+for f in backend/scripts/*.sh; do bash \"$f\"; done
+```
+Each script should exit 0. If any script fails, fix the underlying code.
+
+## Step 4 — JSON Output Compliance
+
+For every CLI subcommand listed in `specs/commands.md`:
+1. Run the command.
+2. Pipe output through `echo '<output>' | jq .` to validate it is valid JSON.
+3. Verify the top-level key `\"status\"` is either `\"ok\"` or `\"error\"`.
+
+If any command produces non-JSON output or missing status key, fix it.
+
+## Reporting
+
 After all checks pass, output exactly: VERIFICATION: PASS
 If you cannot fix the issues, output: VERIFICATION: FAIL followed by REASON: <brief description>";
 
@@ -121,10 +203,60 @@ pub(super) const PHASE_5_TEMPLATE: &str = "\
 You are delivering a completed software project. You have full tool access.
 Your working directory is: {project_dir}
 
-Tasks:
-1. Write user documentation in docs/ (README.md, usage guide)
-2. Create a skill file at {skills_dir}/{project_name}/SKILL.md with YAML frontmatter (name, description, trigger keywords) and CLI documentation
-3. Write a final summary
+## Task 1 — User Documentation
+
+Create `docs/README.md` with:
+- Project name and one-line description
+- Installation / build instructions for {language}
+- Quick-start example
+
+Create `docs/commands.md` with a user-friendly version of every CLI subcommand, \
+including example invocations and example JSON output.
+
+## Task 2 — Skill File
+
+Create a skill file at `{skills_dir}/{project_name}/SKILL.md` using this exact format:
+
+```
+---
+name: {project_name}
+description: <one-line description of what the project does>
+trigger: <keyword1>|<keyword2>|<keyword3>
+---
+
+## Binary
+
+Path: `{project_dir}/backend/target/release/{project_name}` (for Rust) \
+or equivalent entry point for {language}.
+
+## Database
+
+Path: `{project_dir}/backend/data/db/{project_name}.db` (if applicable, otherwise omit section).
+
+## Commands
+
+### {project_name} <subcommand1>
+<description>
+```bash
+{project_name} <subcommand1> [args]
+```
+Output:
+```json
+{{\"status\":\"ok\",\"data\":...}}
+```
+
+(Repeat for every subcommand documented in specs/commands.md)
+
+## Extending This Skill
+
+To add a new command:
+1. Implement the subcommand in the source code.
+2. Add its JSON schema to `specs/commands.md`.
+3. Add a section above with usage and output example.
+4. Create a test script in `backend/scripts/`.
+```
+
+## Task 3 — Final Summary
 
 Output the summary in this format:
 BUILD_COMPLETE
@@ -230,6 +362,31 @@ pub(super) fn phase_message(lang: &str, phase: u8, action: &str) -> String {
             1 => "Analisando sua solicita\u{e7}\u{e3}o de constru\u{e7}\u{e3}o...".to_string(),
             5 => "Preparando a entrega...".to_string(),
             _ => format!("Fase {phase}: {action}..."),
+        },
+        "French" => match phase {
+            1 => "Analyse de votre demande de construction...".to_string(),
+            5 => "Pr\u{e9}paration de la livraison...".to_string(),
+            _ => format!("Phase {phase}\u{a0}: {action}..."),
+        },
+        "German" => match phase {
+            1 => "Analysiere deine Build-Anfrage...".to_string(),
+            5 => "Lieferung wird vorbereitet...".to_string(),
+            _ => format!("Phase {phase}: {action}..."),
+        },
+        "Italian" => match phase {
+            1 => "Analisi della richiesta di costruzione...".to_string(),
+            5 => "Preparazione della consegna...".to_string(),
+            _ => format!("Fase {phase}: {action}..."),
+        },
+        "Dutch" => match phase {
+            1 => "Je build-verzoek analyseren...".to_string(),
+            5 => "Levering voorbereiden...".to_string(),
+            _ => format!("Fase {phase}: {action}..."),
+        },
+        "Russian" => match phase {
+            1 => "\u{410}\u{43d}\u{430}\u{43b}\u{438}\u{437}\u{438}\u{440}\u{443}\u{44e} \u{437}\u{430}\u{43f}\u{440}\u{43e}\u{441} \u{43d}\u{430} \u{441}\u{431}\u{43e}\u{440}\u{43a}\u{443}...".to_string(),
+            5 => "\u{41f}\u{43e}\u{434}\u{433}\u{43e}\u{442}\u{43e}\u{432}\u{43a}\u{430} \u{43a} \u{434}\u{43e}\u{441}\u{442}\u{430}\u{432}\u{43a}\u{435}...".to_string(),
+            _ => format!("\u{424}\u{430}\u{437}\u{430} {phase}: {action}..."),
         },
         _ => match phase {
             1 => "Analyzing your build request...".to_string(),
@@ -380,5 +537,30 @@ mod tests {
     fn test_phase_message_spanish() {
         let msg = phase_message("Spanish", 1, "analyzing");
         assert!(msg.contains("Analizando"));
+    }
+
+    #[test]
+    fn test_phase_message_all_languages() {
+        // Phase 1 — each language has a custom string
+        assert!(phase_message("Portuguese", 1, "").contains("Analisando"));
+        assert!(phase_message("French", 1, "").contains("Analyse"));
+        assert!(phase_message("German", 1, "").contains("Analysiere"));
+        assert!(phase_message("Italian", 1, "").contains("Analisi"));
+        assert!(phase_message("Dutch", 1, "").contains("analyseren"));
+        assert!(phase_message("Russian", 1, "").contains("запрос"));
+
+        // Phase 5 — delivery
+        assert!(phase_message("French", 5, "").contains("livraison"));
+        assert!(phase_message("German", 5, "").contains("Lieferung"));
+        assert!(phase_message("Italian", 5, "").contains("consegna"));
+        assert!(phase_message("Dutch", 5, "").contains("Levering"));
+        assert!(phase_message("Russian", 5, "").contains("доставке"));
+
+        // Generic phase — uses "Phase/Fase/Фаза N: action..."
+        assert!(phase_message("French", 3, "building").contains("Phase 3"));
+        assert!(phase_message("German", 3, "building").contains("Phase 3"));
+        assert!(phase_message("Italian", 3, "building").contains("Fase 3"));
+        assert!(phase_message("Dutch", 3, "building").contains("Fase 3"));
+        assert!(phase_message("Russian", 3, "building").contains("Фаза 3"));
     }
 }

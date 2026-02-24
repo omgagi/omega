@@ -12,7 +12,7 @@ impl Gateway {
     /// Extract and process all markers from a provider response text.
     ///
     /// Handles: SCHEDULE, SCHEDULE_ACTION, PROJECT_ACTIVATE/DEACTIVATE,
-    /// WHATSAPP_QR, LANG_SWITCH, HEARTBEAT_ADD/REMOVE, SKILL_IMPROVE, BUG_REPORT.
+    /// BUILD_PROPOSAL, WHATSAPP_QR, LANG_SWITCH, HEARTBEAT_ADD/REMOVE, SKILL_IMPROVE, BUG_REPORT.
     /// Strips processed markers from the text.
     pub(super) async fn process_markers(
         &self,
@@ -148,6 +148,24 @@ impl Gateway {
                 info!("project deactivated");
             }
             *text = strip_project_markers(text);
+        }
+
+        // BUILD_PROPOSAL — OMEGA suggests a build; store as pending so user can confirm.
+        if let Some(description) = extract_build_proposal(text) {
+            let stamped = format!("{}|{}", chrono::Utc::now().timestamp(), description);
+            if let Err(e) = self
+                .memory
+                .store_fact(&incoming.sender_id, "pending_build_request", &stamped)
+                .await
+            {
+                error!("failed to store build proposal: {e}");
+            } else {
+                info!(
+                    "build proposal stored for {}: {}",
+                    incoming.sender_id, description
+                );
+            }
+            *text = strip_build_proposal(text);
         }
 
         // WHATSAPP_QR
