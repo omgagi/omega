@@ -18,7 +18,7 @@ Default: `~/.omega/data/memory.db` (configurable via `MemoryConfig.db_path`). Th
 
 | Name | Type | Value | Description |
 |------|------|-------|-------------|
-| `CONVERSATION_TIMEOUT_MINUTES` | `i64` | `30` | Minutes of inactivity before a conversation is considered idle and eligible for summarization/closure. |
+| `CONVERSATION_TIMEOUT_MINUTES` | `i64` | `120` | Minutes of inactivity before a conversation is considered idle and eligible for summarization/closure. |
 
 ## Data Structures
 
@@ -450,7 +450,7 @@ AND datetime(last_activity) <= datetime('now', ? || ' minutes')
 ```
 
 **Bind parameters:**
-- `?` = `-CONVERSATION_TIMEOUT_MINUTES` (i.e., `-30`), which SQLite interprets as "30 minutes ago".
+- `?` = `-CONVERSATION_TIMEOUT_MINUTES` (i.e., `-120`), which SQLite interprets as "120 minutes ago".
 
 **Called by:** `gateway.rs::background_summarizer()` every 60 seconds.
 
@@ -2011,7 +2011,7 @@ All tests use an in-memory SQLite store (`sqlite::memory:`) with migrations appl
 6. Facts are unique per `(sender_id, key)` -- duplicate inserts update the existing value.
 7. `build_context()` always returns history in chronological order (oldest first).
 8. `build_context()` never fails due to fact/summary/recall retrieval errors.
-9. The conversation timeout is 30 minutes -- this is a compile-time constant, not configurable.
+9. The conversation timeout is 120 minutes (2 hours) -- this is a compile-time constant, not configurable.
 10. Migrations are idempotent -- running them multiple times has no effect.
 11. The database is created with WAL journal mode for concurrent read access.
 12. Connection pool is limited to 4 connections maximum.

@@ -93,12 +93,12 @@ CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status, las
 
 1. **Active conversation lookup** (`get_or_create_conversation`):
    ```sql
-   WHERE status = 'active' AND datetime(last_activity) > datetime('now', '-30 minutes')
+   WHERE status = 'active' AND datetime(last_activity) > datetime('now', '-120 minutes')
    ```
 
 2. **Idle conversation detection** (`find_idle_conversations`):
    ```sql
-   WHERE status = 'active' AND datetime(last_activity) <= datetime('now', '-30 minutes')
+   WHERE status = 'active' AND datetime(last_activity) <= datetime('now', '-120 minutes')
    ```
 
 Both queries filter on `status` first (high selectivity -- most conversations are closed) then on `last_activity`, making the composite index `(status, last_activity)` optimal.
@@ -223,8 +223,8 @@ Used by the following `Store` methods:
 
 | Method | Query Pattern | Purpose |
 |--------|--------------|---------|
-| `get_or_create_conversation()` | `WHERE status = 'active' AND datetime(last_activity) > datetime('now', '-30 minutes')` | Find the current active conversation for a user, or create a new one if the last one has timed out. |
-| `find_idle_conversations()` | `WHERE status = 'active' AND datetime(last_activity) <= datetime('now', '-30 minutes')` | Find conversations that should be summarized and closed. Called periodically by the gateway's background task. |
+| `get_or_create_conversation()` | `WHERE status = 'active' AND datetime(last_activity) > datetime('now', '-120 minutes')` | Find the current active conversation for a user, or create a new one if the last one has timed out. |
+| `find_idle_conversations()` | `WHERE status = 'active' AND datetime(last_activity) <= datetime('now', '-120 minutes')` | Find conversations that should be summarized and closed. Called periodically by the gateway's background task. |
 | `find_all_active_conversations()` | `WHERE status = 'active'` | Find all active conversations for graceful shutdown summarization. |
 | `close_conversation()` | `UPDATE SET status = 'closed', summary = ?` | Close a conversation with its AI-generated summary. |
 | `close_current_conversation()` | `UPDATE SET status = 'closed' WHERE status = 'active'` | Close without a summary (used by `/forget` command). |

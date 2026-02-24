@@ -8,6 +8,16 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 
 ## Specification Files
 
+### Milestone 1: Root / Workspace
+- [cargo-toml-root.md](cargo-toml-root.md) — Root Cargo.toml workspace configuration
+- [cargo-lock.md](cargo-lock.md) — Cargo.lock dependency snapshot
+- [config-example-toml.md](config-example-toml.md) — config.example.toml reference
+- [claude-settings-local.md](claude-settings-local.md) — Claude Code local settings
+- [claude-md.md](claude-md.md) — CLAUDE.md project instructions
+- [readme-md.md](readme-md.md) — README.md documentation
+- [license.md](license.md) — License file
+- [gitignore.md](gitignore.md) — .gitignore rules
+
 ### Milestone 2: Binary (`src/`)
 - [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing, root guard, provider/channel bootstrap
 - [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`src/gateway/`) — 12-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, tests
@@ -20,6 +30,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [src-service-rs.md](src-service-rs.md) — OS-aware service management (macOS LaunchAgent / Linux systemd)
 - [src-claudemd-rs.md](src-claudemd-rs.md) — Workspace CLAUDE.md maintenance (init + periodic refresh via claude CLI subprocess)
 - [src-api-rs.md](src-api-rs.md) — HTTP API server (axum, health check, WhatsApp QR pairing for SaaS dashboards)
+- [src-i18n-rs.md](src-i18n-rs.md) — Internationalization module (8 languages, static lookups, format helpers)
 
 ### Milestone 3: omega-core
 - [core-lib.md](core-lib.md) — Core crate overview, module re-exports
@@ -29,6 +40,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [core-message.md](core-message.md) — Message types (incoming, outgoing, metadata, attachments)
 - [core-sanitize.md](core-sanitize.md) — Prompt injection sanitization
 - [core-traits.md](core-traits.md) — Provider and Channel trait definitions
+- [core-cargo-toml.md](core-cargo-toml.md) — omega-core Cargo manifest
 
 ### Milestone 4: omega-providers
 - [providers-lib.md](providers-lib.md) — Providers crate overview (all 6 modules public)
@@ -40,16 +52,22 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [providers-gemini.md](providers-gemini.md) — Google Gemini API provider (HTTP, x-goog-api-key header auth)
 - [providers-mcp-client.md](providers-mcp-client.md) — MCP client over stdio (JSON-RPC 2.0, tool discovery, tool calling)
 - [providers-tools.md](providers-tools.md) — Shared tool executor (bash/read/write/edit + MCP routing + sandbox enforcement)
+- [providers-cargo-toml.md](providers-cargo-toml.md) — omega-providers Cargo manifest
 
 ### Milestone 5: omega-channels
 - [channels-lib.md](channels-lib.md) — Channels crate overview
 - [channels-telegram.md](channels-telegram.md) — Telegram Bot API channel (long polling)
 - [channels-whatsapp.md](channels-whatsapp.md) — WhatsApp Web protocol channel (text, image, voice, group chat, markdown, retry)
+- [channels-cargo-toml.md](channels-cargo-toml.md) — omega-channels Cargo manifest
 
 ### Milestone 6: omega-memory
 - [memory-lib.md](memory-lib.md) — Memory crate overview
 - [memory-store.md](memory-store.md) — SQLite persistent store, conversations, facts, context building
 - [memory-audit.md](memory-audit.md) — Audit logging system
+- [memory-cargo-toml.md](memory-cargo-toml.md) — omega-memory Cargo manifest
+- [memory-migration-001.md](memory-migration-001.md) — Initial schema (conversations, messages, facts, summaries)
+- [memory-migration-002.md](memory-migration-002.md) — Audit log table
+- [memory-migration-003.md](memory-migration-003.md) — Background summarization support
 - [memory-migration-004.md](memory-migration-004.md) — FTS5 cross-conversation recall migration
 - [memory-migration-005.md](memory-migration-005.md) — Scheduled tasks table migration
 - [memory-migration-006.md](memory-migration-006.md) — Limitations table (historical — originally for self-introspection, now used by SKILL_IMPROVE)

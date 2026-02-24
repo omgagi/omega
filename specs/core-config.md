@@ -2,7 +2,7 @@
 
 ## Path
 
-`crates/omega-core/src/config.rs`
+`crates/omega-core/src/config/` (6-file directory module: mod.rs, providers.rs, channels.rs, prompts.rs, defaults.rs, tests.rs)
 
 ## Purpose
 
@@ -39,6 +39,7 @@ Config
   +-- memory: MemoryConfig
   +-- heartbeat: HeartbeatConfig
   +-- scheduler: SchedulerConfig
+  +-- api: ApiConfig
 ```
 
 ---
@@ -240,6 +241,17 @@ Derives: `Debug, Clone, Serialize, Deserialize`
 Implements: `Default` (manual -- sets `enabled` to `true`, `poll_interval_secs` to `default_poll_interval()`).
 
 Note: The scheduler is enabled by default because it has zero cost when no tasks exist. The poll interval controls how often the scheduler checks for due tasks.
+
+### `ApiConfig`
+
+| Field | Type | `#[serde]` | Default |
+|-------|------|------------|---------|
+| `enabled` | `bool` | `#[serde(default)]` | `false` |
+| `host` | `String` | `#[serde(default = "default_api_host")]` | `"127.0.0.1"` |
+| `port` | `u16` | `#[serde(default = "default_api_port")]` | `3000` |
+| `api_key` | `String` | `#[serde(default)]` | `""` (no auth for local-only use) |
+
+**Purpose:** HTTP API server for SaaS dashboard integration. When `enabled = true`, serves health check and WhatsApp QR pairing endpoints. The `api_key` field enables Bearer token authentication when non-empty.
 
 ---
 

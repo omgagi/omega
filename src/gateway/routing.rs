@@ -14,8 +14,9 @@ use tracing::{error, info, warn};
 impl Gateway {
     /// Classify a message and route to the appropriate model.
     ///
-    /// Currently disabled for conversations (all go DIRECT). Kept for future
-    /// re-enablement. Still used conceptually by heartbeat (separate classifier).
+    /// Intentionally kept but currently unused: all conversations route DIRECT.
+    /// Heartbeat uses a similar classifier pattern. Will be re-enabled when
+    /// multi-step execution is restored. See `execute_steps()` below.
     #[allow(dead_code)]
     pub(super) async fn classify_and_route(
         &self,
@@ -61,6 +62,9 @@ impl Gateway {
     }
 
     /// Execute a list of steps autonomously, with progress updates and retry.
+    ///
+    /// Intentionally kept but currently unused: paired with `classify_and_route()`.
+    /// Will be re-enabled when multi-step execution is restored.
     #[allow(dead_code)]
     pub(super) async fn execute_steps(
         &self,

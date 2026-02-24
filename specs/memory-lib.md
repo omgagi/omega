@@ -70,7 +70,7 @@ use omega_memory::audit::AuditLogger;
 
 | Constant | Type | Value | Purpose |
 |----------|------|-------|---------|
-| `CONVERSATION_TIMEOUT_MINUTES` | `i64` | `30` | Idle threshold (minutes) before a conversation is considered expired |
+| `CONVERSATION_TIMEOUT_MINUTES` | `i64` | `120` | Idle threshold (minutes) before a conversation is considered expired |
 
 **Public Struct: `Store`**
 

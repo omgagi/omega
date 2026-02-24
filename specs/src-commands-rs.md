@@ -2,7 +2,7 @@
 
 ## Overview
 
-**File Path:** `src/commands.rs`
+**File Path:** `src/commands/` (directory module)
 
 **Purpose:** Implements built-in bot commands for Omega. Commands are instant-response operations that bypass the AI provider entirely. They directly query and manipulate the memory store, providing users with immediate access to system status, conversation history, facts, and memory management.
 
@@ -24,10 +24,14 @@ pub enum Command {
     Tasks,
     Cancel,
     Language,
+    Personality,
+    Purge,
     Projects,
     Project,
     Heartbeat,
     Learning,
+    Skills,
+    WhatsApp,
     Help,
 }
 ```
@@ -47,6 +51,8 @@ pub enum Command {
 | `Project` | Show, activate, or deactivate a project |
 | `Heartbeat` | Show heartbeat status, interval, and watchlist items |
 | `Learning` | Show learned behavioral rules and recent outcomes |
+| `Skills` | List available skills and their trigger patterns |
+| `WhatsApp` | Show WhatsApp pairing status and QR code |
 | `Help` | Display all available commands |
 
 ---
@@ -79,6 +85,8 @@ pub enum Command {
 - `/project` → `Command::Project`
 - `/heartbeat` → `Command::Heartbeat`
 - `/learning` → `Command::Learning`
+- `/skills` → `Command::Skills`
+- `/whatsapp` or `/wa` → `Command::WhatsApp`
 - `/help` → `Command::Help`
 
 **Example Behavior:**

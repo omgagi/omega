@@ -129,18 +129,18 @@ Understanding conversations is key to understanding the store. A conversation is
 When a message arrives, the store looks for an active conversation for that user and channel. Two conditions must be met:
 
 1. The conversation's status must be `'active'`.
-2. The conversation's `last_activity` must be within the last 30 minutes.
+2. The conversation's `last_activity` must be within the last 2 hours.
 
 If both conditions are met, the existing conversation is used and its `last_activity` is refreshed. If either condition fails, a new conversation is created with a fresh UUID.
 
-This means that if a user goes silent for 30 minutes and then sends a new message, they start a fresh conversation. The old one remains active in the database until the background summarizer finds and closes it.
+This means that if a user goes silent for 2 hours and then sends a new message, they start a fresh conversation. The old one remains active in the database until the background summarizer finds and closes it.
 
-### The 30-Minute Timeout
+### The 2-Hour Timeout
 
-The timeout is a compile-time constant (`CONVERSATION_TIMEOUT_MINUTES = 30`). It is not configurable via `config.toml`. This timeout controls two things:
+The timeout is a compile-time constant (`CONVERSATION_TIMEOUT_MINUTES = 120`). It is not configurable via `config.toml`. This timeout controls two things:
 
-- **Conversation boundaries** -- Messages more than 30 minutes apart belong to different conversations.
-- **Idle detection** -- The background summarizer finds conversations idle for 30+ minutes and closes them.
+- **Conversation boundaries** -- Messages more than 2 hours apart belong to different conversations.
+- **Idle detection** -- The background summarizer finds conversations idle for 2+ hours and closes them.
 
 ### How Conversations Are Closed
 
@@ -161,11 +161,11 @@ New message from user (no active conversation)
   [CREATE] ─── status='active', new UUID
        |
        |    User sends more messages
-       |    (each within 30min of the last)
+       |    (each within 2hrs of the last)
        v
   [ACTIVE] ─── last_activity refreshed on each message
        |
-       |    30+ minutes of silence
+       |    2+ hours of silence
        v
   [IDLE] ─── background summarizer detects it
        |
@@ -581,11 +581,11 @@ SQLite is the right fit for Omega because:
 - **Embedded** -- Linked directly into the Omega binary. No network latency.
 - **Sufficient scale** -- Omega is a personal assistant, not a multi-tenant SaaS. SQLite handles the expected load with ease.
 
-### Why 30-Minute Timeout?
+### Why 2-Hour Timeout?
 
-30 minutes strikes a balance between:
-- **Too short** (5 min) -- Normal pauses during work would split conversations unnecessarily.
-- **Too long** (2 hours) -- Unrelated messages hours apart would be grouped together.
+2 hours strikes a balance between:
+- **Too short** (5-30 min) -- Normal pauses during work would split conversations unnecessarily.
+- **Too long** (4+ hours) -- Unrelated messages far apart would be grouped together.
 
 The timeout is a compile-time constant. If it needs to become configurable, it would be added to `MemoryConfig`.
 

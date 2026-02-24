@@ -83,7 +83,7 @@ The README.md file is critical because it:
   - Store (persistence)
   - Audit (accountability)
   - Respond (delivery)
-- **Conversation Lifecycle:** 30-minute idle timeout with automatic summarization explains how memory continuity works
+- **Conversation Lifecycle:** 2-hour idle timeout with automatic summarization explains how memory continuity works
 
 **Who It Targets:**
 - Users concerned about privacy (want to understand data flow)

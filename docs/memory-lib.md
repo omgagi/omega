@@ -90,7 +90,7 @@ This inserts two rows into the `messages` table -- one for the user's input (rol
 
 ### Conversation lifecycle
 
-Conversations have automatic boundary detection. A conversation is considered "idle" after 30 minutes of inactivity. The gateway uses these methods during its periodic maintenance cycle:
+Conversations have automatic boundary detection. A conversation is considered "idle" after 2 hours of inactivity. The gateway uses these methods during its periodic maintenance cycle:
 
 ```rust
 // Find conversations that have been idle too long:

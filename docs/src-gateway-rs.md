@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Gateway** is the central orchestrator of Omega's event loop, implemented as a directory module at `src/gateway/` with 9 files. It sits at the intersection of:
+The **Gateway** is the central orchestrator of Omega's event loop, implemented as a directory module at `src/gateway/` with 12 files. It sits at the intersection of:
 - **Messaging channels** (Telegram, WhatsApp) — where users send messages.
 - **AI providers** (Claude Code CLI, Anthropic API, etc.) — where reasoning happens.
 - **Memory store** (SQLite) — where conversation history and user facts are persisted.

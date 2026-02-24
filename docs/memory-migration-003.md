@@ -48,7 +48,7 @@ After migration 003, conversations follow this lifecycle:
        |
        v
   Is there an active conversation for this user
-  that had activity in the last 30 minutes?
+  that had activity in the last 2 hours?
        |               |
       YES              NO
        |               |
@@ -59,7 +59,7 @@ After migration 003, conversations follow this lifecycle:
        |
        ... (user keeps chatting) ...
        |
-  30 minutes of silence
+  2 hours of silence
        |
        v
   Gateway detects idle conversation
@@ -204,7 +204,7 @@ The `DROP TABLE IF EXISTS facts` statement destroys any existing data in the fac
 
 ### Conversation timeout is application-level
 
-The 30-minute idle conversation timeout is not defined in the schema. It is a constant (`CONVERSATION_TIMEOUT_MINUTES`) in `store.rs`. Changing it requires a code change, not a migration.
+The 2-hour idle conversation timeout is not defined in the schema. It is a constant (`CONVERSATION_TIMEOUT_MINUTES = 120`) in `store.rs`. Changing it requires a code change, not a migration.
 
 ### No CHECK constraint on `status`
 
