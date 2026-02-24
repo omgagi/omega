@@ -295,8 +295,91 @@ SUMMARY: <2-3 sentence description of what was built>
 - Include all necessary setup steps in documentation
 ";
 
-/// Name-to-content mapping for all 7 build agents.
+pub(super) const BUILD_DISCOVERY_AGENT: &str = "\
+---
+name: build-discovery
+description: Explores vague build requests through structured questioning, produces Idea Brief
+tools: Read, Grep, Glob
+model: opus
+permissionMode: bypassPermissions
+maxTurns: 15
+---
+
+You are a build discovery agent. You explore vague build requests to understand what the user actually needs before a build pipeline runs.
+
+You are NOT the analyst. You do not write requirements, assign IDs, or define acceptance criteria. You explore the idea itself — what it is, who it is for, why it matters, and what the MVP should include.
+
+Do NOT ask the user for clarification interactively — you are invoked as a single-shot agent. Instead, read the accumulated context provided and decide:
+
+1. If the request is ALREADY specific and clear (technology chosen, features listed, users identified, scope bounded), output DISCOVERY_COMPLETE immediately with an Idea Brief.
+2. If the request is vague or missing critical details, output DISCOVERY_QUESTIONS with 3-5 focused questions.
+
+## What makes a request specific enough to skip questions?
+- The user named concrete features (not just a category like 'CRM')
+- The user specified the technology or language
+- The user described who uses it and roughly what it does
+- Example specific: 'Build a Rust CLI that tracks Bitcoin prices from CoinGecko, stores history in SQLite, and sends Telegram alerts when price crosses thresholds'
+- Example vague: 'Build me a CRM' or 'I need a dashboard'
+
+## Questioning Strategy (when questions are needed)
+
+Cover these areas, 3-5 questions per round maximum:
+
+Round 1 (first invocation with raw request):
+- What problem does this solve? Who has this problem today?
+- Who are the primary users? What is their technical level?
+- What does the simplest useful version look like? (MVP)
+- Any technology preferences or constraints?
+- What is explicitly NOT part of this?
+
+Round 2+ (with accumulated answers):
+- Follow up on vague answers from previous rounds
+- Challenge assumptions: is this the right approach? Could something simpler work?
+- Narrow scope: of everything discussed, what is the ONE thing that must work in v1?
+- Use analogies to confirm understanding: 'So it is like X but for Y?'
+
+## Question Style
+- Be curious, not interrogating
+- Use plain language (the user may be non-technical)
+- Keep questions short and concrete
+- Do NOT ask 10 questions — 3 to 5 maximum per round
+- Match the user's language (if they write in Spanish, ask in Spanish)
+
+## Output Format
+
+You MUST output in one of exactly two formats:
+
+### Format 1: Need more information
+```
+DISCOVERY_QUESTIONS
+<your questions here, as a natural conversational message>
+```
+
+### Format 2: Ready to build
+```
+DISCOVERY_COMPLETE
+IDEA_BRIEF:
+One-line summary: <what this is>
+Problem: <what problem it solves, for whom>
+Users: <who uses it, their technical level>
+MVP scope: <the minimum viable feature set>
+Technology: <language, framework, database choices>
+Out of scope: <what is explicitly excluded>
+Key decisions: <any decisions made during discovery>
+Constraints: <scale, integrations, timeline if mentioned>
+```
+
+## Rules
+- If this is the final round (the prompt will tell you), you MUST output DISCOVERY_COMPLETE regardless of how much information you have. Synthesize the best brief you can from available context.
+- Never output both DISCOVERY_QUESTIONS and DISCOVERY_COMPLETE — pick one.
+- The Idea Brief does not need to be perfect — it just needs to be dramatically better than the raw request.
+- Keep the brief concise — it will be passed to a build analyst agent, not displayed to the user verbatim.
+- Make reasonable defaults for anything ambiguous.
+";
+
+/// Name-to-content mapping for all 8 build agents (discovery + 7 pipeline phases).
 pub(super) const BUILD_AGENTS: &[(&str, &str)] = &[
+    ("build-discovery", BUILD_DISCOVERY_AGENT),
     ("build-analyst", BUILD_ANALYST_AGENT),
     ("build-architect", BUILD_ARCHITECT_AGENT),
     ("build-test-writer", BUILD_TEST_WRITER_AGENT),
@@ -355,22 +438,24 @@ mod tests {
     // REQ-BAP-002 (Must): Embedded agent content — 7 agent definitions
     // ===================================================================
 
-    // Requirement: REQ-BAP-002 (Must)
-    // Acceptance: all 7 build agent definitions compiled into the binary
+    // Requirement: REQ-BAP-002 (Must), REQ-BDP-002 (Must)
+    // Acceptance: all 8 build agent definitions compiled into the binary
+    // (7 original pipeline agents + 1 discovery agent)
     #[test]
-    fn test_build_agents_has_exactly_7_entries() {
+    fn test_build_agents_has_exactly_8_entries() {
         assert_eq!(
             BUILD_AGENTS.len(),
-            7,
-            "BUILD_AGENTS must contain exactly 7 agent definitions"
+            8,
+            "BUILD_AGENTS must contain exactly 8 agent definitions (7 pipeline + 1 discovery)"
         );
     }
 
-    // Requirement: REQ-BAP-002 (Must)
-    // Acceptance: correct agent names in the mapping
+    // Requirement: REQ-BAP-002 (Must), REQ-BDP-002 (Must)
+    // Acceptance: correct agent names in the mapping (discovery + 7 pipeline agents)
     #[test]
     fn test_build_agents_correct_names() {
         let expected_names = [
+            "build-discovery",
             "build-analyst",
             "build-architect",
             "build-test-writer",
@@ -382,7 +467,7 @@ mod tests {
         let actual_names: Vec<&str> = BUILD_AGENTS.iter().map(|(name, _)| *name).collect();
         assert_eq!(
             actual_names, expected_names,
-            "Agent names must match expected 7-phase pipeline order"
+            "Agent names must match expected order: discovery first, then 7-phase pipeline"
         );
     }
 
@@ -939,5 +1024,219 @@ mod tests {
                 || content.contains("line limit"),
             "Developer agent should enforce 500-line file limit"
         );
+    }
+
+    // ===================================================================
+    // REQ-BDP-002 (Must): BUILD_DISCOVERY_AGENT — embedded discovery agent
+    // ===================================================================
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: BUILD_DISCOVERY_AGENT constant exists and is non-empty
+    #[test]
+    fn test_discovery_agent_constant_exists() {
+        assert!(
+            !BUILD_DISCOVERY_AGENT.is_empty(),
+            "BUILD_DISCOVERY_AGENT must not be empty"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: Agent has YAML frontmatter
+    #[test]
+    fn test_discovery_agent_has_yaml_frontmatter() {
+        assert!(
+            BUILD_DISCOVERY_AGENT.starts_with("---"),
+            "BUILD_DISCOVERY_AGENT must start with YAML frontmatter '---'"
+        );
+        let after_open = &BUILD_DISCOVERY_AGENT[3..];
+        assert!(
+            after_open.contains("\n---"),
+            "BUILD_DISCOVERY_AGENT must have closing YAML frontmatter '---'"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: Agent frontmatter contains name: build-discovery
+    #[test]
+    fn test_discovery_agent_frontmatter_name() {
+        let after_open = &BUILD_DISCOVERY_AGENT[3..];
+        let close_idx = after_open.find("\n---").unwrap();
+        let frontmatter = &after_open[..close_idx];
+        let name_line = frontmatter
+            .lines()
+            .find(|l| l.starts_with("name:"))
+            .expect("Discovery agent must have name: in frontmatter");
+        let name_value = name_line["name:".len()..].trim();
+        assert_eq!(
+            name_value, "build-discovery",
+            "Discovery agent frontmatter name must be 'build-discovery', got: '{name_value}'"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must), REQ-BDP-015 (Should)
+    // Acceptance: Agent uses model: opus (complex reasoning needed for discovery)
+    #[test]
+    fn test_discovery_agent_model_opus() {
+        let after_open = &BUILD_DISCOVERY_AGENT[3..];
+        let close_idx = after_open.find("\n---").unwrap();
+        let frontmatter = &after_open[..close_idx];
+        let model_line = frontmatter
+            .lines()
+            .find(|l| l.starts_with("model:"))
+            .expect("Discovery agent must have model: in frontmatter");
+        let model_value = model_line["model:".len()..].trim();
+        assert_eq!(
+            model_value, "opus",
+            "Discovery agent must use model: opus, got: '{model_value}'"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: Agent has permissionMode: bypassPermissions
+    #[test]
+    fn test_discovery_agent_permission_bypass() {
+        assert!(
+            BUILD_DISCOVERY_AGENT.contains("permissionMode: bypassPermissions"),
+            "Discovery agent must have permissionMode: bypassPermissions"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: Agent has maxTurns: 15
+    #[test]
+    fn test_discovery_agent_max_turns() {
+        let after_open = &BUILD_DISCOVERY_AGENT[3..];
+        let close_idx = after_open.find("\n---").unwrap();
+        let frontmatter = &after_open[..close_idx];
+        assert!(
+            frontmatter.contains("maxTurns: 15"),
+            "Discovery agent must have maxTurns: 15 in frontmatter"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: Agent has tools: Read, Grep, Glob (no Write/Edit — read-only discovery)
+    #[test]
+    fn test_discovery_agent_restricted_tools() {
+        let after_open = &BUILD_DISCOVERY_AGENT[3..];
+        let close_idx = after_open.find("\n---").unwrap();
+        let frontmatter = &after_open[..close_idx];
+        let tools_line = frontmatter
+            .lines()
+            .find(|l| l.starts_with("tools:"))
+            .expect("Discovery agent must have tools: in frontmatter");
+        assert!(
+            tools_line.contains("Read"),
+            "Discovery agent must have Read tool"
+        );
+        assert!(
+            tools_line.contains("Grep"),
+            "Discovery agent must have Grep tool"
+        );
+        assert!(
+            tools_line.contains("Glob"),
+            "Discovery agent must have Glob tool"
+        );
+        assert!(
+            !tools_line.contains("Write"),
+            "Discovery agent must NOT have Write tool (read-only)"
+        );
+        assert!(
+            !tools_line.contains("Edit"),
+            "Discovery agent must NOT have Edit tool (read-only)"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: Agent body contains DISCOVERY_QUESTIONS output format
+    #[test]
+    fn test_discovery_agent_contains_questions_format() {
+        assert!(
+            BUILD_DISCOVERY_AGENT.contains("DISCOVERY_QUESTIONS"),
+            "Discovery agent must document DISCOVERY_QUESTIONS output format"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: Agent body contains DISCOVERY_COMPLETE output format
+    #[test]
+    fn test_discovery_agent_contains_complete_format() {
+        assert!(
+            BUILD_DISCOVERY_AGENT.contains("DISCOVERY_COMPLETE"),
+            "Discovery agent must document DISCOVERY_COMPLETE output format"
+        );
+        assert!(
+            BUILD_DISCOVERY_AGENT.contains("IDEA_BRIEF:"),
+            "Discovery agent must document IDEA_BRIEF: output format"
+        );
+    }
+
+    // Requirement: REQ-BDP-012 (Should), REQ-BAP-011 (Must)
+    // Acceptance: Agent contains non-interactive instruction (single-shot mode)
+    #[test]
+    fn test_discovery_agent_non_interactive() {
+        let lower = BUILD_DISCOVERY_AGENT.to_lowercase();
+        assert!(
+            lower.contains("do not ask the user")
+                || lower.contains("do not ask questions")
+                || lower.contains("single-shot")
+                || lower.contains("not the analyst"),
+            "Discovery agent must contain non-interactive instruction"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: BUILD_AGENTS contains build-discovery entry
+    #[test]
+    fn test_build_agents_contains_discovery() {
+        let has_discovery = BUILD_AGENTS
+            .iter()
+            .any(|(name, _)| *name == "build-discovery");
+        assert!(
+            has_discovery,
+            "BUILD_AGENTS must contain a 'build-discovery' entry"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: BUILD_DISCOVERY_AGENT content in BUILD_AGENTS matches the constant
+    #[test]
+    fn test_build_agents_discovery_content_matches_constant() {
+        let discovery_entry = BUILD_AGENTS
+            .iter()
+            .find(|(name, _)| *name == "build-discovery")
+            .expect("BUILD_AGENTS must have build-discovery");
+        assert_eq!(
+            discovery_entry.1, BUILD_DISCOVERY_AGENT,
+            "BUILD_AGENTS discovery content must match BUILD_DISCOVERY_AGENT constant"
+        );
+    }
+
+    // Requirement: REQ-BDP-002 (Must)
+    // Acceptance: AgentFilesGuard writes build-discovery.md alongside other agents
+    #[tokio::test]
+    async fn test_agent_files_guard_writes_discovery_agent() {
+        let tmp = std::env::temp_dir().join("__omega_test_agents_discovery__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let guard = AgentFilesGuard::write(&tmp).await.unwrap();
+        let discovery_file = tmp
+            .join(".claude")
+            .join("agents")
+            .join("build-discovery.md");
+        assert!(
+            discovery_file.exists(),
+            "AgentFilesGuard must write build-discovery.md"
+        );
+
+        let content = std::fs::read_to_string(&discovery_file).unwrap();
+        assert_eq!(
+            content, BUILD_DISCOVERY_AGENT,
+            "Written discovery agent file must match constant"
+        );
+
+        drop(guard);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

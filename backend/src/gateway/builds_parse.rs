@@ -1,5 +1,9 @@
 //! Pure parsing functions, data structures, and prompt templates for the build pipeline.
 
+use std::path::PathBuf;
+
+use omega_core::config::shellexpand;
+
 // ---------------------------------------------------------------------------
 // Data structures
 // ---------------------------------------------------------------------------
@@ -33,6 +37,14 @@ pub(super) struct BuildSummary {
     pub(super) summary: String,
     pub(super) usage: String,
     pub(super) skill: Option<String>,
+}
+
+/// Result of discovery agent invocation.
+pub(super) enum DiscoveryOutput {
+    /// Agent needs more information — contains question text for the user.
+    Questions(String),
+    /// Agent has enough info — contains the synthesized Idea Brief.
+    Complete(String),
 }
 
 // Phase prompt templates have been replaced by embedded agent definitions
@@ -229,6 +241,81 @@ pub(super) fn phase_message(lang: &str, phase: u8, action: &str) -> String {
             _ => format!("Phase {phase}: {action}..."),
         },
     }
+}
+
+/// Parse discovery agent output into questions or a completed brief.
+pub(super) fn parse_discovery_output(text: &str) -> DiscoveryOutput {
+    // DISCOVERY_COMPLETE takes precedence if both markers present.
+    if text.contains("DISCOVERY_COMPLETE") {
+        let brief = text
+            .lines()
+            .skip_while(|l| !l.starts_with("IDEA_BRIEF:"))
+            .skip(1) // skip the IDEA_BRIEF: line itself
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string();
+        // If IDEA_BRIEF: section is empty, use everything after DISCOVERY_COMPLETE.
+        if brief.is_empty() {
+            let fallback = text
+                .lines()
+                .skip_while(|l| !l.contains("DISCOVERY_COMPLETE"))
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string();
+            return DiscoveryOutput::Complete(fallback);
+        }
+        return DiscoveryOutput::Complete(brief);
+    }
+
+    if text.contains("DISCOVERY_QUESTIONS") {
+        let questions = text
+            .lines()
+            .skip_while(|l| !l.contains("DISCOVERY_QUESTIONS"))
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string();
+        return DiscoveryOutput::Questions(questions);
+    }
+
+    // No markers — treat entire output as a completed brief (auto-complete fallback).
+    DiscoveryOutput::Complete(text.trim().to_string())
+}
+
+/// Parse the current round number from a discovery file's ROUND: header.
+pub(super) fn parse_discovery_round(content: &str) -> u8 {
+    content
+        .lines()
+        .find(|l| l.starts_with("ROUND:"))
+        .and_then(|l| l["ROUND:".len()..].trim().parse::<u8>().ok())
+        .unwrap_or(1)
+}
+
+/// Truncate a brief for preview in confirmation messages.
+pub(super) fn truncate_brief_preview(brief: &str, max_chars: usize) -> String {
+    if brief.chars().count() <= max_chars {
+        brief.to_string()
+    } else {
+        let truncated: String = brief.chars().take(max_chars).collect();
+        format!("{truncated}...")
+    }
+}
+
+/// Get the path to a discovery state file for a given sender.
+pub(super) fn discovery_file_path(data_dir: &str, sender_id: &str) -> PathBuf {
+    // Sanitize sender_id for filesystem safety.
+    let safe_id: String = sender_id
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    PathBuf::from(shellexpand(data_dir))
+        .join("workspace")
+        .join("discovery")
+        .join(format!("{safe_id}.md"))
 }
 
 // ---------------------------------------------------------------------------
@@ -713,6 +800,292 @@ mod tests {
             msg.contains("deliver") || msg.contains("Deliver")
                 || msg.contains("Preparing") || msg.contains("delivery"),
             "Phase 7 (delivery) must have a custom English message: got '{msg}'"
+        );
+    }
+
+    // ===================================================================
+    // REQ-BDP-003 (Must): Discovery output parsing — parse_discovery_output()
+    // ===================================================================
+
+    // Requirement: REQ-BDP-003 (Must)
+    // Acceptance: Questions variant contains the question text after DISCOVERY_QUESTIONS
+    #[test]
+    fn test_parse_discovery_output_questions_marker() {
+        let text = "DISCOVERY_QUESTIONS\nWhat problem does this solve?\nWho are the users?";
+        let result = parse_discovery_output(text);
+        match result {
+            DiscoveryOutput::Questions(q) => {
+                assert!(
+                    q.contains("What problem does this solve?"),
+                    "Should contain first question, got: '{q}'"
+                );
+                assert!(
+                    q.contains("Who are the users?"),
+                    "Should contain second question, got: '{q}'"
+                );
+            }
+            DiscoveryOutput::Complete(_) => panic!("Expected Questions variant, got Complete"),
+        }
+    }
+
+    // Requirement: REQ-BDP-003 (Must)
+    // Acceptance: Complete variant contains the idea brief text after IDEA_BRIEF:
+    #[test]
+    fn test_parse_discovery_output_complete_with_brief() {
+        let text = "DISCOVERY_COMPLETE\nIDEA_BRIEF:\nA CRM tool for small real estate teams.";
+        let result = parse_discovery_output(text);
+        match result {
+            DiscoveryOutput::Complete(brief) => {
+                assert!(
+                    brief.contains("CRM tool for small real estate teams"),
+                    "Should contain the brief text, got: '{brief}'"
+                );
+            }
+            DiscoveryOutput::Questions(_) => panic!("Expected Complete variant, got Questions"),
+        }
+    }
+
+    // Requirement: REQ-BDP-003 (Must)
+    // Acceptance: DISCOVERY_COMPLETE takes precedence when both markers present
+    #[test]
+    fn test_parse_discovery_output_complete_takes_precedence() {
+        let text = "DISCOVERY_QUESTIONS\nSome questions here\n\nDISCOVERY_COMPLETE\nIDEA_BRIEF:\nThe final brief.";
+        let result = parse_discovery_output(text);
+        match result {
+            DiscoveryOutput::Complete(brief) => {
+                assert!(
+                    brief.contains("The final brief"),
+                    "DISCOVERY_COMPLETE should take precedence, got: '{brief}'"
+                );
+            }
+            DiscoveryOutput::Questions(_) => {
+                panic!("Expected Complete (precedence) but got Questions")
+            }
+        }
+    }
+
+    // Requirement: REQ-BDP-003 (Must)
+    // Acceptance: Missing markers treated as auto-complete (use full output as brief)
+    #[test]
+    fn test_parse_discovery_output_no_markers_auto_complete() {
+        let text = "Here is a description of what should be built. It is a task manager.";
+        let result = parse_discovery_output(text);
+        match result {
+            DiscoveryOutput::Complete(brief) => {
+                assert!(
+                    brief.contains("task manager"),
+                    "No markers should auto-complete with full text, got: '{brief}'"
+                );
+            }
+            DiscoveryOutput::Questions(_) => {
+                panic!("Expected Complete (auto-complete fallback) but got Questions")
+            }
+        }
+    }
+
+    // Requirement: REQ-BDP-003 (Must)
+    // Acceptance: Empty output returns Complete with empty string (graceful degradation)
+    #[test]
+    fn test_parse_discovery_output_empty_input() {
+        let result = parse_discovery_output("");
+        match result {
+            DiscoveryOutput::Complete(brief) => {
+                assert!(
+                    brief.is_empty(),
+                    "Empty input should produce empty Complete, got: '{brief}'"
+                );
+            }
+            DiscoveryOutput::Questions(_) => {
+                panic!("Expected Complete for empty input but got Questions")
+            }
+        }
+    }
+
+    // Requirement: REQ-BDP-003 (Must)
+    // Edge case: DISCOVERY_QUESTIONS with prose before marker
+    #[test]
+    fn test_parse_discovery_output_questions_with_prose_before() {
+        let text = "I analyzed the request and need more info.\n\nDISCOVERY_QUESTIONS\n1. What is the target audience?\n2. What tech stack?";
+        let result = parse_discovery_output(text);
+        match result {
+            DiscoveryOutput::Questions(q) => {
+                assert!(
+                    q.contains("What is the target audience?"),
+                    "Should extract questions after marker, got: '{q}'"
+                );
+                assert!(
+                    !q.contains("I analyzed the request"),
+                    "Should NOT include prose before marker, got: '{q}'"
+                );
+            }
+            DiscoveryOutput::Complete(_) => panic!("Expected Questions, got Complete"),
+        }
+    }
+
+    // Requirement: REQ-BDP-003 (Must)
+    // Edge case: DISCOVERY_COMPLETE without IDEA_BRIEF: line — uses text after marker
+    #[test]
+    fn test_parse_discovery_output_complete_without_idea_brief_line() {
+        let text = "DISCOVERY_COMPLETE\nThis is a price tracker tool for crypto traders.";
+        let result = parse_discovery_output(text);
+        match result {
+            DiscoveryOutput::Complete(brief) => {
+                assert!(
+                    brief.contains("price tracker tool"),
+                    "Should use text after DISCOVERY_COMPLETE when IDEA_BRIEF: missing, got: '{brief}'"
+                );
+            }
+            DiscoveryOutput::Questions(_) => panic!("Expected Complete, got Questions"),
+        }
+    }
+
+    // ===================================================================
+    // REQ-BDP-008 (Must): parse_discovery_round()
+    // ===================================================================
+
+    // Requirement: REQ-BDP-008 (Must)
+    // Acceptance: Parses "ROUND: 1" correctly
+    #[test]
+    fn test_parse_discovery_round_one() {
+        let content = "# Discovery Session\n\nCREATED: 1700000000\nROUND: 1\nORIGINAL_REQUEST: build me a CRM";
+        assert_eq!(parse_discovery_round(content), 1);
+    }
+
+    // Requirement: REQ-BDP-008 (Must)
+    // Acceptance: Parses "ROUND: 3" correctly
+    #[test]
+    fn test_parse_discovery_round_three() {
+        let content = "# Discovery Session\n\nCREATED: 1700000000\nROUND: 3\nORIGINAL_REQUEST: build me a CRM";
+        assert_eq!(parse_discovery_round(content), 3);
+    }
+
+    // Requirement: REQ-BDP-008 (Must)
+    // Edge case: No ROUND header — defaults to 1
+    #[test]
+    fn test_parse_discovery_round_missing_header() {
+        let content = "# Discovery Session\n\nCREATED: 1700000000\nORIGINAL_REQUEST: build me a CRM";
+        assert_eq!(
+            parse_discovery_round(content),
+            1,
+            "Missing ROUND header should default to 1"
+        );
+    }
+
+    // Requirement: REQ-BDP-008 (Must)
+    // Edge case: Invalid number after ROUND: — defaults to 1
+    #[test]
+    fn test_parse_discovery_round_invalid_number() {
+        let content = "ROUND: abc\nORIGINAL_REQUEST: build me a CRM";
+        assert_eq!(
+            parse_discovery_round(content),
+            1,
+            "Invalid ROUND number should default to 1"
+        );
+    }
+
+    // ===================================================================
+    // REQ-BDP-011 (Must): truncate_brief_preview()
+    // ===================================================================
+
+    // Requirement: REQ-BDP-011 (Must)
+    // Acceptance: Short text under limit returned unchanged
+    #[test]
+    fn test_truncate_brief_preview_short_text() {
+        let brief = "A simple task manager";
+        let result = truncate_brief_preview(brief, 300);
+        assert_eq!(result, brief, "Short text should be unchanged");
+    }
+
+    // Requirement: REQ-BDP-011 (Must)
+    // Acceptance: Long text over limit truncated with "..."
+    #[test]
+    fn test_truncate_brief_preview_long_text() {
+        let brief = "A".repeat(400);
+        let result = truncate_brief_preview(&brief, 300);
+        assert!(
+            result.ends_with("..."),
+            "Truncated text should end with '...', got: '{}'",
+            &result[result.len().saturating_sub(10)..]
+        );
+        // 300 chars + "..." = 303 total
+        assert_eq!(
+            result.chars().count(),
+            303,
+            "Should be exactly 300 chars + '...'"
+        );
+    }
+
+    // Requirement: REQ-BDP-011 (Must)
+    // Edge case: Exact limit length — unchanged
+    #[test]
+    fn test_truncate_brief_preview_exact_limit() {
+        let brief = "B".repeat(300);
+        let result = truncate_brief_preview(&brief, 300);
+        assert_eq!(result, brief, "Exact limit length should be unchanged");
+        assert!(
+            !result.ends_with("..."),
+            "Should not append '...' at exact limit"
+        );
+    }
+
+    // Requirement: REQ-BDP-011 (Must)
+    // Edge case: Unicode characters (char count vs byte count)
+    #[test]
+    fn test_truncate_brief_preview_unicode() {
+        // Each emoji is 1 char but 4 bytes. 10 emojis = 10 chars.
+        let brief = "\u{1f600}".repeat(10);
+        let result = truncate_brief_preview(&brief, 5);
+        assert!(
+            result.ends_with("..."),
+            "Unicode text over limit should be truncated"
+        );
+        // 5 emoji chars + "..." (3 chars) = 8 chars total
+        assert_eq!(result.chars().count(), 8, "Should truncate by char count, not byte count");
+    }
+
+    // ===================================================================
+    // REQ-BDP-001 (Must): discovery_file_path()
+    // ===================================================================
+
+    // Requirement: REQ-BDP-001 (Must)
+    // Acceptance: Normal sender_id produces correct path
+    #[test]
+    fn test_discovery_file_path_normal_sender() {
+        let path = discovery_file_path("~/.omega", "842277204");
+        let path_str = path.to_string_lossy();
+        assert!(
+            path_str.contains("workspace"),
+            "Path should contain 'workspace', got: '{path_str}'"
+        );
+        assert!(
+            path_str.contains("discovery"),
+            "Path should contain 'discovery', got: '{path_str}'"
+        );
+        assert!(
+            path_str.ends_with("842277204.md"),
+            "Path should end with sender_id.md, got: '{path_str}'"
+        );
+    }
+
+    // Requirement: REQ-BDP-001 (Must)
+    // Security: sender_id with special chars is sanitized for filesystem safety
+    #[test]
+    fn test_discovery_file_path_special_chars_sanitized() {
+        let path = discovery_file_path("~/.omega", "../../../etc/passwd");
+        let path_str = path.to_string_lossy();
+        assert!(
+            !path_str.contains("../"),
+            "Path traversal must be sanitized, got: '{path_str}'"
+        );
+        // Dots and slashes should be replaced with underscores
+        let filename = path.file_name().unwrap().to_string_lossy();
+        assert!(
+            !filename.contains('/'),
+            "Filename must not contain '/', got: '{filename}'"
+        );
+        assert!(
+            !filename.contains('\\'),
+            "Filename must not contain '\\', got: '{filename}'"
         );
     }
 }
