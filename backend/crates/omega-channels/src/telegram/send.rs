@@ -107,6 +107,7 @@ impl TelegramChannel {
                 { "command": "purge", "description": "Delete all learned facts (clean slate)" },
                 { "command": "whatsapp", "description": "Connect WhatsApp via QR code" },
                 { "command": "heartbeat", "description": "Heartbeat status and watchlist" },
+                { "command": "learning", "description": "Show what I've learned from you" },
             ]
         });
 
