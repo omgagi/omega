@@ -1,16 +1,26 @@
 //! Message processing pipeline — the main handle_message flow.
 
-use super::keywords::*;
-use super::Gateway;
-use crate::commands;
-use crate::markers::*;
+use std::path::PathBuf;
+use std::sync::atomic::Ordering;
+
+use tracing::{error, info, warn};
+
+use omega_core::config::shellexpand;
 use omega_core::{context::ContextNeeds, message::IncomingMessage, sanitize};
 use omega_memory::{
     audit::{AuditEntry, AuditStatus},
     detect_language,
 };
-use std::sync::atomic::Ordering;
-use tracing::{error, info, warn};
+
+use super::builds_agents::AgentFilesGuard;
+use super::builds_parse::{
+    discovery_file_path, parse_discovery_output, parse_discovery_round, truncate_brief_preview,
+    DiscoveryOutput,
+};
+use super::keywords::*;
+use super::Gateway;
+use crate::commands;
+use crate::markers::*;
 
 impl Gateway {
     /// Process a single incoming message through the full pipeline.
@@ -183,6 +193,203 @@ impl Gateway {
             .ok()
             .flatten();
 
+        // --- 4a-DISCOVERY. PENDING DISCOVERY SESSION CHECK ---
+        let pending_discovery: Option<String> = self
+            .memory
+            .get_fact(&incoming.sender_id, "pending_discovery")
+            .await
+            .ok()
+            .flatten();
+
+        if let Some(discovery_value) = pending_discovery {
+            // Parse timestamp from "timestamp|sender_id" format.
+            let (stored_ts, _) = discovery_value
+                .split_once('|')
+                .unwrap_or(("0", &discovery_value));
+            let created_at: i64 = stored_ts.parse().unwrap_or(0);
+            let now = chrono::Utc::now().timestamp();
+            let expired = (now - created_at) > DISCOVERY_TTL_SECS;
+
+            let user_lang = self
+                .memory
+                .get_fact(&incoming.sender_id, "preferred_language")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "English".to_string());
+
+            if expired {
+                // Clean up expired session.
+                let _ = self
+                    .memory
+                    .delete_fact(&incoming.sender_id, "pending_discovery")
+                    .await;
+                let disc_file = discovery_file_path(&self.data_dir, &incoming.sender_id);
+                let _ = tokio::fs::remove_file(&disc_file).await;
+                info!("[{}] discovery session expired", incoming.channel);
+                self.send_text(&incoming, discovery_expired_message(&user_lang))
+                    .await;
+                // Fall through — the current message might be a new build request or normal chat.
+            } else if is_build_cancelled(&clean_incoming.text) {
+                // User cancelled discovery.
+                let _ = self
+                    .memory
+                    .delete_fact(&incoming.sender_id, "pending_discovery")
+                    .await;
+                let disc_file = discovery_file_path(&self.data_dir, &incoming.sender_id);
+                let _ = tokio::fs::remove_file(&disc_file).await;
+                if let Some(h) = typing_handle {
+                    h.abort();
+                }
+                self.send_text(&incoming, discovery_cancelled_message(&user_lang))
+                    .await;
+                return;
+            } else {
+                // Active discovery session — process the user's answer.
+                let disc_file = discovery_file_path(&self.data_dir, &incoming.sender_id);
+                let mut discovery_context = tokio::fs::read_to_string(&disc_file)
+                    .await
+                    .unwrap_or_default();
+
+                // Parse current round from file header.
+                let current_round = parse_discovery_round(&discovery_context);
+
+                // Append user's answer to the file.
+                discovery_context.push_str(&format!(
+                    "\n### User Response\n{}\n",
+                    clean_incoming.text
+                ));
+
+                let is_final_round = current_round >= 3;
+                let next_round = current_round + 1;
+
+                // Build prompt for discovery agent.
+                let agent_prompt = if is_final_round {
+                    format!(
+                        "This is the FINAL round. You MUST output DISCOVERY_COMPLETE with an Idea Brief.\n\
+                         Synthesize everything below into a brief.\n\n{discovery_context}"
+                    )
+                } else {
+                    format!(
+                        "Discovery round {next_round}/3. Read the accumulated context and either:\n\
+                         - Output DISCOVERY_QUESTIONS if you need more info\n\
+                         - Output DISCOVERY_COMPLETE if you have enough\n\n{discovery_context}"
+                    )
+                };
+
+                // Write agent files and run discovery agent.
+                let workspace_dir =
+                    PathBuf::from(shellexpand(&self.data_dir)).join("workspace");
+                let _agent_guard = AgentFilesGuard::write(&workspace_dir).await;
+
+                let result = self
+                    .run_build_phase(
+                        "build-discovery",
+                        &agent_prompt,
+                        &self.model_complex,
+                        Some(15),
+                    )
+                    .await;
+
+                match result {
+                    Ok(output) => {
+                        let parsed = parse_discovery_output(&output);
+                        // If final round, force Complete.
+                        let parsed = if is_final_round {
+                            match parsed {
+                                DiscoveryOutput::Questions(q) => DiscoveryOutput::Complete(q),
+                                other => other,
+                            }
+                        } else {
+                            parsed
+                        };
+
+                        match parsed {
+                            DiscoveryOutput::Questions(questions) => {
+                                // Update discovery file with new round header.
+                                let updated = format!(
+                                    "{discovery_context}\n## Round {next_round}\n### Agent Questions\n{questions}\n"
+                                );
+                                // Update ROUND: header in file.
+                                let updated = if updated.contains("ROUND:") {
+                                    updated.replacen(
+                                        &format!("ROUND: {current_round}"),
+                                        &format!("ROUND: {next_round}"),
+                                        1,
+                                    )
+                                } else {
+                                    updated
+                                };
+                                let _ = tokio::fs::write(&disc_file, &updated).await;
+
+                                // Send questions to user.
+                                let msg = if next_round <= 1 {
+                                    discovery_intro_message(&user_lang, &questions)
+                                } else {
+                                    discovery_followup_message(
+                                        &user_lang,
+                                        &questions,
+                                        next_round as u8,
+                                    )
+                                };
+                                if let Some(h) = typing_handle {
+                                    h.abort();
+                                }
+                                self.send_text(&incoming, &msg).await;
+                                return;
+                            }
+                            DiscoveryOutput::Complete(brief) => {
+                                // Discovery complete — clean up and hand off to confirmation.
+                                let _ = self
+                                    .memory
+                                    .delete_fact(&incoming.sender_id, "pending_discovery")
+                                    .await;
+                                let _ = tokio::fs::remove_file(&disc_file).await;
+
+                                // Store enriched brief as pending_build_request.
+                                let stamped = format!(
+                                    "{}|{}",
+                                    chrono::Utc::now().timestamp(),
+                                    brief
+                                );
+                                let _ = self
+                                    .memory
+                                    .store_fact(
+                                        &incoming.sender_id,
+                                        "pending_build_request",
+                                        &stamped,
+                                    )
+                                    .await;
+
+                                // Send discovery complete + confirmation message.
+                                let preview = truncate_brief_preview(&brief, 300);
+                                let msg = discovery_complete_message(&user_lang, &preview);
+                                if let Some(h) = typing_handle {
+                                    h.abort();
+                                }
+                                self.send_text(&incoming, &msg).await;
+                                return;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Discovery agent failed — clean up, inform user.
+                        let _ = self
+                            .memory
+                            .delete_fact(&incoming.sender_id, "pending_discovery")
+                            .await;
+                        let _ = tokio::fs::remove_file(&disc_file).await;
+                        if let Some(h) = typing_handle {
+                            h.abort();
+                        }
+                        self.send_text(&incoming, &format!("Discovery failed: {e}"))
+                            .await;
+                        return;
+                    }
+                }
+            }
+        }
+
         // --- 4a. PENDING BUILD CONFIRMATION CHECK ---
         // If user previously triggered a build keyword, we stored their request (with
         // a Unix timestamp prefix) and asked for an explicit confirmation phrase.
@@ -277,12 +484,13 @@ impl Gateway {
             needs_outcomes,
         );
 
-        // --- 4b. BUILD REQUESTS — store request and ask for explicit confirmation ---
-        // Never start a build without user confirmation. Store the request text as a
-        // pending fact and send a localized confirmation prompt.
+        // --- 4b. BUILD REQUESTS — run discovery before confirmation ---
+        // When a build keyword is detected, run the discovery agent first to
+        // clarify the request. If the request is already specific, discovery
+        // completes in one shot and flows into the confirmation gate.
         if needs_builds {
             info!(
-                "[{}] build keyword detected → asking for confirmation",
+                "[{}] build keyword detected \u{2192} starting discovery",
                 incoming.channel
             );
 
@@ -294,22 +502,125 @@ impl Gateway {
                 .flatten()
                 .unwrap_or_else(|| "English".to_string());
 
-            let stamped = format!("{}|{}", chrono::Utc::now().timestamp(), incoming.text);
-            let _ = self
-                .memory
-                .store_fact(
-                    &incoming.sender_id,
-                    "pending_build_request",
-                    &stamped,
+            // Write agent files for discovery.
+            let workspace_dir =
+                PathBuf::from(shellexpand(&self.data_dir)).join("workspace");
+            let _agent_guard = AgentFilesGuard::write(&workspace_dir).await;
+
+            // Run first discovery round with raw request.
+            let agent_prompt = format!(
+                "Discovery round 1/3. Analyze this build request and decide:\n\
+                 - If specific enough, output DISCOVERY_COMPLETE with an Idea Brief\n\
+                 - If vague, output DISCOVERY_QUESTIONS with 3-5 clarifying questions\n\n\
+                 User request: {}",
+                incoming.text
+            );
+
+            let result = self
+                .run_build_phase(
+                    "build-discovery",
+                    &agent_prompt,
+                    &self.model_complex,
+                    Some(15),
                 )
                 .await;
 
-            let confirm_msg = build_confirm_message(&user_lang, &incoming.text);
-            if let Some(h) = typing_handle {
-                h.abort();
+            match result {
+                Ok(output) => {
+                    let parsed = parse_discovery_output(&output);
+                    match parsed {
+                        DiscoveryOutput::Complete(brief) => {
+                            // Request was specific — skip multi-round, go straight to confirmation.
+                            let stamped = format!(
+                                "{}|{}",
+                                chrono::Utc::now().timestamp(),
+                                brief
+                            );
+                            let _ = self
+                                .memory
+                                .store_fact(
+                                    &incoming.sender_id,
+                                    "pending_build_request",
+                                    &stamped,
+                                )
+                                .await;
+                            let preview = truncate_brief_preview(&brief, 300);
+                            let msg = discovery_complete_message(&user_lang, &preview);
+                            if let Some(h) = typing_handle {
+                                h.abort();
+                            }
+                            self.send_text(&incoming, &msg).await;
+                            return;
+                        }
+                        DiscoveryOutput::Questions(questions) => {
+                            // Request was vague — start multi-round discovery session.
+                            let disc_file =
+                                discovery_file_path(&self.data_dir, &incoming.sender_id);
+                            let discovery_dir = disc_file.parent().unwrap();
+                            let _ = tokio::fs::create_dir_all(discovery_dir).await;
+
+                            // Create discovery file with round 1 content.
+                            let file_content = format!(
+                                "# Discovery Session\n\n\
+                                 CREATED: {}\n\
+                                 ROUND: 1\n\
+                                 ORIGINAL_REQUEST: {}\n\n\
+                                 ## Round 1\n\
+                                 ### Agent Questions\n{}\n",
+                                chrono::Utc::now().timestamp(),
+                                incoming.text,
+                                questions
+                            );
+                            let _ = tokio::fs::write(&disc_file, &file_content).await;
+
+                            // Store pending_discovery fact.
+                            let stamped = format!(
+                                "{}|{}",
+                                chrono::Utc::now().timestamp(),
+                                incoming.sender_id
+                            );
+                            let _ = self
+                                .memory
+                                .store_fact(
+                                    &incoming.sender_id,
+                                    "pending_discovery",
+                                    &stamped,
+                                )
+                                .await;
+
+                            // Send questions to user.
+                            let msg = discovery_intro_message(&user_lang, &questions);
+                            if let Some(h) = typing_handle {
+                                h.abort();
+                            }
+                            self.send_text(&incoming, &msg).await;
+                            return;
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Discovery failed — fall back to old behavior (direct confirmation).
+                    warn!(
+                        "Discovery agent failed, falling back to direct confirmation: {e}"
+                    );
+                    let stamped =
+                        format!("{}|{}", chrono::Utc::now().timestamp(), incoming.text);
+                    let _ = self
+                        .memory
+                        .store_fact(
+                            &incoming.sender_id,
+                            "pending_build_request",
+                            &stamped,
+                        )
+                        .await;
+                    let msg = build_confirm_message(&user_lang, &incoming.text);
+                    if let Some(h) = typing_handle {
+                        h.abort();
+                    }
+                    self.send_text(&incoming, &msg).await;
+                    return;
+                }
             }
-            self.send_text(&incoming, &confirm_msg).await;
-            return;
         }
 
         let system_prompt = self.build_system_prompt(

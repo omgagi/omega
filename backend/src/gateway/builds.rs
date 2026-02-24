@@ -378,7 +378,7 @@ impl Gateway {
     ///
     /// Each phase gets a fresh Context with `agent_name` set and no session_id.
     /// The agent file provides the system prompt; only the user message is sent via `-p`.
-    async fn run_build_phase(
+    pub(super) async fn run_build_phase(
         &self,
         agent_name: &str,
         user_message: &str,
