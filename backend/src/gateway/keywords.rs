@@ -484,6 +484,117 @@ pub(super) fn is_valid_fact(key: &str, value: &str) -> bool {
     true
 }
 
+// ---------------------------------------------------------------------------
+// Discovery session constants and localized messages
+// ---------------------------------------------------------------------------
+
+/// Maximum seconds a discovery session stays valid.
+pub(super) const DISCOVERY_TTL_SECS: i64 = 1800; // 30 minutes
+
+/// Localized message sent when discovery starts (first round questions).
+pub(super) fn discovery_intro_message(lang: &str, questions: &str) -> String {
+    let intro = match lang {
+        "Spanish" => "Antes de empezar a construir, necesito entender mejor tu idea:",
+        "Portuguese" => "Antes de come\u{e7}ar a construir, preciso entender melhor sua ideia:",
+        "French" => "Avant de commencer \u{e0} construire, j'ai besoin de mieux comprendre ton id\u{e9}e :",
+        "German" => "Bevor ich mit dem Bauen beginne, muss ich deine Idee besser verstehen:",
+        "Italian" => "Prima di iniziare a costruire, ho bisogno di capire meglio la tua idea:",
+        "Dutch" => "Voordat ik begin met bouwen, moet ik je idee beter begrijpen:",
+        "Russian" => "\u{41f}\u{440}\u{435}\u{436}\u{434}\u{435} \u{447}\u{435}\u{43c} \u{43d}\u{430}\u{447}\u{430}\u{442}\u{44c} \u{441}\u{431}\u{43e}\u{440}\u{43a}\u{443}, \u{43c}\u{43d}\u{435} \u{43d}\u{443}\u{436}\u{43d}\u{43e} \u{43b}\u{443}\u{447}\u{448}\u{435} \u{43f}\u{43e}\u{43d}\u{44f}\u{442}\u{44c} \u{432}\u{430}\u{448}\u{443} \u{438}\u{434}\u{435}\u{44e}:",
+        _ => "Before I start building, I need to understand your idea better:",
+    };
+    format!("{intro}\n\n{questions}")
+}
+
+/// Localized message sent for follow-up discovery rounds (2-3).
+pub(super) fn discovery_followup_message(lang: &str, questions: &str, round: u8) -> String {
+    let followup = match lang {
+        "Spanish" => format!("Gracias. Un par de preguntas m\u{e1}s ({round}/3):"),
+        "Portuguese" => format!("Obrigado. Mais algumas perguntas ({round}/3):"),
+        "French" => format!("Merci. Encore quelques questions ({round}/3) :"),
+        "German" => format!("Danke. Noch ein paar Fragen ({round}/3):"),
+        "Italian" => format!("Grazie. Ancora qualche domanda ({round}/3):"),
+        "Dutch" => format!("Bedankt. Nog een paar vragen ({round}/3):"),
+        "Russian" => format!("\u{421}\u{43f}\u{430}\u{441}\u{438}\u{431}\u{43e}. \u{415}\u{449}\u{451} \u{43d}\u{435}\u{441}\u{43a}\u{43e}\u{43b}\u{44c}\u{43a}\u{43e} \u{432}\u{43e}\u{43f}\u{440}\u{43e}\u{441}\u{43e}\u{432} ({round}/3):"),
+        _ => format!("Thanks. A few more questions ({round}/3):"),
+    };
+    format!("{followup}\n\n{questions}")
+}
+
+/// Localized message sent when discovery completes and confirmation is needed.
+pub(super) fn discovery_complete_message(lang: &str, brief_preview: &str) -> String {
+    match lang {
+        "Spanish" => format!(
+            "Entendido. Esto es lo que voy a construir:\n\n\
+             _{brief_preview}_\n\n\
+             Responde *s\u{ed}* para comenzar la construcci\u{f3}n (tienes 2 minutos)."
+        ),
+        "Portuguese" => format!(
+            "Entendido. Isto \u{e9} o que vou construir:\n\n\
+             _{brief_preview}_\n\n\
+             Responda *sim* para iniciar a constru\u{e7}\u{e3}o (voc\u{ea} tem 2 minutos)."
+        ),
+        "French" => format!(
+            "Compris. Voici ce que je vais construire :\n\n\
+             _{brief_preview}_\n\n\
+             R\u{e9}ponds *oui* pour lancer la construction (tu as 2 minutes)."
+        ),
+        "German" => format!(
+            "Verstanden. Das werde ich bauen:\n\n\
+             _{brief_preview}_\n\n\
+             Antworte *ja* um den Build zu starten (du hast 2 Minuten)."
+        ),
+        "Italian" => format!(
+            "Capito. Ecco cosa costruir\u{f2}:\n\n\
+             _{brief_preview}_\n\n\
+             Rispondi *s\u{ec}* per avviare la costruzione (hai 2 minuti)."
+        ),
+        "Dutch" => format!(
+            "Begrepen. Dit ga ik bouwen:\n\n\
+             _{brief_preview}_\n\n\
+             Antwoord *ja* om de build te starten (je hebt 2 minuten)."
+        ),
+        "Russian" => format!(
+            "\u{41f}\u{43e}\u{43d}\u{44f}\u{43b}. \u{412}\u{43e}\u{442} \u{447}\u{442}\u{43e} \u{44f} \u{441}\u{43e}\u{431}\u{438}\u{440}\u{430}\u{44e}\u{441}\u{44c} \u{43f}\u{43e}\u{441}\u{442}\u{440}\u{43e}\u{438}\u{442}\u{44c}:\n\n\
+             _{brief_preview}_\n\n\
+             \u{41e}\u{442}\u{432}\u{435}\u{442}\u{44c}\u{442}\u{435} *\u{434}\u{430}* \u{447}\u{442}\u{43e}\u{431}\u{44b} \u{43d}\u{430}\u{447}\u{430}\u{442}\u{44c} \u{441}\u{431}\u{43e}\u{440}\u{43a}\u{443} (\u{443} \u{432}\u{430}\u{441} 2 \u{43c}\u{438}\u{43d}\u{443}\u{442}\u{44b})."
+        ),
+        _ => format!(
+            "Got it. Here's what I'll build:\n\n\
+             _{brief_preview}_\n\n\
+             Reply *yes* to start the build (you have 2 minutes)."
+        ),
+    }
+}
+
+/// Localized message when discovery session expires.
+pub(super) fn discovery_expired_message(lang: &str) -> &'static str {
+    match lang {
+        "Spanish" => "La sesi\u{f3}n de descubrimiento expir\u{f3}. Env\u{ed}a tu solicitud de construcci\u{f3}n de nuevo si quieres continuar.",
+        "Portuguese" => "A sess\u{e3}o de descoberta expirou. Envie sua solicita\u{e7}\u{e3}o de constru\u{e7}\u{e3}o novamente se quiser continuar.",
+        "French" => "La session de d\u{e9}couverte a expir\u{e9}. Renvoie ta demande de construction si tu veux continuer.",
+        "German" => "Die Discovery-Sitzung ist abgelaufen. Sende deine Build-Anfrage erneut, wenn du fortfahren m\u{f6}chtest.",
+        "Italian" => "La sessione di scoperta \u{e8} scaduta. Invia di nuovo la tua richiesta di costruzione se vuoi continuare.",
+        "Dutch" => "De discovery-sessie is verlopen. Stuur je build-verzoek opnieuw als je wilt doorgaan.",
+        "Russian" => "\u{421}\u{435}\u{441}\u{441}\u{438}\u{44f} \u{43e}\u{431}\u{43d}\u{430}\u{440}\u{443}\u{436}\u{435}\u{43d}\u{438}\u{44f} \u{438}\u{441}\u{442}\u{435}\u{43a}\u{43b}\u{430}. \u{41e}\u{442}\u{43f}\u{440}\u{430}\u{432}\u{44c}\u{442}\u{435} \u{437}\u{430}\u{43f}\u{440}\u{43e}\u{441} \u{43d}\u{430} \u{441}\u{431}\u{43e}\u{440}\u{43a}\u{443} \u{441}\u{43d}\u{43e}\u{432}\u{430}, \u{435}\u{441}\u{43b}\u{438} \u{445}\u{43e}\u{442}\u{438}\u{442}\u{435} \u{43f}\u{440}\u{43e}\u{434}\u{43e}\u{43b}\u{436}\u{438}\u{442}\u{44c}.",
+        _ => "Discovery session expired. Send your build request again if you want to continue.",
+    }
+}
+
+/// Localized message when user cancels discovery.
+pub(super) fn discovery_cancelled_message(lang: &str) -> &'static str {
+    match lang {
+        "Spanish" => "Descubrimiento cancelado.",
+        "Portuguese" => "Descoberta cancelada.",
+        "French" => "D\u{e9}couverte annul\u{e9}e.",
+        "German" => "Discovery abgebrochen.",
+        "Italian" => "Scoperta annullata.",
+        "Dutch" => "Discovery geannuleerd.",
+        "Russian" => "\u{41e}\u{431}\u{43d}\u{430}\u{440}\u{443}\u{436}\u{435}\u{43d}\u{438}\u{435} \u{43e}\u{442}\u{43c}\u{435}\u{43d}\u{435}\u{43d}\u{43e}.",
+        _ => "Discovery cancelled.",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
