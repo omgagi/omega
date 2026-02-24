@@ -160,6 +160,22 @@ pub(super) const BUILDS_KW: &[&str] = &[
     "new api",
     "new library",
     "new cli",
+    // Common English typos (mobile keyboard, missing/swapped letters)
+    "buil me",
+    "buil a ",
+    "buil an ",
+    "buidl",
+    "bulid",
+    "biuld",
+    "buld ",
+    "scafold",
+    "scaffol ",
+    "devlop",
+    "develp",
+    "develo a",
+    "mak me a",
+    "writ me a",
+    "wrte me a",
     // Spanish
     "constrúyeme",
     "construye un",
@@ -167,10 +183,17 @@ pub(super) const BUILDS_KW: &[&str] = &[
     "hazme una",
     "desarroll",
     "codifica",
+    // Spanish typos
+    "contruyeme",
+    "construyem",
+    "hasme un",
     // Portuguese
     "construa um",
     "crie um",
     "desenvolva",
+    // Portuguese typos
+    "contrua um",
+    "desevolva",
     // French
     "construis",
     "développe",
@@ -179,6 +202,10 @@ pub(super) const BUILDS_KW: &[&str] = &[
     "crée une",
     "nouvel outil",
     "nouvelle app",
+    // French typos
+    "developpe",
+    "cree un",
+    "cree une",
     // German
     "baue mir",
     "erstelle",
@@ -186,6 +213,9 @@ pub(super) const BUILDS_KW: &[&str] = &[
     "programmier",
     "neues tool",
     "neue app",
+    // German typos
+    "erstele",
+    "enwickle",
     // Italian
     "costruisci",
     "sviluppa",
@@ -194,6 +224,9 @@ pub(super) const BUILDS_KW: &[&str] = &[
     "crea una",
     "nuovo strumento",
     "nuova app",
+    // Italian typos
+    "costruici",
+    "svilupa",
     // Dutch
     "bouw me",
     "maak me",
@@ -201,6 +234,9 @@ pub(super) const BUILDS_KW: &[&str] = &[
     "codeer",
     "nieuwe tool",
     "nieuwe app",
+    // Dutch typos
+    "ontwikel",
+    "bouw mij",
     // Russian
     "построй",
     "создай",
@@ -208,6 +244,10 @@ pub(super) const BUILDS_KW: &[&str] = &[
     "напиши мне",
     "новый инструмент",
     "новое приложение",
+    // Russian typos
+    "пострй",
+    "сздай",
+    "разрабтай",
 ];
 
 /// Simple confirmation words for build requests (lowercased).
@@ -598,6 +638,19 @@ mod tests {
         // Russian
         assert!(kw_match("создай мне скрейпер", BUILDS_KW));
         assert!(kw_match("построй инструмент", BUILDS_KW));
+        // Typos — must still trigger
+        assert!(kw_match("buil me a test tool", BUILDS_KW));
+        assert!(kw_match("buidl a scraper", BUILDS_KW));
+        assert!(kw_match("bulid me an api", BUILDS_KW));
+        assert!(kw_match("scafold a project", BUILDS_KW));
+        assert!(kw_match("devlop a service", BUILDS_KW));
+        assert!(kw_match("mak me a dashboard", BUILDS_KW));
+        assert!(kw_match("writ me a parser", BUILDS_KW));
+        assert!(kw_match("hasme un scraper", BUILDS_KW));
+        assert!(kw_match("cree un outil", BUILDS_KW));
+        assert!(kw_match("erstele mir ein tool", BUILDS_KW));
+        assert!(kw_match("costruici un api", BUILDS_KW));
+        assert!(kw_match("ontwikel een scraper", BUILDS_KW));
         // Negative matches — must NOT trigger
         assert!(!kw_match("the building is tall", BUILDS_KW));
         assert!(!kw_match("my code review", BUILDS_KW));
