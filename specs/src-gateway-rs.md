@@ -1,7 +1,7 @@
 # Specification: backend/src/gateway/ (Directory Module)
 
 ## File Path
-`backend/src/gateway/` (directory module with 11 files)
+`backend/src/gateway/` (directory module with 13 files)
 
 ## Refactoring History
 - **2026-02-20:** Marker extraction/parsing/stripping functions (40+) extracted into `backend/src/markers.rs`. See `specs/src-markers-rs.md`.
@@ -14,14 +14,16 @@
 | File | Lines (prod) | Responsibility |
 |------|-------------|----------------|
 | `mod.rs` | ~824 | Struct Gateway, `new()`, `run()`, `dispatch_message()`, `shutdown()`, `send_text()`, tests |
-| `keywords.rs` | ~340 | Constants (`MAX_ACTION_RETRIES`, `SCHEDULING_KW`, `RECALL_KW`, `TASKS_KW`, `PROJECTS_KW`, `PROFILE_KW`, `OUTCOMES_KW`, `META_KW`, `SYSTEM_FACT_KEYS`), `kw_match()`, `is_valid_fact()`, tests |
+| `keywords.rs` | ~394 | Constants (`MAX_ACTION_RETRIES`, `SCHEDULING_KW`, `RECALL_KW`, `TASKS_KW`, `PROJECTS_KW`, `PROFILE_KW`, `OUTCOMES_KW`, `BUILDS_KW`, `META_KW`, `SYSTEM_FACT_KEYS`), `kw_match()`, `is_valid_fact()`, tests |
 | `summarizer.rs` | ~276 | `summarize_and_extract()`, `background_summarizer()`, `summarize_conversation()`, `handle_forget()` |
 | `scheduler.rs` | ~105 | Slim orchestrator: `scheduler_loop()` polls due tasks, delegates action execution to `scheduler_action.rs` |
 | `scheduler_action.rs` | ~456 | Action task execution: `execute_action_task()`, system prompt enrichment, `ACTION_OUTCOME` parsing, marker processing, retry/failure handling |
 | `heartbeat.rs` | ~318 | `heartbeat_loop()` (global + per-project), `classify_heartbeat_groups()`, `execute_heartbeat_group()`, per-project heartbeat iteration via `get_all_facts_by_key("active_project")` |
 | `heartbeat_helpers.rs` | ~289 | `process_heartbeat_markers()`, `build_enrichment()`, `build_system_prompt()`, `send_heartbeat_result()` |
-| `pipeline.rs` | ~443 | `handle_message()`, `build_system_prompt()`, resolves `active_project` and threads it through routing and markers |
-| `routing.rs` | ~423 | `classify_and_route()`, `execute_steps()`, `handle_direct_response()`, passes `active_project` to `process_markers()` |
+| `pipeline.rs` | ~455 | `handle_message()`, `build_system_prompt()`, resolves `active_project`, routes builds to `handle_build_request()` and all other messages to `handle_direct_response()` |
+| `routing.rs` | ~436 | `classify_and_route()` (dead code), `execute_steps()` (dead code), `handle_direct_response()`, passes `active_project` to `process_markers()` |
+| `builds.rs` | ~393 | Multi-phase build orchestrator: `handle_build_request()`, `run_build_phase()`, `audit_build()` |
+| `builds_parse.rs` | ~384 | Pure parsing functions and constants for builds: `parse_project_brief()`, `parse_verification_result()`, `parse_build_summary()`, `phase_message()`, phase prompt templates (`PHASE_1_PROMPT`, `PHASE_2_TEMPLATE`..`PHASE_5_TEMPLATE`), data structures (`ProjectBrief`, `VerificationResult`, `BuildSummary`), tests |
 | `auth.rs` | ~167 | `check_auth()`, `handle_whatsapp_qr()` |
 | `process_markers.rs` | ~504 | `process_markers(incoming, text, active_project)`, `process_purge_facts()`, `process_improvement_markers()`, `send_task_confirmation()` |
 
@@ -37,10 +39,11 @@ The gateway manages the asynchronous event loop that processes incoming messages
 
 ```
 Message → Auth → Sanitize → Command Check → Typing → Keyword Detection (kw_match) →
-Conditional Prompt Compose (Identity+Soul+System always, scheduling/projects/meta if keywords match) →
+Conditional Prompt Compose (Identity+Soul+System always, scheduling/projects/builds/meta if keywords match) →
 Context (build_context with ContextNeeds gating recall/tasks DB queries) → MCP Trigger Match →
-Session Check (strip heavy prompt if continuation) → Classify & Route (always, model selection) →
-Provider (MCP settings write → CLI → MCP cleanup) → Session Capture → Memory Store → Audit Log → Send
+Session Check (strip heavy prompt if continuation) →
+  if BUILDS_KW: → Multi-phase build pipeline (5 isolated phases) → Audit → Send
+  else:         → DIRECT → Provider → Session Capture → Memory Store → Audit → Send
 ```
 
 The gateway runs continuously, listening for messages from registered channels via an mpsc channel, and spawns a background task for periodic conversation summarization.
@@ -103,6 +106,7 @@ The gateway reduces system prompt token overhead by ~55% for typical messages. I
 | `RECALL_KW` | Semantic recall DB query (FTS5 related past messages) | "remember", "last time", "you said", "we discussed", multilingual variants |
 | `TASKS_KW` | Pending tasks DB query | "task", "reminder", "pending", "scheduled", "my tasks", multilingual variants |
 | `PROJECTS_KW` | Projects management rules injection (`prompts.projects_rules`) | "project", "activate", "deactivate", multilingual variants |
+| `BUILDS_KW` | Routes to multi-phase build pipeline + injects `prompts.builds` | "build me", "scaffold", "code me", "develop a", "new tool", "new app", multilingual variants |
 | `PROFILE_KW` | User profile (facts) injection into prompt | "who am i", "my name", "about me", "my profile", "what do you know", multilingual variants |
 | `OUTCOMES_KW` | Recent reward outcomes injection | "how did i", "how am i doing", "reward", "outcome", "feedback", "performance", multilingual variants |
 | `META_KW` | Meta rules injection (`prompts.meta`) — skill improvement, bug reporting, WhatsApp, personality, purge | "skill", "improve", "bug", "whatsapp", "qr", "personality", "forget", "purge" |
@@ -756,6 +760,31 @@ If sandbox:        + sandbox constraint (unchanged)
 - Per-step failures are retried up to 3 times before continuing to the next step.
 - Provider errors are logged and a user-friendly error message is sent.
 
+### Build Orchestrator (builds.rs)
+
+#### `pub(super) async fn handle_build_request(&self, incoming: &IncomingMessage, typing_handle: Option<JoinHandle<()>>)`
+**Purpose:** Main build orchestrator — runs 5 sequential phases for a build request. Each phase is an isolated `provider.complete()` call with phase-specific model, tools, and system prompt. Phases communicate via filesystem artifacts.
+
+**Logic:**
+1. Resolve user language via `get_fact("preferred_language")` for localized progress messages.
+2. **Phase 1 (Clarification):** Uses `model_complex` (Opus) with no tools (`allowed_tools: Some(vec![])`, max 25 turns). Parses response via `parse_project_brief()`. Validates project name against path traversal.
+3. Creates project directory at `~/.omega/workspace/builds/<project-name>/` using `tokio::fs::create_dir_all`.
+4. **Phase 2 (Architecture):** Uses `model_complex` with full tools. Verifies `specs/architecture.md` was created before proceeding.
+5. **Phase 3 (Implementation):** Uses `model_fast` (Sonnet) with full tools.
+6. **Phase 4 (Verification):** Uses `model_fast`. Parses result via `parse_verification_result()`. On failure, runs one retry loop (Phase 3 retry → Phase 4 re-verify). If retry also fails, stops and reports partial results.
+7. **Phase 5 (Delivery):** Uses `model_fast`. Parses result via `parse_build_summary()`. Sends final summary to user.
+8. Audit logs the build result via `audit_build()`.
+
+**Error Handling:** Each phase failure sends a user-facing message, aborts the typing indicator, and returns early. The typing handle is always cleaned up on any exit path.
+
+#### `async fn run_build_phase(&self, system_prompt: &str, user_message: &str, model: &str, allowed_tools: Option<Vec<String>>, max_turns: Option<u32>) -> Result<String, String>`
+**Purpose:** Generic phase runner. Creates a fresh `Context::new()` (no session_id, no history) with the given system prompt, model, and tool config. Retries up to 3 times with 2s delay on failure.
+
+**Context isolation:** Each phase gets a completely independent context. No `session_id` means no conversation history crosses phase boundaries. The working directory is communicated via system prompt text, not OS-level cwd.
+
+#### `async fn audit_build(&self, incoming: &IncomingMessage, project: &str, status: &str, detail: &str)`
+**Purpose:** Log an audit entry for a build operation. Uses `[BUILD:<project>]` prefix in `input_text`. Maps status "success" → `AuditStatus::Ok`, anything else → `AuditStatus::Error`.
+
 ### Process Markers (process_markers.rs)
 
 #### `async fn process_markers(&self, incoming: &IncomingMessage, text: &mut String, active_project: Option<&str>) -> Vec<MarkerResult>`
@@ -809,6 +838,20 @@ If sandbox:        + sandbox constraint (unchanged)
 **Purpose:** Parse the planning provider response into actionable steps.
 
 **Returns:** `None` if the response contains "DIRECT" (any case), has only a single step, or is unparseable. Returns `Some(steps)` for multi-step numbered lists (e.g., `1. Do something`, `2. Do something else`). Non-numbered preamble lines before the numbered list are ignored during parsing.
+
+### `fn parse_project_brief(text: &str) -> Option<ProjectBrief>` (builds_parse.rs)
+**Purpose:** Parse structured Phase 1 output into a `ProjectBrief`. Extracts `PROJECT_NAME`, `LANGUAGE`, `DATABASE`, `FRONTEND`, `SCOPE`, and `COMPONENTS` fields. Defaults: Rust, SQLite, no frontend.
+
+**Security:** Rejects project names containing `/`, `\`, `..`, or starting with `.` to prevent path traversal.
+
+### `fn parse_verification_result(text: &str) -> VerificationResult` (builds_parse.rs)
+**Purpose:** Parse Phase 4 output into pass/fail. Looks for `VERIFICATION: PASS` or `VERIFICATION: FAIL` + `REASON:`. Defaults to `Fail("No verification marker found")` when no marker is present (fail-safe).
+
+### `fn parse_build_summary(text: &str) -> Option<BuildSummary>` (builds_parse.rs)
+**Purpose:** Parse Phase 5 delivery output. Requires `BUILD_COMPLETE` marker. Extracts `PROJECT`, `LOCATION`, `LANGUAGE`, `SUMMARY`, `USAGE`, `SKILL` fields. Empty `SKILL` is filtered to `None`.
+
+### `fn phase_message(lang: &str, phase: u8, action: &str) -> String` (builds_parse.rs)
+**Purpose:** Generate localized phase progress messages. Supports English, Spanish, Portuguese with specific strings for phases 1 and 5, generic format for others.
 
 ### `fn extract_schedule_marker(text: &str) -> Option<String>` (markers.rs)
 **Purpose:** Extract the first `SCHEDULE:` line from response text.

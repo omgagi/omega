@@ -4,6 +4,8 @@
 //! background conversation summarization, and graceful shutdown.
 
 mod auth;
+mod builds;
+mod builds_parse;
 mod heartbeat;
 mod heartbeat_helpers;
 mod keywords;

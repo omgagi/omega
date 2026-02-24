@@ -211,6 +211,18 @@ impl Gateway {
             needs_outcomes,
         );
 
+        // --- 4a. BUILD REQUESTS — early exit to multi-phase pipeline ---
+        // Skip expensive context building (DB queries, prompt assembly, session lookup)
+        // since builds create their own isolated Context per phase.
+        if needs_builds {
+            info!(
+                "[{}] classification: BUILD → multi-phase pipeline",
+                incoming.channel
+            );
+            self.handle_build_request(&incoming, typing_handle).await;
+            return;
+        }
+
         let system_prompt = self.build_system_prompt(
             &incoming,
             &msg_lower,
@@ -358,9 +370,8 @@ impl Gateway {
         }
 
         // --- 5. MODEL ROUTING ---
-        // Classification disabled for conversations — all user messages go DIRECT
-        // to avoid stochastic misroutes and the ~9s classification overhead.
-        // Heartbeat has its own classifier in heartbeat.rs (unchanged).
+        // All non-build messages go DIRECT (single provider call).
+        // Build requests were handled above via early return to handle_build_request().
         info!(
             "[{}] classification: DIRECT → model {}",
             incoming.channel, self.model_fast

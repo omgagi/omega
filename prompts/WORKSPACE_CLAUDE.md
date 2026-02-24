@@ -106,12 +106,14 @@ If you need the full output for debugging, read the file at `/tmp/cmd_output.log
 
 ## Build Convention
 
-Build rules (directory structure, language defaults, validation pipeline) are injected automatically when you discuss building a project. The directory structure is:
+Build requests are handled by a **multi-phase pipeline** (5 isolated phases, each a separate subprocess). The gateway orchestrates: Clarification → Architecture → Implementation → Verification → Delivery. Each phase gets its own context and tools. Progress messages are sent to the user between phases.
+
+The directory structure for each build is:
 
 ```
 ~/.omega/workspace/builds/<project-name>/
-├── specs/               # Technical specifications
-├── docs/                # User-facing documentation
+├── specs/               # Technical specifications (created in Architecture phase)
+├── docs/                # User-facing documentation (created in Delivery phase)
 ├── backend/             # Server-side code, CLI tool
 │   └── data/db/         # SQLite databases
 └── frontend/            # Only if the project has a UI

@@ -92,7 +92,7 @@ Forget: When the user asks to clear or restart the conversation, emit FORGET_CON
 Purge Facts: When the user explicitly asks to delete ALL known facts, emit PURGE_FACTS on its own line. Always confirm with the user BEFORE emitting — it's destructive and irreversible.
 
 ## Builds
-When the user asks you to build anything — a script, tool, app, service, library — follow these rules:
+Build requests are handled by a multi-phase pipeline — 5 isolated phases, each a separate subprocess call with its own context.
 
 **Directory structure:**
 ```
@@ -111,21 +111,21 @@ When the user asks you to build anything — a script, tool, app, service, libra
 - Frontend: **TypeScript preferred**, vanilla HTML/JS/CSS as fallback when simplicity matters
 - Project name: kebab-case, max 3 words, descriptive (e.g., `price-scraper`, `invoice-generator`)
 
-**CLI-first design:** every build MUST expose all functionality via CLI subcommands/flags. No interactive prompts, no GUI-only features. If a human or OMEGA can't invoke it from a terminal, it's not done.
+**CLI-first design:** every build MUST expose all functionality via CLI subcommands/flags.
 
 **Validation pipeline (Rust projects):**
 1. `cargo build` — must compile with zero errors
 2. `cargo clippy --workspace` — fix ALL lint warnings before delivering
 3. `cargo test --workspace` — all tests must pass
 
-**Workflow:**
-1. Confirm with the user first — what to build, project name, language preference
-2. Create the project directory structure
-3. Write the spec in `specs/`
-4. Implement in `backend/` (and `frontend/` if needed)
-5. Write docs in `docs/`
-6. Test and verify using the validation pipeline
-7. Create a skill — after the build is working, create `~/.omega/skills/<project-name>/SKILL.md` with YAML frontmatter (`name`, `description`, `trigger` keywords) and a body documenting every CLI subcommand/flag
+**Pipeline phases (orchestrated by the gateway):**
+1. **Clarification** (Opus, no tools) — extracts project name, language, scope, components
+2. **Architecture** (Opus, full tools) — creates directory structure, writes specs/
+3. **Implementation** (Sonnet, full tools) — implements code module by module
+4. **Verification** (Sonnet, full tools) — runs validation pipeline, fixes issues
+5. **Delivery** (Sonnet, full tools) — writes docs/, creates skill, sends summary
+
+Each phase is fully non-interactive. Progress messages are sent between phases. If verification fails, one retry loop occurs before stopping.
 
 ## Summarize
 Summarize this conversation in 1-2 sentences. Be factual and concise. Do not add commentary.

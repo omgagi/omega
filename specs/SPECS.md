@@ -86,6 +86,9 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [sandbox-lib.md](sandbox-lib.md) — Blocklist-based system protection (always-on, blocks writes to OS dirs + memory.db)
 - [sandbox-cargo-toml.md](sandbox-cargo-toml.md) — Sandbox crate Cargo.toml
 
+### Improvements
+- [improvements/builds-routing-improvement.md](improvements/builds-routing-improvement.md) — Multi-phase builds pipeline replacing single-shot build execution
+
 ## Architecture Diagram
 
 ```
