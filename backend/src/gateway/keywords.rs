@@ -353,6 +353,34 @@ mod tests {
     }
 
     #[test]
+    fn test_kw_match_builds() {
+        // Positive matches
+        assert!(kw_match("build me a cli tool", BUILDS_KW));
+        assert!(kw_match("scaffold a new api", BUILDS_KW));
+        assert!(kw_match("code me a scraper", BUILDS_KW));
+        assert!(kw_match("build a price tracker", BUILDS_KW));
+        assert!(kw_match("build an invoice tool", BUILDS_KW));
+        assert!(kw_match("develop a monitoring service", BUILDS_KW));
+        assert!(kw_match("write me a parser", BUILDS_KW));
+        assert!(kw_match("make me a dashboard", BUILDS_KW));
+        assert!(kw_match("i want a new tool for scraping", BUILDS_KW));
+        assert!(kw_match("create a new app please", BUILDS_KW));
+        assert!(kw_match("i need a new cli", BUILDS_KW));
+        // Spanish
+        assert!(kw_match("hazme un scraper", BUILDS_KW));
+        assert!(kw_match("construye un api", BUILDS_KW));
+        // Portuguese
+        assert!(kw_match("construa um serviço", BUILDS_KW));
+        assert!(kw_match("desenvolva um bot", BUILDS_KW));
+        // Negative matches — must NOT trigger
+        assert!(!kw_match("the building is tall", BUILDS_KW));
+        assert!(!kw_match("my code review", BUILDS_KW));
+        assert!(!kw_match("good morning", BUILDS_KW));
+        assert!(!kw_match("check the build logs", BUILDS_KW));
+        assert!(!kw_match("coding standards look good", BUILDS_KW));
+    }
+
+    #[test]
     fn test_kw_match_multilingual() {
         // Spanish — "recordar" and "alarma" trigger scheduling
         assert!(kw_match("puedes recordar esto", SCHEDULING_KW));

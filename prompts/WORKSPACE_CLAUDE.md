@@ -104,43 +104,18 @@ command > /tmp/cmd_output.log 2>&1 && grep -iE "error|warn|fail|pass" /tmp/cmd_o
 
 If you need the full output for debugging, read the file at `/tmp/cmd_output.log` — don't re-run the command.
 
-## Build Convention (MANDATORY for all user-requested builds)
+## Build Convention
 
-When the user asks you to build anything — a script, tool, app, service, library — follow this structure under `builds/`:
+Build rules (directory structure, language defaults, validation pipeline) are injected automatically when you discuss building a project. The directory structure is:
 
 ```
-~/.omega/workspace/
-├── builds/
-│   └── <project-name>/          # kebab-case, descriptive
-│       ├── specs/               # Technical specifications, requirements, design decisions
-│       ├── docs/                # User-facing documentation, usage guides, API reference
-│       ├── backend/             # Server-side code, CLI tool, core logic
-│       │   └── data/
-│       │       └── db/          # Database files, migrations, schemas
-│       └── frontend/            # Only if the project has a UI (web, desktop, mobile)
-├── inbox/                       # Incoming attachments (managed by gateway)
-└── tmp/                         # Ephemeral artifacts — safe to delete anytime
+~/.omega/workspace/builds/<project-name>/
+├── specs/               # Technical specifications
+├── docs/                # User-facing documentation
+├── backend/             # Server-side code, CLI tool
+│   └── data/db/         # SQLite databases
+└── frontend/            # Only if the project has a UI
 ```
-
-**Rules:**
-- **Every build gets its own directory** under `builds/` — never scatter files in workspace root
-- **Default language is Rust** — unless the user explicitly requests another language
-- **CLI-first design** — every build MUST expose all functionality via CLI subcommands/flags. No interactive prompts, no GUI-only features. If a human or OMEGA can't invoke it from a terminal, it's not done.
-- **`specs/` is mandatory** — write a brief spec before coding (what it does, constraints, architecture)
-- **`docs/` is mandatory** — at minimum a README with usage instructions and full CLI reference
-- **Default database is SQLite** — stored at `backend/data/db/`. All persistent data lives here. Use SQLite unless the user explicitly requests another technology. One DB file per concern (e.g., `store.db` for app state, `cache.db` for caching).
-- **`frontend/`** — only create when the project has a user interface; omit otherwise
-- **`tmp/`** — scratch work, build artifacts, downloads-in-progress; never store anything important here
-- **Project name** — kebab-case, max 3 words, descriptive (e.g., `price-scraper`, `invoice-generator`, `portfolio-api`)
-
-**Workflow:**
-1. **Confirm with the user first** — before starting any build, ask: what exactly to build, confirm the project name, and whether they want a specific language (default: Rust). Never start building without user approval.
-2. Create the project directory structure
-3. Write the spec in `specs/`
-4. Implement in `backend/` (and `frontend/` if needed)
-5. Write docs in `docs/`
-6. Test and verify
-7. **Create a skill** — after the build is working, create `~/.omega/skills/<project-name>/SKILL.md` with YAML frontmatter (`name`, `description`, `trigger` keywords) and a body documenting every CLI subcommand/flag. This lets you invoke the tool autonomously in future conversations. Follow the pattern in `~/.omega/skills/ibkr-trader/SKILL.md` — the skill is the interface between you and the tool.
 
 ## Key Conventions
 
