@@ -42,6 +42,25 @@ impl Gateway {
             .flatten()
             .unwrap_or_else(|| "English".to_string());
 
+        // Write agent files to workspace root BEFORE any phase runs.
+        // The CLI subprocess runs with cwd = ~/.omega/workspace/, so agent files
+        // must be at ~/.omega/workspace/.claude/agents/ for --agent discovery.
+        let workspace_dir = PathBuf::from(shellexpand(&self.data_dir)).join("workspace");
+        let _agent_guard = match AgentFilesGuard::write(&workspace_dir).await {
+            Ok(guard) => guard,
+            Err(e) => {
+                if let Some(h) = typing_handle {
+                    h.abort();
+                }
+                self.send_text(
+                    incoming,
+                    &format!("Failed to write agent files: {e}"),
+                )
+                .await;
+                return;
+            }
+        };
+
         // Phase 1: Analyst — analyze build request and produce a brief.
         self.send_text(incoming, &phase_message(&user_lang, 1, "analyzing"))
             .await;
@@ -95,22 +114,6 @@ impl Gateway {
             .await;
             return;
         }
-
-        // Write agent files to project workspace for --agent discovery.
-        let _agent_guard = match AgentFilesGuard::write(&project_dir).await {
-            Ok(guard) => guard,
-            Err(e) => {
-                if let Some(h) = typing_handle {
-                    h.abort();
-                }
-                self.send_text(
-                    incoming,
-                    &format!("Failed to write agent files: {e}"),
-                )
-                .await;
-                return;
-            }
-        };
 
         self.send_text(
             incoming,
