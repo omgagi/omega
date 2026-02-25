@@ -68,7 +68,7 @@ impl ClaudeCodeProvider {
     /// Create a new Claude Code provider with default settings.
     pub fn new() -> Self {
         Self {
-            max_turns: 100,
+            max_turns: 25,
             allowed_tools: vec![],
             timeout: DEFAULT_TIMEOUT,
             working_dir: None,

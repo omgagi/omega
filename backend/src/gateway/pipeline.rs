@@ -712,7 +712,11 @@ impl Gateway {
                     minimal.push_str(&self.prompts.meta);
                 }
 
-                // Project awareness + active ROLE.md in continuations
+                // Project awareness (lightweight — name only, not ROLE.md).
+                // ROLE.md was injected in the first message of this session and
+                // persists in the CLI's context. Re-injecting it on every
+                // continuation wastes tokens. It will be re-injected when the
+                // session expires (2h idle → summarize → new session).
                 if !projects.is_empty() {
                     let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
                     let active_note = match active_project.as_deref() {
@@ -724,39 +728,6 @@ impl Gateway {
                         names.join(", "),
                         active_note,
                     ));
-                }
-                if let Some(ref project_name) = active_project {
-                    if let Some(proj) = projects.iter().find(|p| &p.name == project_name) {
-                        minimal.push_str(&format!(
-                            "\n\n---\n\n[Active project: {project_name}]\n{}",
-                            proj.instructions
-                        ));
-                        // Inject project-declared skills
-                        if !proj.skills.is_empty() {
-                            let project_skills: Vec<_> = self
-                                .skills
-                                .iter()
-                                .filter(|s| proj.skills.contains(&s.name))
-                                .collect();
-                            if !project_skills.is_empty() {
-                                minimal.push_str("\n\n[Project skills]");
-                                for s in &project_skills {
-                                    let status = if s.available {
-                                        "installed"
-                                    } else {
-                                        "not installed"
-                                    };
-                                    minimal.push_str(&format!(
-                                        "\n- {} [{}]: {} → Read {}",
-                                        s.name,
-                                        status,
-                                        s.description,
-                                        s.path.display()
-                                    ));
-                                }
-                            }
-                        }
-                    }
                 }
 
                 context.system_prompt = minimal;

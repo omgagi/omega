@@ -12,7 +12,7 @@ fn test_default_provider() {
     let provider = ClaudeCodeProvider::new();
     assert_eq!(provider.name(), "claude-code");
     assert!(!provider.requires_api_key());
-    assert_eq!(provider.max_turns, 100);
+    assert_eq!(provider.max_turns, 25);
     assert!(provider.allowed_tools.is_empty());
     assert_eq!(provider.timeout, Duration::from_secs(3600));
     assert!(provider.working_dir.is_none());

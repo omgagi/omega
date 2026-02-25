@@ -25,7 +25,7 @@ pub fn default_deny_message() -> String {
 }
 
 pub fn default_max_turns() -> u32 {
-    100
+    25
 }
 
 pub fn default_allowed_tools() -> Vec<String> {

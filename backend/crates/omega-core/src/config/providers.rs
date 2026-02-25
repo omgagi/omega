@@ -43,7 +43,7 @@ impl Default for ClaudeCodeConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_turns: 100,
+            max_turns: 25,
             allowed_tools: vec![],
             timeout_secs: default_timeout_secs(),
             max_resume_attempts: default_max_resume_attempts(),
