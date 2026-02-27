@@ -94,6 +94,10 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [improvements/builds-routing-improvement.md](improvements/builds-routing-improvement.md) — [SUPERSEDED] Multi-phase builds pipeline replacing single-shot build execution
 - [improvements/build-agent-pipeline-improvement.md](improvements/build-agent-pipeline-improvement.md) — Replace 5-phase hardcoded prompts with 7-phase agent pipeline using `--agent` flag and embedded agent definitions
 
+### Bugfixes
+- [bugfixes/p0-audit-2026-02-23-analysis.md](bugfixes/p0-audit-2026-02-23-analysis.md) — P0 audit findings (UTF-8 panics, HTTP timeouts, etc.)
+- [bugfixes/heartbeat-clock-drift-analysis.md](bugfixes/heartbeat-clock-drift-analysis.md) — Heartbeat clock-alignment drift after quiet hours / system sleep
+
 ## Architecture Diagram
 
 ```

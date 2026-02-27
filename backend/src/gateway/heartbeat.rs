@@ -22,6 +22,45 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info, warn};
 
+/// Compute the next clock-aligned boundary in minutes-since-midnight.
+///
+/// Given `current_minute` (0..1439) and `interval` (e.g. 60), returns the
+/// next boundary that is strictly after `current_minute`.
+/// Example: current=541 (09:01), interval=60 → returns 600 (10:00).
+pub(crate) fn next_clock_boundary(current_minute: u64, interval: u64) -> u64 {
+    ((current_minute / interval) + 1) * interval
+}
+
+/// Compute seconds until the next clock-aligned boundary from a local timestamp.
+fn secs_until_boundary(now: &chrono::DateTime<chrono::Local>, interval_mins: u64) -> u64 {
+    use chrono::Timelike;
+    let current_minute = u64::from(now.hour()) * 60 + u64::from(now.minute());
+    let next = next_clock_boundary(current_minute, interval_mins);
+    (next - current_minute) * 60 - u64::from(now.second())
+}
+
+/// Compute seconds until `active_start` (HH:MM) from the current local time.
+///
+/// If `active_start` is later today, returns the difference.
+/// If it's already past, returns the duration until tomorrow's `active_start`.
+fn secs_until_active_start(active_start: &str) -> u64 {
+    use chrono::{Local, NaiveTime, Timelike};
+    let now = Local::now();
+    let start = NaiveTime::parse_from_str(active_start, "%H:%M")
+        .unwrap_or_else(|_| NaiveTime::from_hms_opt(8, 0, 0).unwrap());
+
+    let now_secs =
+        u64::from(now.hour()) * 3600 + u64::from(now.minute()) * 60 + u64::from(now.second());
+    let start_secs = u64::from(start.hour()) * 3600 + u64::from(start.minute()) * 60;
+
+    if start_secs > now_secs {
+        start_secs - now_secs
+    } else {
+        // Tomorrow's active_start.
+        (24 * 3600 - now_secs) + start_secs
+    }
+}
+
 impl Gateway {
     /// Background task: periodic heartbeat check-in.
     ///
@@ -44,23 +83,71 @@ impl Gateway {
         data_dir: String,
     ) {
         loop {
-            // Clock-aligned sleep: fire at clean boundaries (e.g. :00, :30).
             let mins = interval.load(Ordering::Relaxed);
-            let now = chrono::Local::now();
-            use chrono::Timelike;
-            let current_minute = u64::from(now.hour()) * 60 + u64::from(now.minute());
-            let next_boundary = ((current_minute / mins) + 1) * mins;
-            let wait_secs = (next_boundary - current_minute) * 60 - u64::from(now.second());
-            tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
 
-            // Check active hours.
+            // Quiet-hours jump-ahead: sleep directly to active_start instead
+            // of waking every boundary just to check and skip.
             if !config.active_start.is_empty()
                 && !config.active_end.is_empty()
                 && !is_within_active_hours(&config.active_start, &config.active_end)
             {
-                info!("heartbeat: outside active hours, skipping");
+                let secs = secs_until_active_start(&config.active_start);
+                info!(
+                    "heartbeat: quiet hours, sleeping until {} (~{}m)",
+                    config.active_start,
+                    secs / 60
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+                // After waking from a potentially long sleep (system sleep may
+                // have delayed us further), re-check active hours from the top.
                 continue;
             }
+
+            // Clock-aligned sleep: fire at clean boundaries (e.g. :00, :30).
+            let now = chrono::Local::now();
+            let wait_secs = secs_until_boundary(&now, mins);
+            let target_boundary = {
+                use chrono::Timelike;
+                let cm = u64::from(now.hour()) * 60 + u64::from(now.minute());
+                next_clock_boundary(cm, mins)
+            };
+            tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
+
+            // Wall-clock re-snap: if system sleep caused us to overshoot the
+            // target boundary, recalculate from the actual wake-up time.
+            let actual = chrono::Local::now();
+            let actual_minute = {
+                use chrono::Timelike;
+                u64::from(actual.hour()) * 60 + u64::from(actual.minute())
+            };
+            // Allow ±2 minutes tolerance for normal jitter.
+            // Normalize target_boundary for midnight wrap (1440 → 0).
+            let target_normalized = target_boundary % 1440;
+            let on_target = actual_minute >= target_normalized.saturating_sub(2)
+                && actual_minute <= target_normalized.saturating_add(2);
+            if !on_target {
+                info!(
+                    "heartbeat: system sleep detected (target :{:02}, actual :{:02}), re-aligning",
+                    target_boundary % 60,
+                    actual_minute % 60
+                );
+                // Don't fire now — loop back to recalculate from current time.
+                continue;
+            }
+
+            // Re-check active hours after sleep (boundary might land outside).
+            if !config.active_start.is_empty()
+                && !config.active_end.is_empty()
+                && !is_within_active_hours(&config.active_start, &config.active_end)
+            {
+                continue;
+            }
+
+            let cycle_start = chrono::Local::now();
+            info!(
+                "heartbeat: cycle started at {}",
+                cycle_start.format("%H:%M")
+            );
 
             let sender_id = &config.reply_target;
             let channel_name = &config.channel;
@@ -213,6 +300,11 @@ impl Gateway {
                 )
                 .await;
             }
+
+            let cycle_secs = chrono::Local::now()
+                .signed_duration_since(cycle_start)
+                .num_seconds();
+            info!("heartbeat: cycle completed in {cycle_secs}s");
         }
     }
 }
@@ -317,5 +409,88 @@ async fn execute_heartbeat_group(
             .replace("**HEARTBEAT_OK**", "")
             .replace("HEARTBEAT_OK", "");
         Some((text.trim().to_string(), elapsed_ms))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- REQ-HB-005: Unit tests for next_clock_boundary ---
+
+    #[test]
+    fn test_boundary_at_exact_hour() {
+        // At 09:00 (minute 540), next boundary with interval=60 → 10:00 (600)
+        assert_eq!(next_clock_boundary(540, 60), 600);
+    }
+
+    #[test]
+    fn test_boundary_mid_interval() {
+        // At 09:01 (minute 541), next boundary with interval=60 → 10:00 (600)
+        assert_eq!(next_clock_boundary(541, 60), 600);
+    }
+
+    #[test]
+    fn test_boundary_near_midnight() {
+        // At 23:50 (minute 1430), next boundary with interval=60 → 24:00 (1440)
+        assert_eq!(next_clock_boundary(1430, 60), 1440);
+    }
+
+    #[test]
+    fn test_boundary_30min_interval() {
+        // At 00:15 (minute 15), next boundary with interval=30 → 00:30 (30)
+        assert_eq!(next_clock_boundary(15, 30), 30);
+    }
+
+    #[test]
+    fn test_boundary_non_divisor_interval() {
+        // At 00:46 (minute 46), next boundary with interval=45 → 01:30 (90)
+        // 46/45 = 1, (1+1)*45 = 90
+        assert_eq!(next_clock_boundary(46, 45), 90);
+    }
+
+    #[test]
+    fn test_boundary_1min_interval() {
+        // At 00:00 (minute 0), next boundary with interval=1 → 00:01 (1)
+        assert_eq!(next_clock_boundary(0, 1), 1);
+    }
+
+    #[test]
+    fn test_boundary_at_half_hour() {
+        // At 09:30 (minute 570), next boundary with interval=60 → 10:00 (600)
+        assert_eq!(next_clock_boundary(570, 60), 600);
+    }
+
+    #[test]
+    fn test_boundary_post_execution_realignment() {
+        // REQ-HB-004: If heartbeat starts at 09:00 and takes 70 minutes
+        // (finishes at 10:10, minute 610), next boundary = 11:00 (660)
+        assert_eq!(next_clock_boundary(610, 60), 660);
+    }
+
+    #[test]
+    fn test_boundary_post_execution_no_skip() {
+        // REQ-HB-004: If heartbeat starts at 09:00 and takes 30 minutes
+        // (finishes at 09:30, minute 570), next boundary = 10:00 (600)
+        assert_eq!(next_clock_boundary(570, 60), 600);
+    }
+
+    #[test]
+    fn test_boundary_midnight_wrap_normalized() {
+        // At 23:50 (1430), next boundary = 1440 → normalized to 0 (midnight)
+        let target = next_clock_boundary(1430, 60);
+        assert_eq!(target, 1440);
+        assert_eq!(target % 1440, 0); // normalizes to 0 for comparison
+    }
+
+    // --- secs_until_active_start ---
+
+    #[test]
+    fn test_secs_until_active_start_returns_positive() {
+        // This is a smoke test — the result depends on current time but
+        // must always be positive and ≤ 24 hours.
+        let secs = secs_until_active_start("08:00");
+        assert!(secs > 0);
+        assert!(secs <= 24 * 3600);
     }
 }

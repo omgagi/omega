@@ -34,19 +34,24 @@ The heartbeat runs as a background loop inside the gateway, firing at clock-alig
 8. **Evaluate per group** -- HEARTBEAT_OK is evaluated independently per group. A training group fires even when a crypto group is OK. Groups returning OK are logged silently. Non-OK results are joined with `---` separators and delivered as a single message.
 
 ```
-At next clock-aligned boundary (e.g. :00, :30):
+Top of loop:
   → Is it within active hours?
-    → No: skip, sleep
-    → Yes: read HEARTBEAT.md
-      → File missing or empty? → skip, no API call
-      → Has content? → Build enrichment + system prompt (once)
-        → Sonnet classification: group by domain
-          → DIRECT? → 1 Opus call (existing behavior)
-          → Grouped? → tokio::spawn per group (parallel)
-            ↓ Opus call A (domain 1)     ↓ Opus call B (domain 2)
-            ↓ markers processed           ↓ markers processed
-            ↓ HEARTBEAT_OK eval           ↓ HEARTBEAT_OK eval
-          → Consolidate non-OK results → audit + send to channel
+    → No: sleep directly to active_start (quiet-hours jump-ahead), re-loop
+    → Yes: compute next clock-aligned boundary, sleep
+      → After sleep: wall-clock re-snap check
+        → Overshoot > 2min? → log "system sleep detected", re-loop
+        → On target: read HEARTBEAT.md
+          → File missing or empty? → skip, no API call
+          → Has content? → log "cycle started at HH:MM"
+            → Build enrichment + system prompt (once)
+            → Sonnet classification: group by domain
+              → DIRECT? → 1 Opus call
+              → Grouped? → tokio::spawn per group (parallel)
+                ↓ Opus call A (domain 1)     ↓ Opus call B (domain 2)
+                ↓ markers processed           ↓ markers processed
+                ↓ HEARTBEAT_OK eval           ↓ HEARTBEAT_OK eval
+              → Consolidate non-OK results → audit + send to channel
+          → log "cycle completed in Xs"
 ```
 
 ## The HEARTBEAT_OK Suppression Mechanism
@@ -73,6 +78,8 @@ active_end = "22:00"
 ```
 
 This means heartbeats only fire between 8:00 AM and 10:00 PM local time. At night, no provider calls are made and no alerts are sent.
+
+**Quiet-hours jump-ahead:** When the heartbeat detects it is outside active hours, it computes a single sleep directly to `active_start` (e.g., 08:00 the next day). It does NOT wake every interval boundary just to check and skip. A single log message is emitted: `heartbeat: quiet hours, sleeping until 08:00 (~600m)`.
 
 **Midnight wrapping is supported.** If you set `active_start = "22:00"` and `active_end = "06:00"`, heartbeats will fire from 10 PM to 6 AM (useful for overnight monitoring).
 
@@ -269,6 +276,10 @@ Simple threshold checks (CPU > 90%, disk > 95%) can be done with shell scripts. 
 ### Why Clock-Aligned Timing?
 
 A naive `sleep(N minutes)` fires at times relative to process start -- if the service starts at :04, a 30-minute interval fires at :04 and :34, never at round numbers. Clock alignment computes the next clean boundary (e.g., :00 and :30 for 30-minute intervals, :00 for 60-minute intervals) and sleeps until that exact time. This makes heartbeat behavior predictable and debuggable from the logs.
+
+**System-sleep resilience:** On laptops (macOS), `tokio::time::sleep` is suspended when the system sleeps. When the machine wakes, the pending sleep expires immediately at the wake-up time, not at the target boundary. The heartbeat detects this overshoot by comparing the actual wall-clock time (via `chrono::Local::now()`) against the intended target boundary. If the difference exceeds ±2 minutes, the heartbeat re-aligns to the next clean boundary instead of firing at the stale wake-up time. A log message identifies the drift: `heartbeat: system sleep detected (target :00, actual :01), re-aligning`.
+
+**Cycle start/end logging:** Each heartbeat cycle logs its local start time (`heartbeat: cycle started at HH:MM`) and elapsed seconds (`heartbeat: cycle completed in Xs`). This distinguishes between "started late" and "started on time but took long" — critical for diagnosing timing issues with long-running Opus provider calls.
 
 ### Why Attach the Full System Prompt?
 
