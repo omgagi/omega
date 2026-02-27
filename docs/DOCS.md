@@ -78,6 +78,9 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [api.md](api.md) — HTTP API for SaaS dashboard integration (health, WhatsApp QR pairing)
 - [webhook.md](webhook.md) — Inbound webhook for external tool integration (direct + AI delivery modes, curl examples, integration guide)
 
+### Audits
+- [audits/audit-builds-2026-02-27.md](audits/audit-builds-2026-02-27.md) — Builds module code review (guard race, name validation, depth limit, spec drift)
+
 ### Root / Workspace
 - [cargo-toml-root.md](cargo-toml-root.md) — Root Cargo.toml workspace configuration
 - [cargo-lock.md](cargo-lock.md) — Cargo.lock dependency snapshot

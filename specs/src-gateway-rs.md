@@ -24,8 +24,8 @@
 | `routing.rs` | ~436 | `classify_and_route()` (dead code), `execute_steps()` (dead code), `handle_direct_response()`, passes `active_project` to `process_markers()` |
 | `builds.rs` | ~483 | 7-phase agent build orchestrator: `handle_build_request()` (analyst → architect → test-writer → developer → QA → reviewer → delivery), `run_build_phase()` (agent-based with `--agent` flag), `audit_build()`, `chain_state()` helper. Inter-step validation before phases 3/4/5. Delegates QA/review loops to `builds_loop.rs`. |
 | `builds_loop.rs` | ~240 | Build pipeline iteration loops: `run_qa_loop()` (3 iterations), `run_review_loop()` (2 iterations, fatal), `validate_phase_output()` (pre-phase checks), `save_chain_state()` (writes `docs/.workflow/chain-state.md` on failure), `has_files_matching()` (recursive file search) |
-| `builds_parse.rs` | ~395 | Pure parsing functions for builds: `parse_project_brief()`, `parse_verification_result()`, `parse_review_result()`, `parse_build_summary()`, `phase_message()` (7 phases, 8 languages), 6 i18n functions (QA/review pass/retry/exhausted), data structures (`ProjectBrief`, `VerificationResult`, `ReviewResult`, `BuildSummary`, `ChainState`), tests |
-| `builds_agents.rs` | ~300 | Embedded build agent definitions (8 agents: discovery + 7 pipeline, compiled into binary), `AgentFilesGuard` RAII lifecycle (writes temp `.claude/agents/` files, cleans up on Drop), `BUILD_AGENTS` name-to-content mapping. QA and Reviewer use model: opus. Analyst includes MoSCoW. Architect includes failure modes. |
+| `builds_parse.rs` | ~490 | Pure parsing functions for builds: `parse_project_brief()`, `parse_verification_result()`, `parse_review_result()`, `parse_build_summary()`, `phase_message()` (7 phases, 8 languages), 6 i18n functions (QA/review pass/retry/exhausted), data structures (`ProjectBrief`, `VerificationResult`, `ReviewResult`, `BuildSummary`, `ChainState`), tests |
+| `builds_agents.rs` | ~444 | Embedded build agent definitions (8 agents: discovery + 7 pipeline, compiled into binary), `AgentFilesGuard` RAII lifecycle (writes temp `.claude/agents/` files, ref-counted cleanup on Drop via `Arc<AtomicUsize>`), `BUILD_AGENTS` name-to-content mapping. All phases use model: opus. Analyst includes MoSCoW. Architect includes failure modes. |
 | `auth.rs` | ~167 | `check_auth()`, `handle_whatsapp_qr()` |
 | `process_markers.rs` | ~504 | `process_markers(incoming, text, active_project)`, `process_purge_facts()`, `process_improvement_markers()`, `send_task_confirmation()` |
 
@@ -765,27 +765,55 @@ If sandbox:        + sandbox constraint (unchanged)
 ### Build Orchestrator (builds.rs)
 
 #### `pub(super) async fn handle_build_request(&self, incoming: &IncomingMessage, typing_handle: Option<JoinHandle<()>>)`
-**Purpose:** Main build orchestrator — runs 5 sequential phases for a build request. Each phase is an isolated `provider.complete()` call with phase-specific model, tools, and system prompt. Phases communicate via filesystem artifacts.
+**Purpose:** Main build orchestrator — runs 7 sequential agent phases for a build request. Each phase invokes `claude --agent <name>` via `run_build_phase()`. Phases communicate via filesystem artifacts. All phases use `model_complex` (Opus).
 
 **Logic:**
 1. Resolve user language via `get_fact("preferred_language")` for localized progress messages.
-2. **Phase 1 (Clarification):** Uses `model_complex` (Opus) with no tools (`allowed_tools: Some(vec![])`, max 25 turns). Parses response via `parse_project_brief()`. Validates project name against path traversal.
-3. Creates project directory at `~/.omega/workspace/builds/<project-name>/` using `tokio::fs::create_dir_all`.
-4. **Phase 2 (Architecture):** Uses `model_complex` with full tools. Verifies `specs/architecture.md` was created before proceeding.
-5. **Phase 3 (Implementation):** Uses `model_fast` (Sonnet) with full tools.
-6. **Phase 4 (Verification):** Uses `model_fast`. Parses result via `parse_verification_result()`. On failure, runs one retry loop (Phase 3 retry → Phase 4 re-verify). If retry also fails, stops and reports partial results.
-7. **Phase 5 (Delivery):** Uses `model_fast`. Parses result via `parse_build_summary()`. Sends final summary to user.
-8. Audit logs the build result via `audit_build()`.
+2. Write agent files to `~/.omega/workspace/.claude/agents/` via `AgentFilesGuard` (ref-counted RAII).
+3. **Phase 1 (Analyst):** Uses `model_complex`, max 25 turns. Parses response via `parse_project_brief()`. Validates project name: ASCII alphanumeric + hyphens/underscores, max 64 chars.
+4. Creates project directory at `~/.omega/workspace/builds/<project-name>/`.
+5. **Phase 2 (Architect):** Uses `model_complex`. Verifies `specs/architecture.md` was created.
+6. **Inter-step validation** before phase 3 (`validate_phase_output("test-writer")`).
+7. **Phase 3 (Test Writer):** Uses `model_complex`. Writes failing tests (TDD red phase).
+8. **Inter-step validation** before phase 4 (`validate_phase_output("developer")`).
+9. **Phase 4 (Developer):** Uses `model_complex`. Implements to pass tests (TDD green phase).
+10. **Inter-step validation** before phase 5 (`validate_phase_output("qa")`).
+11. **Phase 5 (QA):** Delegates to `run_qa_loop()` — up to 3 iterations (QA → developer fix → re-QA). Fatal on exhaustion.
+12. **Phase 6 (Reviewer):** Delegates to `run_review_loop()` — up to 2 iterations (review → developer fix → re-review). Fatal on exhaustion.
+13. **Phase 7 (Delivery):** Parses result via `parse_build_summary()`. Sends final summary to user.
+14. Audit logs the build result via `audit_build()`.
 
-**Error Handling:** Each phase failure sends a user-facing message, aborts the typing indicator, and returns early. The typing handle is always cleaned up on any exit path.
+**Error Handling:** Each phase failure sends a user-facing error with project name only (no server paths). Aborts typing indicator and saves chain state for recovery.
 
-#### `async fn run_build_phase(&self, system_prompt: &str, user_message: &str, model: &str, allowed_tools: Option<Vec<String>>, max_turns: Option<u32>) -> Result<String, String>`
-**Purpose:** Generic phase runner. Creates a fresh `Context::new()` (no session_id, no history) with the given system prompt, model, and tool config. Retries up to 3 times with 2s delay on failure.
+**Safety controls:** Inter-step validation before phases 3/4/5. QA loop (3 iterations). Review loop (2 iterations, fatal). Chain state persisted on failure via `save_chain_state()`.
 
-**Context isolation:** Each phase gets a completely independent context. No `session_id` means no conversation history crosses phase boundaries. The working directory is communicated via system prompt text, not OS-level cwd.
+#### `pub(super) async fn run_build_phase(&self, agent_name: &str, user_message: &str, model: &str, max_turns: Option<u32>) -> Result<String, String>`
+**Purpose:** Generic phase runner with retry logic (3 attempts, 2s delay). Creates a fresh `Context` with `agent_name` set and no session_id. The agent file provides the system prompt; only the user message is sent via `-p`.
+
+**Context isolation:** Each phase gets a completely independent context. No `session_id` means no conversation history crosses phase boundaries. Default `max_turns` is 100.
+
+#### `fn chain_state(name, dir, completed, failed, reason) -> ChainState`
+**Purpose:** Build a `ChainState` struct for the current project at a given failure point. Helper to reduce verbose construction at each error site.
 
 #### `async fn audit_build(&self, incoming: &IncomingMessage, project: &str, status: &str, detail: &str)`
 **Purpose:** Log an audit entry for a build operation. Uses `[BUILD:<project>]` prefix in `input_text`. Maps status "success" → `AuditStatus::Ok`, anything else → `AuditStatus::Error`.
+
+### Build Loops and Validation (builds_loop.rs)
+
+#### `pub(super) async fn run_qa_loop(&self, incoming, project_dir_str, user_lang) -> Result<(), String>`
+**Purpose:** Run the QA verification loop — up to 3 iterations of QA + developer fix. On pass: sends localized pass message, returns `Ok(())`. On exhaustion: returns `Err(reason)`.
+
+#### `pub(super) async fn run_review_loop(&self, incoming, project_dir_str, user_lang) -> Result<(), String>`
+**Purpose:** Run the code review loop — up to 2 iterations of review + developer fix. On pass: sends localized pass message, returns `Ok(())`. On exhaustion: returns `Err(reason)`.
+
+#### `pub(super) fn validate_phase_output(project_dir: &Path, next_phase: &str) -> Option<String>`
+**Purpose:** Validate that a previous phase produced expected output before the next phase runs. Returns `Some(error_msg)` if validation fails, `None` if OK. Checks: `test-writer` needs `specs/architecture.md`, `developer` needs test files, `qa` needs source files.
+
+#### `pub(super) async fn save_chain_state(project_dir: &Path, state: &ChainState)`
+**Purpose:** Save chain state to `docs/.workflow/chain-state.md` in the project directory for failure recovery. Best-effort — logs warning on I/O error.
+
+#### `fn has_files_matching(dir: &Path, patterns: &[&str], depth: u32) -> bool`
+**Purpose:** Check if any file in the directory tree contains one of the given substrings in its name. Stops recursing at depth 10 (`MAX_SCAN_DEPTH`). Skips symlinks to prevent infinite loops.
 
 ### Process Markers (process_markers.rs)
 
@@ -844,16 +872,27 @@ If sandbox:        + sandbox constraint (unchanged)
 ### `fn parse_project_brief(text: &str) -> Option<ProjectBrief>` (builds_parse.rs)
 **Purpose:** Parse structured Phase 1 output into a `ProjectBrief`. Extracts `PROJECT_NAME`, `LANGUAGE`, `DATABASE`, `FRONTEND`, `SCOPE`, and `COMPONENTS` fields. Defaults: Rust, SQLite, no frontend.
 
-**Security:** Rejects project names containing `/`, `\`, `..`, or starting with `.` to prevent path traversal.
+**Security:** Validates project names: ASCII alphanumeric start, hyphens/underscores/dots allowed, max 64 chars. Rejects spaces, shell metacharacters, path traversal (`/`, `\`, `..`), leading dots, and control characters.
 
 ### `fn parse_verification_result(text: &str) -> VerificationResult` (builds_parse.rs)
-**Purpose:** Parse Phase 4 output into pass/fail. Looks for `VERIFICATION: PASS` or `VERIFICATION: FAIL` + `REASON:`. Defaults to `Fail("No verification marker found")` when no marker is present (fail-safe).
+**Purpose:** Parse QA output into pass/fail. Looks for `VERIFICATION: PASS` or `VERIFICATION: FAIL` + `REASON:`. Defaults to `Fail("No verification marker found")` when no marker is present (fail-safe).
+
+### `fn parse_review_result(text: &str) -> ReviewResult` (builds_parse.rs)
+**Purpose:** Parse reviewer output into pass/fail. Looks for `REVIEW: PASS` or `REVIEW: FAIL`. Extracts findings after FAIL line. Defaults to `Fail("No review marker found")`.
 
 ### `fn parse_build_summary(text: &str) -> Option<BuildSummary>` (builds_parse.rs)
-**Purpose:** Parse Phase 5 delivery output. Requires `BUILD_COMPLETE` marker. Extracts `PROJECT`, `LOCATION`, `LANGUAGE`, `SUMMARY`, `USAGE`, `SKILL` fields. Empty `SKILL` is filtered to `None`.
+**Purpose:** Parse delivery output. Requires `BUILD_COMPLETE` marker. Extracts `PROJECT`, `LOCATION`, `LANGUAGE`, `SUMMARY`, `USAGE`, `SKILL` fields. Empty `SKILL` is filtered to `None`.
 
 ### `fn phase_message(lang: &str, phase: u8, action: &str) -> String` (builds_parse.rs)
-**Purpose:** Generate localized phase progress messages. Supports English, Spanish, Portuguese with specific strings for phases 1 and 5, generic format for others.
+**Purpose:** Generate localized phase progress messages. Supports all 8 languages (English, Spanish, Portuguese, French, German, Italian, Dutch, Russian) for all 7 phases with specific strings for phases 1 and 7, generic format for others.
+
+### i18n Build Functions (builds_parse.rs)
+- `qa_pass_message(lang, attempt)` — Localized QA pass message, includes attempt count if > 1.
+- `qa_retry_message(lang, attempt, reason)` — Localized QA retry message with failure reason.
+- `qa_exhausted_message(lang, reason, dir)` — Localized QA exhaustion message (3 iterations failed).
+- `review_pass_message(lang, attempt)` — Localized review pass message.
+- `review_retry_message(lang, reason)` — Localized review retry message with findings.
+- `review_exhausted_message(lang, reason, dir)` — Localized review exhaustion message (2 iterations failed).
 
 ### `fn extract_schedule_marker(text: &str) -> Option<String>` (markers.rs)
 **Purpose:** Extract the first `SCHEDULE:` line from response text.

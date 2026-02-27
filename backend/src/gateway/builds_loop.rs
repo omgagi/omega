@@ -70,7 +70,7 @@ impl Gateway {
                 }
             }
         }
-        unreachable!()
+        Err("loop terminated without resolution".to_string())
     }
 
     /// Run the code review loop — up to 2 iterations of review + developer fix.
@@ -136,8 +136,11 @@ impl Gateway {
                 }
             }
         }
-        unreachable!()
+        Err("loop terminated without resolution".to_string())
     }
+
+    /// Maximum recursion depth for filesystem traversal.
+    const MAX_SCAN_DEPTH: u32 = 10;
 
     /// Validate that a previous phase produced expected output before the next phase runs.
     ///
@@ -154,7 +157,8 @@ impl Gateway {
             }
             "developer" => {
                 // Before developer: at least one test file should exist.
-                let has_tests = Self::has_files_matching(project_dir, &["test", "spec", "_test."]);
+                let has_tests =
+                    Self::has_files_matching(project_dir, &["test", "spec", "_test."], 0);
                 if !has_tests {
                     Some("Cannot start developer: no test files found in project".to_string())
                 } else {
@@ -168,6 +172,7 @@ impl Gateway {
                     &[
                         ".rs", ".py", ".js", ".ts", ".go", ".java", ".rb", ".c", ".cpp",
                     ],
+                    0,
                 );
                 if !has_sources {
                     Some("Cannot start QA: no source files found in project".to_string())
@@ -180,19 +185,29 @@ impl Gateway {
     }
 
     /// Check if any file in the directory tree contains one of the given substrings in its name.
-    fn has_files_matching(dir: &Path, patterns: &[&str]) -> bool {
+    ///
+    /// Stops recursing at `MAX_SCAN_DEPTH` to prevent stack overflow. Skips symlinks
+    /// to prevent infinite loops from symlink cycles.
+    fn has_files_matching(dir: &Path, patterns: &[&str], depth: u32) -> bool {
+        if depth >= Self::MAX_SCAN_DEPTH {
+            return false;
+        }
         let Ok(entries) = std::fs::read_dir(dir) else {
             return false;
         };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             let path = entry.path();
+            // Skip symlinks to prevent infinite loops from cycles.
+            if path.is_symlink() {
+                continue;
+            }
             if path.is_dir() {
                 // Skip hidden directories and common non-source dirs.
                 if !name.starts_with('.')
                     && name != "node_modules"
                     && name != "target"
-                    && Self::has_files_matching(&path, patterns)
+                    && Self::has_files_matching(&path, patterns, depth + 1)
                 {
                     return true;
                 }
@@ -306,7 +321,7 @@ mod tests {
     fn test_has_files_matching_finds_test_files() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("test_main.rs"), "// test").unwrap();
-        assert!(Gateway::has_files_matching(tmp.path(), &["test"]));
+        assert!(Gateway::has_files_matching(tmp.path(), &["test"], 0));
     }
 
     #[test]
@@ -315,7 +330,7 @@ mod tests {
         let sub = tmp.path().join("src");
         std::fs::create_dir_all(&sub).unwrap();
         std::fs::write(sub.join("lib.rs"), "// code").unwrap();
-        assert!(Gateway::has_files_matching(tmp.path(), &[".rs"]));
+        assert!(Gateway::has_files_matching(tmp.path(), &[".rs"], 0));
     }
 
     #[test]
@@ -324,6 +339,6 @@ mod tests {
         let hidden = tmp.path().join(".hidden");
         std::fs::create_dir_all(&hidden).unwrap();
         std::fs::write(hidden.join("test.rs"), "// test").unwrap();
-        assert!(!Gateway::has_files_matching(tmp.path(), &["test"]));
+        assert!(!Gateway::has_files_matching(tmp.path(), &["test"], 0));
     }
 }

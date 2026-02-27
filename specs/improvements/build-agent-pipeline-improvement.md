@@ -76,7 +76,7 @@ no `.md` files are shipped or permanently stored on disk.
 | REQ-BAP-012 | Analyst agent output format: structured brief + requirements in parseable format | Must | Output includes PROJECT_NAME, LANGUAGE, DATABASE, FRONTEND, SCOPE, COMPONENTS; compatible with existing parse_project_brief() |
 | REQ-BAP-013 | Correct working directory: CLI subprocess cwd set to project_dir | Must | `.claude/agents/` directory is relative to this cwd |
 | REQ-BAP-014 | Permission bypass: build agents use bypassPermissions or --dangerously-skip-permissions | Must | Build agents execute all tools without permission prompts |
-| REQ-BAP-015 | Model selection per phase: analyst/architect use model_complex, others use model_fast | Should | Phase 1-2: model_complex; Phases 3-7: model_fast |
+| REQ-BAP-015 | Model selection per phase: all phases use model_complex (Opus) for deep reasoning quality. Changed from split model routing in commit `4a471b0`. | Should | All 7 phases use model_complex. Rationale: QA and review require deep analysis; consistency simplifies debugging. |
 | REQ-BAP-016 | Architect creates TDD-ready specs with testable acceptance criteria | Should | specs/requirements.md with numbered requirements; specs/architecture.md with module descriptions |
 | REQ-BAP-017 | Test-writer references specs: reads specs/ and writes tests covering each requirement | Should | Tests reference requirement numbers; Must requirements covered exhaustively; all tests fail initially |
 | REQ-BAP-018 | Developer reads tests first: implements minimum code to pass all tests | Should | Module-by-module implementation; 500-line file limit enforced |
@@ -131,7 +131,7 @@ In `complete()`, extract `context.agent_name.as_deref()` and pass to `run_cli()`
 
 **File:** `backend/src/gateway/builds_agents.rs` (NEW)
 
-Seven agent definitions as `const &str`. Example structure:
+Eight agent definitions as `const &str` (7 pipeline + 1 discovery). Example structure:
 
 ```rust
 pub(super) const BUILD_ANALYST_AGENT: &str = "\
@@ -223,11 +223,11 @@ Creates `Context` with `agent_name = Some(agent_name.to_string())`, no session_i
 |-------|-----------|-------|---------------------|---------------------------|
 | 1 | build-analyst | model_complex | Read, Grep, Glob | The user's original build request text |
 | 2 | build-architect | model_complex | Read, Write, Bash, Glob, Grep | "Project brief:\n{brief_text}\nBegin architecture design in {project_dir}." |
-| 3 | build-test-writer | model_fast | Read, Write, Edit, Bash, Glob, Grep | "Read specs/ in {project_dir} and write failing tests. Begin." |
-| 4 | build-developer | model_fast | Read, Write, Edit, Bash, Glob, Grep | "Read the tests and specs/ in {project_dir}. Implement until all tests pass. Begin." |
-| 5 | build-qa | model_fast | Read, Write, Edit, Bash, Glob, Grep | "Validate the project in {project_dir}. Run build, lint, tests. Report VERIFICATION: PASS or FAIL." |
-| 6 | build-reviewer | model_fast | Read, Grep, Glob, Bash | "Review the code in {project_dir} for bugs, security, quality. Report REVIEW: PASS or FAIL." |
-| 7 | build-delivery | model_fast | Read, Write, Edit, Bash, Glob, Grep | "Create docs and skill file for {project_name} in {project_dir}. Skills dir: {skills_dir}." |
+| 3 | build-test-writer | model_complex | Read, Write, Edit, Bash, Glob, Grep | "Read specs/ in {project_dir} and write failing tests. Begin." |
+| 4 | build-developer | model_complex | Read, Write, Edit, Bash, Glob, Grep | "Read the tests and specs/ in {project_dir}. Implement until all tests pass. Begin." |
+| 5 | build-qa | model_complex | Read, Write, Edit, Bash, Glob, Grep | "Validate the project in {project_dir}. Run build, lint, tests. Report VERIFICATION: PASS or FAIL." |
+| 6 | build-reviewer | model_complex | Read, Write, Grep, Glob, Bash | "Review the code in {project_dir} for bugs, security, quality. Report REVIEW: PASS or FAIL." |
+| 7 | build-delivery | model_complex | Read, Write, Edit, Bash, Glob, Grep | "Create docs and skill file for {project_name} in {project_dir}. Skills dir: {skills_dir}." |
 
 ### 7. Phase Interaction with Existing Functions
 

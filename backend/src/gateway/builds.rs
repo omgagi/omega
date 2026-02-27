@@ -206,7 +206,10 @@ impl Gateway {
             }
             self.send_text(
                 incoming,
-                &format!("Test writing phase failed: {e}. Partial results at {project_dir_str}"),
+                &format!(
+                    "Test writing phase failed: {e}. Partial results in `{}`.",
+                    brief.name
+                ),
             )
             .await;
             return;
@@ -251,7 +254,10 @@ impl Gateway {
             }
             self.send_text(
                 incoming,
-                &format!("Implementation phase failed: {e}. Partial results at {project_dir_str}"),
+                &format!(
+                    "Implementation phase failed: {e}. Partial results in `{}`.",
+                    brief.name
+                ),
             )
             .await;
             return;
@@ -369,7 +375,8 @@ impl Gateway {
                     incoming,
                     &format!(
                         "Build complete but delivery had issues: {e}\n\
-                         Project is at `{project_dir_str}`"
+                         Project: `{}`",
+                        brief.name
                     ),
                 )
                 .await;
@@ -401,8 +408,8 @@ impl Gateway {
         } else {
             format!(
                 "Build complete!\n\n\
-                 Project `{}` is ready at `{}`.",
-                brief.name, project_dir_str,
+                 Project `{}` is ready.",
+                brief.name,
             )
         };
 

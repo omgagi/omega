@@ -91,11 +91,15 @@ pub(super) fn parse_project_brief(text: &str) -> Option<ProjectBrief> {
     let name = get_field("PROJECT_NAME")?;
     // Strip backticks that LLMs sometimes wrap values in.
     let name = name.trim_matches('`').trim().to_string();
+    // Strict validation: alphanumeric start, hyphens/underscores allowed, max 64 chars.
+    // Rejects spaces, shell metacharacters, path traversal, and unicode control chars.
     if name.is_empty()
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains("..")
+        || name.len() > 64
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
         || name.starts_with('.')
+        || name.contains("..")
     {
         return None;
     }
@@ -531,6 +535,51 @@ mod tests {
         assert!(parse_project_brief("PROJECT_NAME: foo/bar\nSCOPE: evil").is_none());
         assert!(parse_project_brief("PROJECT_NAME: .hidden\nSCOPE: evil").is_none());
         assert!(parse_project_brief("PROJECT_NAME: foo\\bar\nSCOPE: evil").is_none());
+    }
+
+    // BUG-M2: Strict name validation — reject spaces, shell metacharacters, overlength
+    #[test]
+    fn test_parse_project_brief_spaces_rejected() {
+        assert!(
+            parse_project_brief("PROJECT_NAME: my cool project\nSCOPE: test").is_none(),
+            "Names with spaces must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_parse_project_brief_shell_metacharacters_rejected() {
+        assert!(parse_project_brief("PROJECT_NAME: test;rm -rf\nSCOPE: evil").is_none());
+        assert!(parse_project_brief("PROJECT_NAME: test|cat /etc\nSCOPE: evil").is_none());
+        assert!(parse_project_brief("PROJECT_NAME: $(whoami)\nSCOPE: evil").is_none());
+        assert!(parse_project_brief("PROJECT_NAME: test&bg\nSCOPE: evil").is_none());
+    }
+
+    #[test]
+    fn test_parse_project_brief_overlength_rejected() {
+        let long_name = "a".repeat(65);
+        let text = format!("PROJECT_NAME: {long_name}\nSCOPE: test");
+        assert!(
+            parse_project_brief(&text).is_none(),
+            "Names over 64 chars must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_parse_project_brief_max_length_accepted() {
+        let name_64 = "a".repeat(64);
+        let text = format!("PROJECT_NAME: {name_64}\nSCOPE: test");
+        assert!(
+            parse_project_brief(&text).is_some(),
+            "Names at exactly 64 chars must be accepted"
+        );
+    }
+
+    #[test]
+    fn test_parse_project_brief_valid_kebab_and_snake() {
+        // These must still work after the stricter validation.
+        assert!(parse_project_brief("PROJECT_NAME: price-tracker\nSCOPE: test").is_some());
+        assert!(parse_project_brief("PROJECT_NAME: my_tool_v2\nSCOPE: test").is_some());
+        assert!(parse_project_brief("PROJECT_NAME: CamelCase\nSCOPE: test").is_some());
     }
 
     #[test]

@@ -12,7 +12,14 @@
 //! DEVELOPER: After implementing this module, register it in
 //! `backend/src/gateway/mod.rs` by adding: `mod builds_agents;`
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
+
+/// Global reference counter for concurrent AgentFilesGuard instances.
+/// Only the last guard to drop deletes the agent files.
+static GUARD_REFCOUNTS: LazyLock<Mutex<HashMap<PathBuf, usize>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 // ---------------------------------------------------------------------------
 // Agent constants — compiled into the binary, written as temp files at runtime
@@ -407,6 +414,9 @@ pub(super) const BUILD_AGENTS: &[(&str, &str)] = &[
 
 /// RAII guard that writes agent `.md` files on creation and removes them on drop.
 ///
+/// Reference-counted per directory: multiple concurrent builds share the same agent files.
+/// Files are only deleted when the last guard for that directory is dropped.
+///
 /// Usage:
 /// ```ignore
 /// let _guard = AgentFilesGuard::write(&project_dir).await?;
@@ -419,6 +429,9 @@ pub(super) struct AgentFilesGuard {
 
 impl AgentFilesGuard {
     /// Write all build agent files to `<project_dir>/.claude/agents/`.
+    ///
+    /// Increments the per-directory reference count. Safe to call concurrently —
+    /// all guards write identical content to the same directory.
     pub async fn write(project_dir: &Path) -> std::io::Result<Self> {
         let agents_dir = project_dir.join(".claude").join("agents");
         tokio::fs::create_dir_all(&agents_dir).await?;
@@ -426,17 +439,42 @@ impl AgentFilesGuard {
             let path = agents_dir.join(format!("{name}.md"));
             tokio::fs::write(&path, content).await?;
         }
+        let mut counts = GUARD_REFCOUNTS.lock().unwrap();
+        *counts.entry(agents_dir.clone()).or_insert(0) += 1;
         Ok(Self { agents_dir })
+    }
+
+    /// Current number of active guards for a given directory (for testing).
+    #[cfg(test)]
+    pub fn active_count_for(dir: &Path) -> usize {
+        let counts = GUARD_REFCOUNTS.lock().unwrap();
+        counts.get(dir).copied().unwrap_or(0)
     }
 }
 
 impl Drop for AgentFilesGuard {
     fn drop(&mut self) {
-        // Remove the agents directory and all files within it.
-        let _ = std::fs::remove_dir_all(&self.agents_dir);
-        // Remove the parent .claude/ directory if it is now empty.
-        if let Some(claude_dir) = self.agents_dir.parent() {
-            let _ = std::fs::remove_dir(claude_dir);
+        let should_cleanup = {
+            let mut counts = GUARD_REFCOUNTS.lock().unwrap();
+            if let Some(count) = counts.get_mut(&self.agents_dir) {
+                *count -= 1;
+                if *count == 0 {
+                    counts.remove(&self.agents_dir);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        // Only the last guard for this directory cleans up.
+        if should_cleanup {
+            let _ = std::fs::remove_dir_all(&self.agents_dir);
+            // Remove the parent .claude/ directory if it is now empty.
+            if let Some(claude_dir) = self.agents_dir.parent() {
+                let _ = std::fs::remove_dir(claude_dir);
+            }
         }
     }
 }
@@ -1364,5 +1402,72 @@ mod tests {
                 || (content.contains("specs/") && content.contains("docs/")),
             "Reviewer agent must check for specs/docs drift"
         );
+    }
+
+    // ===================================================================
+    // BUG-C1: AgentFilesGuard concurrent build safety
+    // ===================================================================
+
+    // BUG-C1: Two guards for the same directory must coexist — files must
+    // survive the first guard's drop when a second guard is still active.
+    #[tokio::test]
+    async fn test_agent_files_guard_concurrent_builds_safe() {
+        let tmp = std::env::temp_dir().join("__omega_test_agents_concurrent__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let agents_dir = tmp.join(".claude").join("agents");
+
+        // Simulate two concurrent builds writing to the same workspace.
+        let guard1 = AgentFilesGuard::write(&tmp).await.unwrap();
+        let guard2 = AgentFilesGuard::write(&tmp).await.unwrap();
+
+        assert!(agents_dir.exists(), "agents/ must exist with two guards");
+
+        // First build finishes — drop guard1.
+        drop(guard1);
+
+        // Files must still exist for the second build.
+        assert!(
+            agents_dir.exists(),
+            "agents/ must survive after first guard drops (second still active)"
+        );
+        for (name, _) in BUILD_AGENTS {
+            let file = agents_dir.join(format!("{name}.md"));
+            assert!(
+                file.exists(),
+                "Agent file '{name}.md' must survive first guard drop"
+            );
+        }
+
+        // Second build finishes — now files should be cleaned up.
+        drop(guard2);
+        assert!(
+            !agents_dir.exists(),
+            "agents/ must be removed after last guard drops"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // BUG-C1: Per-directory reference count returns to zero after all guards drop.
+    #[tokio::test]
+    async fn test_agent_files_guard_refcount_returns_to_zero() {
+        let tmp = std::env::temp_dir().join("__omega_test_agents_refcount__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let agents_dir = tmp.join(".claude").join("agents");
+        assert_eq!(AgentFilesGuard::active_count_for(&agents_dir), 0);
+        let guard1 = AgentFilesGuard::write(&tmp).await.unwrap();
+        assert_eq!(AgentFilesGuard::active_count_for(&agents_dir), 1);
+        let guard2 = AgentFilesGuard::write(&tmp).await.unwrap();
+        assert_eq!(AgentFilesGuard::active_count_for(&agents_dir), 2);
+        drop(guard1);
+        assert_eq!(AgentFilesGuard::active_count_for(&agents_dir), 1);
+        drop(guard2);
+        assert_eq!(AgentFilesGuard::active_count_for(&agents_dir), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
