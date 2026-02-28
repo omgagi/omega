@@ -153,7 +153,9 @@ impl Gateway {
             let channel_name = &config.channel;
 
             // --- Global heartbeat ---
-            if let Some(checklist) = read_heartbeat_file() {
+            if let Some(checklist) =
+                read_heartbeat_file().and_then(|c| filter_suppressed_sections(&c, None))
+            {
                 let enrichment = build_enrichment(&memory, None).await;
                 let system = build_system_prompt(&prompts, None, None);
 
@@ -263,7 +265,9 @@ impl Gateway {
                 }
 
                 // Check if this project has its own HEARTBEAT.md.
-                let project_checklist = match read_project_heartbeat_file(project_name) {
+                let project_checklist = match read_project_heartbeat_file(project_name)
+                    .and_then(|c| filter_suppressed_sections(&c, Some(project_name)))
+                {
                     Some(cl) => cl,
                     None => continue,
                 };

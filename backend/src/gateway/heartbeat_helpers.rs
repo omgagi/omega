@@ -235,6 +235,18 @@ pub async fn process_heartbeat_markers(
     }
     text = strip_lesson_markers(&text);
 
+    // HEARTBEAT_SUPPRESS_SECTION / HEARTBEAT_UNSUPPRESS_SECTION
+    let suppress_actions = extract_suppress_section_markers(&text);
+    if !suppress_actions.is_empty() {
+        let hb_project = if project.is_empty() {
+            None
+        } else {
+            Some(project)
+        };
+        apply_suppress_actions(&suppress_actions, hb_project);
+        text = strip_suppress_section_markers(&text);
+    }
+
     text
 }
 

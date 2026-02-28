@@ -407,6 +407,85 @@ fn test_apply_heartbeat_add() {
     );
     assert!(content.contains("# My checklist"), "should keep comments");
 
+    // --- Section suppression lifecycle (same HOME, sequential) ---
+
+    // Add suppression.
+    add_suppression("TRADING", None);
+    let entries = read_suppress_file(None);
+    assert_eq!(entries, vec!["TRADING"]);
+
+    // Duplicate add — no-op (case-insensitive).
+    add_suppression("trading", None);
+    assert_eq!(read_suppress_file(None).len(), 1);
+
+    // Add another.
+    add_suppression("HEALTH", None);
+    assert_eq!(read_suppress_file(None).len(), 2);
+
+    // Remove.
+    remove_suppression("TRADING", None);
+    assert_eq!(read_suppress_file(None), vec!["HEALTH"]);
+
+    // Remove non-existent — no-op.
+    remove_suppression("NONEXISTENT", None);
+    assert_eq!(read_suppress_file(None), vec!["HEALTH"]);
+
+    // Clean up for filter tests.
+    remove_suppression("HEALTH", None);
+
+    // --- filter with suppression ---
+    std::fs::write(
+        fake_home.join(".omega/prompts/HEARTBEAT.suppress"),
+        "TRADING\n",
+    )
+    .unwrap();
+
+    let hb_content =
+        "# Title\n## TRADING — Engine\n400 lines of trading\n## NON-TRADING ITEMS\n- Reminder\n";
+    let result = filter_suppressed_sections(hb_content, None);
+    assert!(result.is_some());
+    let filtered = result.unwrap();
+    assert!(
+        !filtered.contains("400 lines of trading"),
+        "TRADING content filtered"
+    );
+    assert!(
+        !filtered.contains("## TRADING — Engine"),
+        "TRADING header filtered"
+    );
+    assert!(
+        filtered.contains("NON-TRADING ITEMS"),
+        "NON-TRADING remains"
+    );
+    assert!(filtered.contains("- Reminder"));
+    assert!(filtered.contains("# Title"), "preamble remains");
+
+    // --- all sections suppressed → None ---
+    std::fs::write(
+        fake_home.join(".omega/prompts/HEARTBEAT.suppress"),
+        "TRADING\nNON-TRADING ITEMS\n",
+    )
+    .unwrap();
+
+    let hb_content = "## TRADING\nStuff\n## NON-TRADING ITEMS\nMore stuff\n";
+    let result = filter_suppressed_sections(hb_content, None);
+    assert!(result.is_none(), "all sections suppressed = no checklist");
+
+    // --- case-insensitive matching ---
+    std::fs::write(
+        fake_home.join(".omega/prompts/HEARTBEAT.suppress"),
+        "trading\n",
+    )
+    .unwrap();
+
+    let hb_content = "## TRADING — Engine\nStuff\n## OTHER\nKeep\n";
+    let result = filter_suppressed_sections(hb_content, None);
+    assert!(result.is_some());
+    let filtered = result.unwrap();
+    assert!(!filtered.contains("## TRADING"), "case-insensitive filter");
+    assert!(!filtered.contains("Stuff"));
+    assert!(filtered.contains("OTHER"));
+
     std::env::set_var("HOME", &original_home);
     let _ = std::fs::remove_dir_all(&fake_home);
 }
@@ -1097,6 +1176,129 @@ fn test_strip_all_remaining_markers_includes_bug_report() {
     assert!(!result.contains("BUG_REPORT:"));
     assert!(result.contains("Hello."));
     assert!(result.contains("More text."));
+}
+
+// --- Section suppression (REQ-HB-010..014) ---
+
+#[test]
+fn test_parse_heartbeat_sections_basic() {
+    let content = "# Title\nSome preamble\n## TRADING — Autonomous Engine\nTrading stuff\nMore trading\n## NON-TRADING ITEMS\n- Daily reminder\n";
+    let (preamble, sections) = parse_heartbeat_sections(content);
+    assert!(preamble.contains("# Title"));
+    assert!(preamble.contains("Some preamble"));
+    assert_eq!(sections.len(), 2);
+    assert_eq!(sections[0].0, "TRADING");
+    assert!(sections[0].1.contains("Trading stuff"));
+    assert!(sections[0].1.contains("More trading"));
+    assert_eq!(sections[1].0, "NON-TRADING ITEMS");
+    assert!(sections[1].1.contains("Daily reminder"));
+}
+
+#[test]
+fn test_parse_heartbeat_sections_no_sections() {
+    let content = "# Just a title\n- Item 1\n- Item 2\n";
+    let (preamble, sections) = parse_heartbeat_sections(content);
+    assert!(preamble.contains("# Just a title"));
+    assert!(sections.is_empty());
+}
+
+#[test]
+fn test_parse_heartbeat_sections_no_preamble() {
+    let content = "## SECTION A\nContent A\n## SECTION B\nContent B\n";
+    let (preamble, sections) = parse_heartbeat_sections(content);
+    assert!(preamble.trim().is_empty());
+    assert_eq!(sections.len(), 2);
+    assert_eq!(sections[0].0, "SECTION A");
+    assert_eq!(sections[1].0, "SECTION B");
+}
+
+#[test]
+fn test_parse_heartbeat_sections_emdash_extraction() {
+    let content = "## TRADING — Autonomous Quant-Driven Execution Engine\nStuff\n";
+    let (_, sections) = parse_heartbeat_sections(content);
+    assert_eq!(sections[0].0, "TRADING");
+}
+
+#[test]
+fn test_filter_suppressed_sections_no_suppress_file() {
+    // No suppress file exists — all sections active.
+    // Uses parse_heartbeat_sections directly to avoid HOME dependency.
+    let content = "# Title\n## SECTION A\nContent A\n## SECTION B\nContent B\n";
+    let (preamble, sections) = parse_heartbeat_sections(content);
+    assert!(preamble.contains("# Title"));
+    assert_eq!(sections.len(), 2);
+    // With no suppress file, filter_suppressed_sections returns content unchanged.
+    // We test this via the parse path since filter reads HOME.
+}
+
+#[test]
+fn test_extract_suppress_section_markers() {
+    let text = "Done.\nHEARTBEAT_SUPPRESS_SECTION: TRADING\nStopping reports.";
+    let actions = extract_suppress_section_markers(text);
+    assert_eq!(
+        actions,
+        vec![SuppressAction::Suppress("TRADING".to_string())]
+    );
+}
+
+#[test]
+fn test_extract_unsuppress_section_markers() {
+    let text = "Re-enabling.\nHEARTBEAT_UNSUPPRESS_SECTION: TRADING\nDone.";
+    let actions = extract_suppress_section_markers(text);
+    assert_eq!(
+        actions,
+        vec![SuppressAction::Unsuppress("TRADING".to_string())]
+    );
+}
+
+#[test]
+fn test_extract_suppress_section_markers_empty_ignored() {
+    let text = "HEARTBEAT_SUPPRESS_SECTION: \nHEARTBEAT_UNSUPPRESS_SECTION:   ";
+    let actions = extract_suppress_section_markers(text);
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn test_extract_suppress_section_markers_mixed() {
+    let text = "HEARTBEAT_SUPPRESS_SECTION: TRADING\nHEARTBEAT_UNSUPPRESS_SECTION: HEALTH\nDone.";
+    let actions = extract_suppress_section_markers(text);
+    assert_eq!(
+        actions,
+        vec![
+            SuppressAction::Suppress("TRADING".to_string()),
+            SuppressAction::Unsuppress("HEALTH".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn test_strip_suppress_section_markers() {
+    let text = "Stopping reports.\nHEARTBEAT_SUPPRESS_SECTION: TRADING\nDone!";
+    let result = strip_suppress_section_markers(text);
+    assert_eq!(result, "Stopping reports.\nDone!");
+}
+
+#[test]
+fn test_strip_suppress_section_markers_both() {
+    let text = "Response.\nHEARTBEAT_SUPPRESS_SECTION: A\nHEARTBEAT_UNSUPPRESS_SECTION: B\nEnd.";
+    let result = strip_suppress_section_markers(text);
+    assert_eq!(result, "Response.\nEnd.");
+}
+
+#[test]
+fn test_strip_all_remaining_markers_includes_suppress_section() {
+    let text = "Hello. HEARTBEAT_SUPPRESS_SECTION: TRADING\nMore text.";
+    let result = strip_all_remaining_markers(text);
+    assert!(!result.contains("HEARTBEAT_SUPPRESS_SECTION:"));
+    assert!(result.contains("Hello."));
+    assert!(result.contains("More text."));
+}
+
+#[test]
+fn test_strip_all_remaining_markers_includes_unsuppress_section() {
+    let text = "Hello. HEARTBEAT_UNSUPPRESS_SECTION: TRADING\nMore text.";
+    let result = strip_all_remaining_markers(text);
+    assert!(!result.contains("HEARTBEAT_UNSUPPRESS_SECTION:"));
 }
 
 // --- Classification context ---

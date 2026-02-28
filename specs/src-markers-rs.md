@@ -23,6 +23,7 @@ Each marker type has extract/parse/strip/has functions:
 - **PROJECT_ACTIVATE/DEACTIVATE**: `extract_project_activate`, `has_project_deactivate`, `strip_project_markers`
 - **WHATSAPP_QR**: `has_whatsapp_qr_marker`, `strip_whatsapp_qr_marker`
 - **HEARTBEAT_ADD/REMOVE/INTERVAL**: `extract_heartbeat_markers`, `strip_heartbeat_markers`, `apply_heartbeat_changes(actions, project)`, `read_heartbeat_file()`, `read_project_heartbeat_file(project_name)`
+- **HEARTBEAT_SUPPRESS_SECTION/UNSUPPRESS_SECTION**: `extract_suppress_section_markers`, `strip_suppress_section_markers`, `apply_suppress_actions(actions, project)`, `add_suppression(section, project)`, `remove_suppression(section, project)`, `read_suppress_file(project)`, `filter_suppressed_sections(content, project)`, `parse_heartbeat_sections(content)`
 - **SKILL_IMPROVE**: `extract_skill_improve`, `parse_skill_improve_line`, `strip_skill_improve`, `apply_skill_improve`
 - **BUG_REPORT**: `extract_bug_report`, `strip_bug_report`, `append_bug_report`
 - **ACTION_OUTCOME**: `extract_action_outcome`, `strip_action_outcome`
@@ -44,6 +45,7 @@ Each marker type has extract/parse/strip/has functions:
 
 ## Types
 - `HeartbeatAction` enum: `Add(String)`, `Remove(String)`, `SetInterval(u64)`
+- `SuppressAction` enum: `Suppress(String)`, `Unsuppress(String)`
 - `ActionOutcome` enum: `Success`, `Failed(String)`
 - `InboxGuard` struct -- RAII guard wrapping `Vec<PathBuf>`, calls `cleanup_inbox_images()` on Drop
 

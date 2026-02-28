@@ -159,6 +159,28 @@ Omega will emit a `HEARTBEAT_INTERVAL:` marker with the new value (in minutes, 1
 
 The interval change is automatically persisted to `config.toml` via text-based patching (preserves comments and formatting). The value survives service restarts.
 
+### Suppressing Entire Sections
+
+When a heartbeat checklist has `## SECTION_NAME` headers, you can suppress an entire section through conversation:
+
+- "Stop sending trading reports"
+- "No more health reminders"
+- "Re-enable trading reports"
+
+Omega emits `HEARTBEAT_SUPPRESS_SECTION: <section-name>` or `HEARTBEAT_UNSUPPRESS_SECTION: <section-name>`. The gateway stores suppressed section names in a companion file (`HEARTBEAT.suppress`) next to `HEARTBEAT.md`. On each heartbeat cycle, suppressed sections are **physically removed** from the content before it reaches the AI provider — this is a code-enforced gate, not a prompt suggestion.
+
+This is stronger than a LESSON marker. A lesson is advisory text injected into the prompt, which can be overpowered by detailed section instructions. Section suppression removes the instructions entirely — the AI never sees them.
+
+**Section matching:** The section name is extracted from the `##` header text before any ` — ` (em-dash). For example, `## TRADING — Autonomous Engine` matches section name `TRADING`. Matching is case-insensitive.
+
+**Persistence:** Suppressed sections persist across service restarts (file-based). The suppress file is located at:
+- Global: `~/.omega/prompts/HEARTBEAT.suppress`
+- Per-project: `~/.omega/projects/<name>/HEARTBEAT.suppress`
+
+**Default:** If no suppress file exists, all sections are active (unchanged behavior).
+
+**All sections suppressed:** If every section is suppressed, the heartbeat skips the cycle entirely (no AI call), equivalent to an empty checklist.
+
 ### How It Works Under the Hood
 
 1. The current heartbeat checklist is injected into the system prompt so the provider knows what is already being monitored.

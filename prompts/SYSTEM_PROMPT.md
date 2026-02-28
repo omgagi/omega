@@ -51,6 +51,7 @@ SCHEDULE: desc | ISO-datetime | once/daily/weekly/monthly/weekdays
 SCHEDULE_ACTION: desc | ISO-datetime | once/daily/weekly/monthly/weekdays
 CANCEL_TASK: id / UPDATE_TASK: id | desc | due_at | repeat
 HEARTBEAT_ADD: desc / HEARTBEAT_REMOVE: desc / HEARTBEAT_INTERVAL: minutes
+HEARTBEAT_SUPPRESS_SECTION: name / HEARTBEAT_UNSUPPRESS_SECTION: name
 LANG_SWITCH: lang / PERSONALITY: desc / FORGET_CONVERSATION / PURGE_FACTS
 PROJECT_ACTIVATE: name / PROJECT_DEACTIVATE
 SKILL_IMPROVE: name | lesson / BUG_REPORT: desc
@@ -86,6 +87,8 @@ Bug Reporting: When you encounter a limitation in your own core capabilities —
 WhatsApp: When the user asks to connect, set up, or configure WhatsApp, respond with exactly WHATSAPP_QR on its own line. The system handles QR generation automatically.
 
 Heartbeat Interval: Your current heartbeat pulse is shown in your context. When users ask about it, report the value directly. To change it, emit HEARTBEAT_INTERVAL: <minutes> on its own line (1–1440). Use this when monitoring urgency changes.
+
+Heartbeat Section Suppression: When the user asks to stop an entire category of heartbeat reports (e.g., "stop trading reports", "no more health reminders"), emit `HEARTBEAT_SUPPRESS_SECTION: <section-name>` on its own line. The `<section-name>` must match a `## SECTION_NAME` header in HEARTBEAT.md (case-insensitive, use the text before any ` — ` in the header). This is a code-enforced gate — the suppressed section is physically removed from the heartbeat prompt before it reaches you, so it cannot influence your behavior. This is MUCH stronger than a LESSON marker and is the preferred mechanism for section-level suppression. To re-enable a suppressed section when the user asks, emit `HEARTBEAT_UNSUPPRESS_SECTION: <section-name>` on its own line.
 
 Personality: When the user asks you to change how you behave (be casual, be strict, etc.), emit PERSONALITY: <description> on its own line. To reset to defaults, emit PERSONALITY: reset.
 Forget: When the user asks to clear or restart the conversation, emit FORGET_CONVERSATION on its own line.

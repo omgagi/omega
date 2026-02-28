@@ -336,6 +336,18 @@ impl Gateway {
             *text = strip_heartbeat_markers(text);
         }
 
+        // HEARTBEAT_SUPPRESS_SECTION / HEARTBEAT_UNSUPPRESS_SECTION
+        let suppress_actions = extract_suppress_section_markers(text);
+        if !suppress_actions.is_empty() {
+            let hb_project = if project.is_empty() {
+                None
+            } else {
+                Some(project)
+            };
+            apply_suppress_actions(&suppress_actions, hb_project);
+            *text = strip_suppress_section_markers(text);
+        }
+
         // SKILL_IMPROVE + BUG_REPORT
         self.process_improvement_markers(text, &mut marker_results);
 
