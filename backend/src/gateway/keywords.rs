@@ -87,11 +87,33 @@ pub(super) const PROJECTS_KW: &[&str] = &[
     "project",
     "activate",
     "deactivate",
+    // es
     "proyecto",
+    "activar",
+    "desactivar",
+    // pt
     "projeto",
+    "ativar",
+    "desativar",
+    // fr
     "projet",
+    "activer",
+    "désactiver",
+    // de
     "projekt",
+    "aktivieren",
+    "deaktivieren",
+    // it
     "progetto",
+    "attivare",
+    "disattivare",
+    // nl
+    "activeren",
+    "deactiveren",
+    // ru
+    "проект",
+    "активировать",
+    "деактивировать",
 ];
 
 /// Keywords that trigger user profile injection into the system prompt.
@@ -831,6 +853,28 @@ mod tests {
     fn test_kw_match_projects() {
         assert!(kw_match("activate the trader project", PROJECTS_KW));
         assert!(kw_match("deactivate project", PROJECTS_KW));
+        // es
+        assert!(kw_match("activar el proyecto trader", PROJECTS_KW));
+        assert!(kw_match("desactivar proyecto", PROJECTS_KW));
+        // pt
+        assert!(kw_match("ativar o projeto trader", PROJECTS_KW));
+        assert!(kw_match("desativar projeto", PROJECTS_KW));
+        // fr
+        assert!(kw_match("activer le projet trader", PROJECTS_KW));
+        assert!(kw_match("désactiver projet", PROJECTS_KW));
+        // de
+        assert!(kw_match("aktivieren das projekt trader", PROJECTS_KW));
+        assert!(kw_match("deaktivieren projekt", PROJECTS_KW));
+        // it
+        assert!(kw_match("attivare il progetto trader", PROJECTS_KW));
+        assert!(kw_match("disattivare progetto", PROJECTS_KW));
+        // nl
+        assert!(kw_match("activeren het project trader", PROJECTS_KW));
+        assert!(kw_match("deactiveren project", PROJECTS_KW));
+        // ru
+        assert!(kw_match("активировать проект trader", PROJECTS_KW));
+        assert!(kw_match("деактивировать проект", PROJECTS_KW));
+        // negative
         assert!(!kw_match("hello there", PROJECTS_KW));
     }
 
