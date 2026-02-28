@@ -2,7 +2,7 @@
 //! /whatsapp, /heartbeat.
 
 use crate::i18n;
-use crate::markers::read_heartbeat_file;
+use crate::markers::{read_heartbeat_file, read_project_heartbeat_file};
 use omega_memory::Store;
 
 pub(super) async fn handle_language(
@@ -170,7 +170,15 @@ pub(super) fn handle_whatsapp() -> String {
 }
 
 /// Handle /heartbeat — show heartbeat status, interval, and watchlist items.
-pub(super) fn handle_heartbeat(enabled: bool, interval_mins: u64, lang: &str) -> String {
+///
+/// When `active_project` is `Some`, reads the project-specific heartbeat file
+/// first and falls back to the global file if the project has none.
+pub(super) fn handle_heartbeat(
+    enabled: bool,
+    interval_mins: u64,
+    active_project: Option<&str>,
+    lang: &str,
+) -> String {
     let status_label = i18n::t("heartbeat_status", lang);
     let status_value = if enabled {
         i18n::t("heartbeat_enabled", lang)
@@ -188,7 +196,12 @@ pub(super) fn handle_heartbeat(enabled: bool, interval_mins: u64, lang: &str) ->
         i18n::t("heartbeat_minutes", lang),
     );
 
-    match read_heartbeat_file() {
+    let checklist = match active_project {
+        Some(proj) => read_project_heartbeat_file(proj).or_else(read_heartbeat_file),
+        None => read_heartbeat_file(),
+    };
+
+    match checklist {
         Some(content) => {
             out.push_str(&format!(
                 "\n\n{}\n{}",

@@ -132,7 +132,15 @@ impl Gateway {
             }
         }
 
-        // --- 3. COMMAND DISPATCH ---
+        // --- 3. ACTIVE PROJECT (needed by commands + pipeline) ---
+        let active_project: Option<String> = self
+            .memory
+            .get_fact(&incoming.sender_id, "active_project")
+            .await
+            .ok()
+            .flatten();
+
+        // --- 3a. COMMAND DISPATCH ---
         let projects = omega_skills::load_projects(&self.data_dir);
         if let Some(cmd) = commands::Command::parse(&clean_incoming.text) {
             if matches!(cmd, commands::Command::Forget) {
@@ -199,6 +207,7 @@ impl Gateway {
                 projects: &projects,
                 heartbeat_enabled: self.heartbeat_config.enabled,
                 heartbeat_interval_mins: self.heartbeat_interval.load(Ordering::Relaxed),
+                active_project: active_project.as_deref(),
             };
             let response = commands::handle(cmd, &ctx).await;
 
@@ -232,12 +241,6 @@ impl Gateway {
         };
 
         // --- 4. BUILD CONTEXT FROM MEMORY ---
-        let active_project: Option<String> = self
-            .memory
-            .get_fact(&incoming.sender_id, "active_project")
-            .await
-            .ok()
-            .flatten();
 
         // --- 4a-SETUP. PENDING SETUP SESSION CHECK (REQ-BRAIN-012) ---
         let pending_setup: Option<String> = self
@@ -982,7 +985,13 @@ impl Gateway {
                 .iter()
                 .any(|kw| msg_lower.contains(kw));
             if needs_heartbeat {
-                if let Some(checklist) = read_heartbeat_file() {
+                let checklist = match active_project {
+                    Some(proj) => {
+                        read_project_heartbeat_file(proj).or_else(read_heartbeat_file)
+                    }
+                    None => read_heartbeat_file(),
+                };
+                if let Some(checklist) = checklist {
                     prompt.push_str(
                         "\n\nCurrent heartbeat checklist (items monitored periodically):\n",
                     );

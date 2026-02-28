@@ -255,7 +255,7 @@ fn test_parse_heartbeat_command() {
 
 #[test]
 fn test_heartbeat_enabled() {
-    let result = settings::handle_heartbeat(true, 30, "English");
+    let result = settings::handle_heartbeat(true, 30, None, "English");
     assert!(result.contains("Heartbeat"), "should have header: {result}");
     assert!(result.contains("active"), "should show active: {result}");
     assert!(result.contains("30"), "should show interval: {result}");
@@ -267,7 +267,7 @@ fn test_heartbeat_enabled() {
 
 #[test]
 fn test_heartbeat_disabled() {
-    let result = settings::handle_heartbeat(false, 15, "English");
+    let result = settings::handle_heartbeat(false, 15, None, "English");
     assert!(
         result.contains("disabled"),
         "should show disabled: {result}"
@@ -276,7 +276,7 @@ fn test_heartbeat_disabled() {
 
 #[test]
 fn test_heartbeat_localized() {
-    let result = settings::handle_heartbeat(true, 60, "Spanish");
+    let result = settings::handle_heartbeat(true, 60, None, "Spanish");
     assert!(
         result.contains("activo"),
         "should show Spanish status: {result}"
@@ -284,6 +284,19 @@ fn test_heartbeat_localized() {
     assert!(
         result.contains("Intervalo:"),
         "should show Spanish interval label: {result}"
+    );
+}
+
+#[test]
+fn test_heartbeat_with_nonexistent_project_falls_back_to_global() {
+    // A project that doesn't exist should fall back to global heartbeat
+    // (same behavior as None since the project file won't exist)
+    let with_project =
+        settings::handle_heartbeat(true, 30, Some("nonexistent-project-xyz"), "English");
+    let without_project = settings::handle_heartbeat(true, 30, None, "English");
+    assert_eq!(
+        with_project, without_project,
+        "nonexistent project should fall back to global"
     );
 }
 

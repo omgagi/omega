@@ -23,6 +23,7 @@ pub struct CommandContext<'a> {
     pub projects: &'a [omega_skills::Project],
     pub heartbeat_enabled: bool,
     pub heartbeat_interval_mins: u64,
+    pub active_project: Option<&'a str>,
 }
 
 /// Known bot commands.
@@ -126,9 +127,12 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
         }
         Command::Purge => tasks::handle_purge(ctx.store, ctx.sender_id, &lang).await,
         Command::WhatsApp => settings::handle_whatsapp(),
-        Command::Heartbeat => {
-            settings::handle_heartbeat(ctx.heartbeat_enabled, ctx.heartbeat_interval_mins, &lang)
-        }
+        Command::Heartbeat => settings::handle_heartbeat(
+            ctx.heartbeat_enabled,
+            ctx.heartbeat_interval_mins,
+            ctx.active_project,
+            &lang,
+        ),
         Command::Learning => learning::handle_learning(ctx.store, ctx.sender_id, &lang).await,
         // Setup is intercepted early in pipeline.rs -- this arm is a fallback.
         Command::Setup => status::handle_help(&lang),
