@@ -173,6 +173,13 @@ pub fn load_skills(data_dir: &str) -> Vec<Skill> {
         if !path.is_dir() {
             continue;
         }
+        // Path traversal guard: ensure the entry is still under the skills directory.
+        let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        let canonical_dir = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+        if !canonical.starts_with(&canonical_dir) {
+            warn!("skills: path traversal blocked for {}", path.display());
+            continue;
+        }
         let skill_file = path.join("SKILL.md");
         let content = match std::fs::read_to_string(&skill_file) {
             Ok(c) => c,

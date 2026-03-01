@@ -1,5 +1,6 @@
 use super::qr::{generate_qr_image, generate_qr_terminal};
-use super::send::{sanitize_for_whatsapp, split_message, RETRY_DELAYS_MS};
+use super::send::{sanitize_for_whatsapp, RETRY_DELAYS_MS};
+use crate::utils::split_message;
 use wacore_binary::jid::{Jid, JidExt};
 
 #[test]

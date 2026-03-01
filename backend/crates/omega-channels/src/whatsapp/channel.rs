@@ -1,7 +1,8 @@
 //! Channel trait implementation for WhatsApp.
 
-use super::send::{retry_send, sanitize_for_whatsapp, split_message};
+use super::send::{retry_send, sanitize_for_whatsapp};
 use super::WhatsAppChannel;
+use crate::utils::split_message;
 use async_trait::async_trait;
 use omega_core::{
     error::OmegaError,

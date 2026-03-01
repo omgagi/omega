@@ -67,6 +67,7 @@ impl WhatsAppChannel {
         let client_for_event = client_handle.clone();
         let sent_ids_for_event = self.sent_ids.clone();
         let whisper_api_key = self.config.whisper_api_key.clone();
+        let http_client = reqwest::Client::new();
         let qr_tx_handle = self.qr_tx.clone();
         let pair_done_tx_handle = self.pair_done_tx.clone();
         let last_qr_handle = self.last_qr.clone();
@@ -86,6 +87,7 @@ impl WhatsAppChannel {
                 let client_store = client_for_event.clone();
                 let sent_ids = sent_ids_for_event.clone();
                 let whisper_key = whisper_api_key.clone();
+                let http = http_client.clone();
                 let qr_fwd = qr_tx_handle.clone();
                 let pair_done_fwd = pair_done_tx_handle.clone();
                 let last_qr_buf = last_qr_handle.clone();
@@ -136,6 +138,7 @@ impl WhatsAppChannel {
                                 &client_store,
                                 &sent_ids,
                                 &whisper_key,
+                                &http,
                             )
                             .await;
                         }

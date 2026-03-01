@@ -12,6 +12,7 @@ use whatsapp_rust::client::Client;
 ///
 /// Handles filtering (self-chat vs group, auth, echo prevention),
 /// message unwrapping, image/voice downloads, and forwarding to the gateway.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_whatsapp_message(
     msg: waproto::whatsapp::Message,
     info: wacore::types::message::MessageInfo,
@@ -20,6 +21,7 @@ pub(super) async fn handle_whatsapp_message(
     client_store: &Arc<Mutex<Option<Arc<Client>>>>,
     sent_ids: &Arc<Mutex<HashSet<String>>>,
     whisper_key: &Option<String>,
+    http_client: &reqwest::Client,
 ) {
     let is_group = info.source.is_group;
 
@@ -124,8 +126,9 @@ pub(super) async fn handle_whatsapp_message(
                     if let Some(wa_client) = wa_client {
                         match wa_client.download(audio.as_ref()).await {
                             Ok(bytes) => {
-                                let http = reqwest::Client::new();
-                                match crate::whisper::transcribe_whisper(&http, key, &bytes).await {
+                                match crate::whisper::transcribe_whisper(http_client, key, &bytes)
+                                    .await
+                                {
                                     Ok(transcript) => {
                                         let secs = audio.seconds.unwrap_or(0);
                                         info!("transcribed whatsapp voice ({secs}s)");

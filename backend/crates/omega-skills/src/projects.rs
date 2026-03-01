@@ -83,6 +83,13 @@ pub fn load_projects(data_dir: &str) -> Vec<Project> {
         if !path.is_dir() {
             continue;
         }
+        // Path traversal guard: ensure the entry is still under the projects directory.
+        let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        let canonical_dir = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+        if !canonical.starts_with(&canonical_dir) {
+            warn!("projects: path traversal blocked for {}", path.display());
+            continue;
+        }
         let instructions_path = path.join("ROLE.md");
         let content = match std::fs::read_to_string(&instructions_path) {
             Ok(c) => c,

@@ -37,8 +37,10 @@ pub(crate) struct TgVoice {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub(crate) struct TgFile {
     pub file_path: Option<String>,
+    pub file_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

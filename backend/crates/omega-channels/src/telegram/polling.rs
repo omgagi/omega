@@ -292,9 +292,23 @@ async fn download_telegram_file(
         .await
         .map_err(|e| OmegaError::Channel(format!("telegram getFile parse failed: {e}")))?;
 
-    let file_path = resp
+    // Telegram Bot API file size limit (20 MB).
+    const MAX_FILE_SIZE: i64 = 20 * 1024 * 1024;
+
+    let tg_file = resp
         .result
-        .and_then(|f| f.file_path)
+        .ok_or_else(|| OmegaError::Channel("telegram getFile returned no result".into()))?;
+
+    if let Some(size) = tg_file.file_size {
+        if size > MAX_FILE_SIZE {
+            return Err(OmegaError::Channel(format!(
+                "telegram file too large ({size} bytes, max {MAX_FILE_SIZE})"
+            )));
+        }
+    }
+
+    let file_path = tg_file
+        .file_path
         .ok_or_else(|| OmegaError::Channel("telegram getFile returned no file_path".into()))?;
 
     // Step 2: Download the actual file bytes.

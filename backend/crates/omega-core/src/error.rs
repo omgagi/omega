@@ -31,3 +31,37 @@ pub enum OmegaError {
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_io_error_display() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let omega_err = OmegaError::from(io_err);
+        let display = format!("{omega_err}");
+        assert!(
+            display.contains("io error"),
+            "expected 'io error' in display, got: {display}"
+        );
+        assert!(
+            display.contains("file missing"),
+            "expected 'file missing' in display, got: {display}"
+        );
+    }
+
+    #[test]
+    fn test_channel_error_display() {
+        let err = OmegaError::Channel("test".into());
+        let display = format!("{err}");
+        assert_eq!(display, "channel error: test");
+    }
+
+    #[test]
+    fn test_config_error_display() {
+        let err = OmegaError::Config("test".into());
+        let display = format!("{err}");
+        assert_eq!(display, "config error: test");
+    }
+}

@@ -158,7 +158,7 @@ cargo build --release        # Optimized binary
 - **No `unwrap()`** — use `?` and proper error types. Never panic in production code.
 - **Tracing, not `println!`** — use `tracing` crate for all logging.
 - **CLI UX uses `cliclack`** — styled prompts for interactive flows. No plain `println!`.
-- **No `unsafe`** unless absolutely necessary (only exception: `libc::geteuid()` for root detection).
+- **No `unsafe`** unless absolutely necessary (exceptions: `libc::geteuid()` for root detection, `CommandExt::pre_exec` for Landlock sandbox).
 - **Async everywhere** — tokio runtime, all I/O is async.
 - **SQLite for everything** — memory, audit, state. No external database.
 - **Config from file + env** — TOML primary, environment variables override.

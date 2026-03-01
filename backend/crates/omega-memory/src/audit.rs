@@ -96,6 +96,79 @@ fn truncate(s: &str, max: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use sqlx::Row;
+    use std::str::FromStr;
+
+    /// Create an in-memory SQLite pool with the audit_log table.
+    async fn test_pool() -> SqlitePool {
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+            .unwrap()
+            .create_if_missing(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
+        sqlx::raw_sql(include_str!("../migrations/002_audit_log.sql"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_audit_logger_log_inserts_entry() {
+        let pool = test_pool().await;
+        let logger = AuditLogger::new(pool.clone());
+
+        let entry = AuditEntry {
+            channel: "telegram".to_string(),
+            sender_id: "user42".to_string(),
+            sender_name: Some("Alice".to_string()),
+            input_text: "hello omega".to_string(),
+            output_text: Some("hi there".to_string()),
+            provider_used: Some("claude-code".to_string()),
+            model: Some("sonnet".to_string()),
+            processing_ms: Some(123),
+            status: AuditStatus::Ok,
+            denial_reason: None,
+        };
+
+        logger.log(&entry).await.unwrap();
+
+        // Verify the row was inserted.
+        let row = sqlx::query("SELECT channel, sender_id, sender_name, input_text, output_text, provider_used, model, processing_ms, status, denial_reason FROM audit_log LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(row.get::<String, _>("channel"), "telegram");
+        assert_eq!(row.get::<String, _>("sender_id"), "user42");
+        assert_eq!(
+            row.get::<Option<String>, _>("sender_name"),
+            Some("Alice".to_string())
+        );
+        assert_eq!(row.get::<String, _>("input_text"), "hello omega");
+        assert_eq!(
+            row.get::<Option<String>, _>("output_text"),
+            Some("hi there".to_string())
+        );
+        assert_eq!(
+            row.get::<Option<String>, _>("provider_used"),
+            Some("claude-code".to_string())
+        );
+        assert_eq!(
+            row.get::<Option<String>, _>("model"),
+            Some("sonnet".to_string())
+        );
+        assert_eq!(row.get::<Option<i64>, _>("processing_ms"), Some(123));
+        assert_eq!(row.get::<String, _>("status"), "ok");
+        assert_eq!(
+            row.get::<Option<String>, _>("denial_reason"),
+            None::<String>
+        );
+    }
 
     #[test]
     fn test_truncate_ascii() {

@@ -80,6 +80,7 @@ impl AppSyncStore for SqlxWhatsAppStore {
         version: u64,
         mutations: &[AppStateMutationMAC],
     ) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
         for m in mutations {
             sqlx::query(
                 "INSERT OR REPLACE INTO wa_mutation_macs (collection, index_mac, version, value_mac) VALUES (?, ?, ?, ?)",
@@ -88,10 +89,11 @@ impl AppSyncStore for SqlxWhatsAppStore {
             .bind(&m.index_mac)
             .bind(version as i64)
             .bind(&m.value_mac)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(db_err)?;
         }
+        tx.commit().await.map_err(db_err)?;
         Ok(())
     }
 
@@ -108,14 +110,16 @@ impl AppSyncStore for SqlxWhatsAppStore {
     }
 
     async fn delete_mutation_macs(&self, name: &str, index_macs: &[Vec<u8>]) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
         for mac in index_macs {
             sqlx::query("DELETE FROM wa_mutation_macs WHERE collection = ? AND index_mac = ?")
                 .bind(name)
                 .bind(mac)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(db_err)?;
         }
+        tx.commit().await.map_err(db_err)?;
         Ok(())
     }
 }

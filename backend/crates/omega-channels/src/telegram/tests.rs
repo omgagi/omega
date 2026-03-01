@@ -1,7 +1,7 @@
 //! Tests for the Telegram channel module.
 
-use super::send::split_message;
 use super::types::*;
+use crate::utils::split_message;
 
 #[test]
 fn test_split_short_message() {

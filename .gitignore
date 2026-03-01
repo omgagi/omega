@@ -3,7 +3,6 @@
 *.db
 backend/config.toml
 .env
-com.ilozada.omega.plist
 .direnv/
 result
 openclaw/

@@ -24,16 +24,18 @@ impl ProtocolStore for SqlxWhatsAppStore {
     }
 
     async fn add_skdm_recipients(&self, group_jid: &str, device_jids: &[String]) -> Result<()> {
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
         for device in device_jids {
             sqlx::query(
                 "INSERT OR IGNORE INTO wa_skdm_recipients (group_jid, device_jid) VALUES (?, ?)",
             )
             .bind(group_jid)
             .bind(device)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(db_err)?;
         }
+        tx.commit().await.map_err(db_err)?;
         Ok(())
     }
 
