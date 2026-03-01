@@ -1,10 +1,23 @@
 # Technical Specification: Claude Code CLI Provider
 
-**File:** `backend/crates/omega-providers/src/claude_code.rs`
+**Directory:** `backend/crates/omega-providers/src/claude_code/` (5-file directory module: mod.rs, command.rs, provider.rs, response.rs, mcp.rs, tests.rs)
 
 **Module:** `omega_providers::claude_code`
 
 **Purpose:** Implements the `Provider` trait from `omega-core` by invoking the locally installed `claude` CLI as an async subprocess. This is the default, zero-config AI backend for Omega -- it requires no API keys and relies on the user's existing Claude Code authentication.
+
+---
+
+## Module Structure
+
+| File | Purpose |
+|------|---------|
+| `mod.rs` | Module root: struct definitions (`ClaudeCodeProvider`, `ClaudeCliResponse`), `new()`, `from_config()`, `check_cli()`, `Default` impl, re-export of `mcp_tool_patterns` |
+| `command.rs` | CLI command building and subprocess execution: `build_run_cli_args()`, `run_cli()`, `run_cli_with_session()`, `base_command()`, `execute_with_timeout()` |
+| `provider.rs` | `Provider` trait implementation with auto-resume logic: `complete()`, `is_available()`, `auto_resume()` |
+| `response.rs` | JSON response parsing and diagnostic logging: `parse_response()` |
+| `mcp.rs` | MCP server settings management: `write_mcp_settings()`, `cleanup_mcp_settings()`, `mcp_tool_patterns()` |
+| `tests.rs` | All unit tests for the module |
 
 ---
 
@@ -17,10 +30,11 @@
 | `omega_core::error` | `OmegaError` |
 | `omega_core::message` | `MessageMetadata`, `OutgoingMessage` |
 | `omega_core::traits` | `Provider` trait |
+| `omega_sandbox` | `protected_command()` for filesystem protection |
 | `serde` | `Deserialize` |
 | `std::time` | `Duration`, `Instant` |
 | `tokio::process` | `Command` |
-| `tracing` | `debug`, `warn` |
+| `tracing` | `debug`, `info`, `warn`, `error` |
 | `std::path` | `Path`, `PathBuf` |
 
 ---
@@ -33,16 +47,16 @@ Public struct. The provider that wraps the Claude Code CLI. Session continuity i
 
 | Field | Type | Visibility | Description |
 |-------|------|------------|-------------|
-| `max_turns` | `u32` | Private | Maximum number of agentic turns the CLI is allowed per single invocation. Default: `10`. |
+| `max_turns` | `u32` | Private | Maximum number of agentic turns the CLI is allowed per single invocation. Default: `25`. |
 | `allowed_tools` | `Vec<String>` | Private | List of tool names the CLI is permitted to use. Default: `[]` (empty = full tool access, `--dangerously-skip-permissions` passed to bypass all permission prompts since the OS-level system protection provides the real security boundary). When non-empty, each tool is passed as a separate `--allowedTools` argument. |
 | `timeout` | `Duration` | Private | Maximum time to wait for the CLI subprocess to complete. Constructed from `Duration::from_secs(timeout_secs)`. Default: `3600` seconds (60 minutes). |
 | `working_dir` | `Option<PathBuf>` | Private | Optional working directory for the CLI subprocess. When `Some`, sets the `current_dir` on the subprocess `Command`. Always set to `~/.omega/workspace/` in normal operation. Default: `None`. |
 | `max_resume_attempts` | `u32` | Private | Maximum number of auto-resume attempts when the CLI hits `error_max_turns` with a `session_id`. Default: `5`. |
-| `model` | `String` | Private | Default model to pass to the CLI via `--model`. Can be overridden per-request by `Context.model`. Default: `"claude-sonnet-4-6"`. |
+| `model` | `String` | Private | Default model to pass to the CLI via `--model`. Can be overridden per-request by `Context.model`. Default: `""` (empty, no `--model` flag passed). |
 
 ### `ClaudeCliResponse`
 
-Private struct. Deserializes the JSON output from `claude -p --output-format json`.
+Private struct (in mod.rs). Deserializes the JSON output from `claude -p --output-format json`.
 
 | Field | Type | Serde Attributes | Description |
 |-------|------|-------------------|-------------|
@@ -50,13 +64,11 @@ Private struct. Deserializes the JSON output from `claude -p --output-format jso
 | `subtype` | `Option<String>` | `#[serde(default)]` | Result subtype. Known values: `"success"`, `"error_max_turns"`. |
 | `result` | `Option<String>` | `#[serde(default)]` | The actual text content of the response. |
 | `is_error` | `bool` | `#[serde(default)]` | Whether the response is an error. Defaults to `false`. |
-| `cost_usd` | `Option<f64>` | `#[serde(default)]` | Cost of this invocation in USD. |
-| `total_cost_usd` | `Option<f64>` | `#[serde(default)]` | Cumulative session cost in USD. |
 | `session_id` | `Option<String>` | `#[serde(default)]` | Session ID returned by the CLI. |
 | `model` | `Option<String>` | `#[serde(default)]` | Model identifier used (e.g., `"claude-sonnet-4-20250514"`). |
 | `num_turns` | `Option<u32>` | `#[serde(default)]` | Number of agentic turns consumed. |
 
-**Note:** The struct is annotated with `#[allow(dead_code)]` because some fields (e.g., `cost_usd`, `total_cost_usd`, `num_turns`) are deserialized but not currently read. They exist for future use and diagnostic purposes.
+**Note:** The `cost_usd` and `total_cost_usd` fields from the CLI JSON output are not deserialized -- the struct only captures fields that are actively used.
 
 ---
 
@@ -68,38 +80,24 @@ Private struct. Deserializes the JSON output from `claude -p --output-format jso
 
 Constructs a new `ClaudeCodeProvider` with default settings:
 
-- `max_turns`: `10`
+- `max_turns`: `25`
 - `allowed_tools`: `[]` (full tool access)
 - `timeout`: `Duration::from_secs(3600)` (60 minutes)
 - `working_dir`: `None`
 - `max_resume_attempts`: `5`
 - `model`: `""` (empty, no `--model` flag passed)
 
-```rust
-pub fn new() -> Self
-```
-
-### `ClaudeCodeProvider::from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64, working_dir: Option<PathBuf>, max_resume_attempts: u32, model: String) -> Self`
+### `ClaudeCodeProvider::from_config(max_turns, allowed_tools, timeout_secs, working_dir, max_resume_attempts, model) -> Self`
 
 **Visibility:** Public
 
-Constructs a `ClaudeCodeProvider` from explicit configuration values. Sets `timeout` to `Duration::from_secs(timeout_secs)`, `working_dir` to the provided value, `max_resume_attempts` to the provided value, and `model` to the provided value.
-
-```rust
-pub fn from_config(max_turns: u32, allowed_tools: Vec<String>, timeout_secs: u64, working_dir: Option<PathBuf>, max_resume_attempts: u32, model: String) -> Self
-```
+Constructs a `ClaudeCodeProvider` from explicit configuration values.
 
 ### `ClaudeCodeProvider::check_cli() -> bool` (async)
 
 **Visibility:** Public (associated function, no `&self`)
 
-Checks whether the `claude` CLI binary is installed and accessible by running `claude --version`. Returns `true` if the process exits successfully, `false` otherwise (including if the binary is not found).
-
-```rust
-pub async fn check_cli() -> bool
-```
-
-**Behavior:** Spawns `claude --version` via `tokio::process::Command`. On any I/O error (e.g., binary not found), returns `false` via `unwrap_or(false)`.
+Checks whether the `claude` CLI binary is installed and accessible by running `claude --version`. Returns `true` if the process exits successfully, `false` otherwise.
 
 ### `Default for ClaudeCodeProvider`
 
@@ -107,56 +105,65 @@ Delegates to `Self::new()`.
 
 ### `mcp_tool_patterns(servers: &[McpServer]) -> Vec<String>`
 
-**Visibility:** Public (free function)
+**Visibility:** Public (free function in `mcp.rs`, re-exported from mod.rs)
 
 Generates `--allowedTools` wildcard patterns from MCP servers. Each server produces a pattern of the form `mcp__<name>__*`.
 
-```rust
-pub fn mcp_tool_patterns(servers: &[McpServer]) -> Vec<String>
-```
-
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `servers` | `&[McpServer]` | Slice of MCP server definitions. |
-
-**Returns:** A `Vec<String>` of tool patterns (e.g., `["mcp__playwright__*"]`). Empty input produces empty output.
-
 ### `write_mcp_settings(workspace: &Path, servers: &[McpServer]) -> Result<PathBuf, OmegaError>`
 
-**Visibility:** Private
+**Visibility:** `pub(super)` (in `mcp.rs`)
 
-Creates `{workspace}/.claude/settings.local.json` with MCP server configuration. Creates the `.claude/` directory if it does not exist.
-
-```rust
-fn write_mcp_settings(workspace: &Path, servers: &[McpServer]) -> Result<PathBuf, OmegaError>
-```
-
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `workspace` | `&Path` | The workspace directory (e.g., `~/.omega/workspace/`). |
-| `servers` | `&[McpServer]` | MCP servers to configure. |
-
-**Returns:** `Ok(PathBuf)` with the path to the written settings file, or `Err(OmegaError)` on I/O failure.
+Creates `{workspace}/.claude/settings.local.json` with MCP server configuration.
 
 ### `cleanup_mcp_settings(path: &Path)`
 
-**Visibility:** Private
+**Visibility:** `pub(super)` (in `mcp.rs`)
 
 Removes the temporary MCP settings file. Logs a warning on failure instead of panicking.
 
-```rust
-fn cleanup_mcp_settings(path: &Path)
-```
+### `build_run_cli_args(...)` (in `command.rs`)
 
-**Parameters:**
+**Visibility:** `pub(super)`
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `path` | `&Path` | Path to the settings file to remove. |
+Pure function that constructs the CLI argument vector for `run_cli()`. Extracted for testability. Takes prompt, extra_allowed_tools, max_turns, allowed_tools, model, context_disabled_tools, session_id, and agent_name. Returns `Vec<String>`.
+
+Agent name validation: rejects names containing `/`, `\`, or `..` to prevent path traversal attacks via the `--agent` flag.
+
+### `run_cli(...)` (in `command.rs`)
+
+**Visibility:** `pub(super)`
+
+Assembles and executes the `claude` CLI subprocess with timeout. Uses `base_command()` for working directory and sandbox setup, then applies arguments from `build_run_cli_args()`.
+
+### `run_cli_with_session(...)` (in `command.rs`)
+
+**Visibility:** `pub(super)`
+
+Executes the `claude` CLI subprocess with an explicit `--resume` argument. Called by the auto-resume loop.
+
+### `base_command()` (in `command.rs`)
+
+**Visibility:** Private
+
+Builds the base `Command` with working directory and system protection via `omega_sandbox::protected_command()`. Removes the `CLAUDECODE` environment variable.
+
+### `execute_with_timeout(...)` (in `command.rs`)
+
+**Visibility:** Private
+
+Executes a command with the configured timeout and standard error handling (non-zero exit, timeout).
+
+### `parse_response(...)` (in `response.rs`)
+
+**Visibility:** `pub(super)`
+
+Parses the JSON response from Claude Code CLI with diagnostic logging. Returns `(text, model)` tuple.
+
+### `auto_resume(...)` (in `provider.rs`)
+
+**Visibility:** Private
+
+Auto-resume loop when Claude hits max_turns. Retries up to `max_resume_attempts` times with exponential backoff (2s, 4s, 8s, ...), accumulating results. Skipped when `context.max_turns` is explicitly set by the caller.
 
 ---
 
@@ -168,114 +175,46 @@ Returns the string literal `"claude-code"`.
 
 ### `fn requires_api_key(&self) -> bool`
 
-Returns `false`. The Claude Code CLI uses the user's existing authentication; no API key is needed in Omega's configuration.
+Returns `false`.
 
 ### `async fn complete(&self, context: &Context) -> Result<OutgoingMessage, OmegaError>`
 
-The core method. Invokes the Claude Code CLI as a subprocess and parses the result.
+The core method. Full execution flow:
 
-**Full execution flow:**
-
-1. **Prompt construction:** Calls `context.to_prompt_string()` to flatten the `Context` (system prompt + history + current message) into a single string.
-
-1b. **Effective model resolution:** Resolves the model to use via `context.model.as_deref().unwrap_or(&self.model)`. The per-request `context.model` override (set by the gateway's classify-and-route logic) takes precedence over the provider's default `self.model`.
-
-2. **MCP setup:** If `context.mcp_servers` is non-empty:
-   - Calls `write_mcp_settings()` to create `{workspace}/.claude/settings.local.json` with MCP server configuration.
-   - Calls `mcp_tool_patterns()` to generate `--allowedTools` wildcard patterns for the MCP servers.
-
-3. **Command assembly:** Builds the subprocess command:
-   ```
-   claude -p <prompt> --output-format json --max-turns <N>
-         [--resume <context.session_id>]
-         [--allowedTools <tool>]...
-   ```
-
-4. **Working directory:** If `self.working_dir` is `Some(path)`, sets `cmd.current_dir(path)` on the subprocess so the CLI operates within the specified workspace directory.
-
-5. **Environment sanitization:** Removes the `CLAUDECODE` environment variable via `cmd.env_remove("CLAUDECODE")` to prevent the CLI from detecting a nested session and erroring out.
-
-6. **Timing:** Records `Instant::now()` before execution and computes elapsed milliseconds after.
-
-7. **Subprocess execution:** Awaits `cmd.output()`. If the spawn itself fails (e.g., binary not found), returns `OmegaError::Provider` with the I/O error message.
-
-8. **Exit code check:** If the process exits with a non-zero status, reads stderr and returns `OmegaError::Provider` with the exit code and stderr content.
-
-9. **JSON parsing:** Attempts `serde_json::from_str::<ClaudeCliResponse>(&stdout)`.
-
-10. **Response extraction** (on successful parse):
-    - If `subtype == "error_max_turns"` and `session_id` is present: enters auto-resume loop (see below).
-    - If `subtype == "error_max_turns"` without `session_id`: logs a warning and continues to extract whatever result exists.
-    - If `result` is `Some` and non-empty: uses it as the response text.
-    - If `result` is `None` or empty:
-      - If `is_error == true`: returns `"Error from Claude: <subtype>"`.
-      - Otherwise: returns `"(No response text returned)"`.
-    - Extracts `model` from the response.
-
-10b. **Auto-resume loop:** When `subtype == "error_max_turns"` and `session_id` is present in the response, the provider automatically retries using `run_cli_with_session()`, passing the same prompt and the returned `session_id` via `--resume`. Each attempt waits with exponential backoff (2s, 4s, 8s, ...) to give the CLI session time to release. On error, the loop continues to the next attempt (with backoff) instead of breaking — transient errors like session-not-yet-released are tolerated. This continues up to `max_resume_attempts` times. If the resumed call also hits `error_max_turns` with a `session_id`, it loops again. The loop breaks when the response has `subtype != "error_max_turns"`, when no `session_id` is returned, or when the attempt limit is reached. The final accumulated result text is used as the response.
-
-11. **JSON parse failure fallback:** If serde fails, logs a warning and uses the raw stdout (trimmed) as the response text. `model` is set to `None`.
-
-12. **MCP cleanup:** If MCP settings were written in step 2, calls `cleanup_mcp_settings()` to remove the temporary settings file. Cleanup runs on both success and error paths.
-
-13. **Return value:** Constructs and returns an `OutgoingMessage`:
-
-```rust
-OutgoingMessage {
-    text,               // Extracted or fallback text
-    metadata: MessageMetadata {
-        provider_used: "claude-code".to_string(),
-        tokens_used: None,          // CLI does not report token counts
-        processing_time_ms: elapsed_ms,
-        model,                      // From JSON response, or None
-        session_id: returned_session_id,  // From CLI response, for gateway session tracking
-    },
-    reply_target: None,  // Set downstream by the gateway
-}
-```
+1. **Prompt construction:** Calls `context.to_prompt_string()`.
+2. **Effective overrides resolution:** Resolves `effective_max_turns`, `effective_tools`, and `effective_model` from context overrides falling back to provider defaults.
+3. **MCP setup:** If `context.mcp_servers` is non-empty, writes settings file and generates tool patterns.
+4. **CLI execution:** Calls `run_cli()` with all resolved parameters.
+5. **MCP cleanup:** Always cleans up MCP settings (regardless of success/failure).
+6. **Response parsing:** Calls `parse_response()`. Falls back to effective_model if CLI doesn't echo it.
+7. **Auto-resume:** If `subtype == "error_max_turns"` with `session_id` and no explicit `max_turns` override, enters `auto_resume()` loop.
+8. **Return:** Constructs `OutgoingMessage` with `session_id` from CLI response in metadata.
 
 ### `async fn is_available(&self) -> bool`
 
-Delegates to `Self::check_cli()`. Returns `true` if the `claude` binary is installed and responds to `--version`.
+Delegates to `Self::check_cli()`.
 
 ---
 
 ## CLI Invocation Detail
 
-### `build_run_cli_args(...)` (pub(crate), pure function)
+Permission logic in `build_run_cli_args()` has 4 branches:
 
-Pure function that constructs the CLI argument vector for `run_cli()`. Extracted for testability. Takes all the same parameters as `run_cli()` and returns `Vec<String>`.
-
-### `run_cli(prompt, extra_allowed_tools, model, context_disabled_tools, session_id, agent_name)` (private, async)
-
-Private helper that assembles and executes the `claude` CLI subprocess. Called by `complete()`. Takes an additional `model: &str` parameter; when non-empty, passes `--model <value>` to the CLI. The `context_disabled_tools: bool` parameter is `true` when the caller explicitly set `context.allowed_tools = Some(vec![])`. The `session_id: Option<&str>` parameter comes from `Context.session_id` — when `Some`, passes `--resume` to the CLI for conversation continuity. The `agent_name: Option<&str>` parameter comes from `Context.agent_name` — when `Some` and non-empty, passes `--agent <name>` and skips `--resume` (agent mode and session resume are mutually exclusive).
-
-Permission logic (3 branches):
-1. **Tools disabled** (`context_disabled_tools = true`): passes `--allowedTools ""` to disable all tool use (used by classification calls).
-2. **Full access** (`allowed_tools` empty, regardless of MCP tools): passes `--dangerously-skip-permissions` to bypass all permission prompts in non-interactive `-p` mode. MCP tool patterns are still appended via `--allowedTools` so the CLI discovers them. The OS-level system protection (Seatbelt/Landlock blocklist) provides the real security boundary.
-3. **Explicit whitelist** (`allowed_tools` non-empty): passes `--allowedTools` for each tool plus any MCP patterns. Only these tools are pre-approved.
-
-### `run_cli_with_session(prompt, extra_allowed_tools, session_id, model)` (private, async)
-
-Private helper that assembles and executes the `claude` CLI subprocess with an explicit `--resume` argument. Called by the auto-resume loop in `complete()` when a previous invocation returned `error_max_turns` with a `session_id`. Behaves identically to `run_cli()` except it always includes `--resume <session_id>` in the CLI arguments. Takes an additional `model: &str` parameter; when non-empty, passes `--model <value>` to the CLI. Uses the same permission logic as `run_cli()`: full access (`allowed_tools` empty) → `--dangerously-skip-permissions`; explicit whitelist → `--allowedTools` per tool.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `prompt` | `&str` | The flattened prompt string. |
-| `extra_allowed_tools` | `&[String]` | Additional `--allowedTools` entries (e.g., MCP tool patterns). Appended to the provider's base `allowed_tools` list. |
-
-The subprocess is invoked with the following arguments:
+1. **Agent mode** (`agent_name` is `Some` and valid): passes `--dangerously-skip-permissions`, skips `--resume`.
+2. **Tools disabled** (`context_disabled_tools = true`): passes `--allowedTools ""` to disable all tool use.
+3. **Full access** (`allowed_tools` empty, no agent): passes `--dangerously-skip-permissions`. MCP patterns appended via `--allowedTools`.
+4. **Explicit whitelist** (`allowed_tools` non-empty): passes `--allowedTools` for each tool plus MCP patterns.
 
 | Argument | Value | Always Present |
 |----------|-------|:--------------:|
+| `--agent` | `agent_name` from Context | Only if `agent_name` is `Some`, non-empty, and passes validation |
 | `-p` | The flattened prompt string | Yes |
 | `--output-format` | `json` | Yes |
-| `--max-turns` | `self.max_turns` (default `10`) | Yes |
+| `--max-turns` | Effective max_turns value | Yes |
 | `--model` | Effective model string | Only if model is non-empty |
-| `--agent` | `agent_name` from Context | Only if `agent_name` is `Some` and non-empty |
-| `--resume` | `session_id` parameter (from Context) | Only if `session_id` is `Some` AND `agent_name` is `None` |
-| `--dangerously-skip-permissions` | (flag, no value) | Only when `allowed_tools` is empty (full access mode) |
-| `--allowedTools` | One per tool in `self.allowed_tools` + MCP patterns | Only when `allowed_tools` is non-empty, or for MCP patterns in full access mode |
+| `--resume` | `session_id` from Context | Only if `session_id` is `Some` AND `agent_name` is `None` |
+| `--dangerously-skip-permissions` | (flag, no value) | When agent mode OR `allowed_tools` empty |
+| `--allowedTools` | Tool names/patterns | When explicit whitelist or MCP patterns |
 
 **Environment modifications:**
 
@@ -283,169 +222,51 @@ The subprocess is invoked with the following arguments:
 |----------|--------|--------|
 | `CLAUDECODE` | Removed | Prevents the CLI from detecting a nested Claude Code session and refusing to run. |
 
-**Working directory:**
-
-When `working_dir` is `Some(path)`, the subprocess is started with `current_dir` set to the given path. This sets the CLI's working directory to `~/.omega/workspace/`.
-
----
-
-## JSON Response Parsing Logic
-
-```
-stdout from CLI
-       |
-       v
-  serde_json::from_str::<ClaudeCliResponse>
-       |
-  +----+----+
-  |         |
- Ok(resp)  Err(e)
-  |         |
-  |         +---> warn!() -> use raw stdout as text, model = None
-  |
-  +---> subtype == "error_max_turns"? -> warn!()
-  |
-  +---> resp.result is Some and non-empty? -> use as text
-  |         |
-  |        No
-  |         |
-  |         +---> resp.is_error? -> "Error from Claude: <subtype>"
-  |         |         |
-  |         |        No
-  |         |         |
-  |         |         +---> "(No response text returned)"
-  |
-  +---> model = resp.model
-```
-
 ---
 
 ## Error Handling
 
-| Scenario | Error Type | Message Pattern |
-|----------|-----------|----------------|
+| Scenario | Error Type | Behavior |
+|----------|-----------|----------|
 | CLI binary not found / spawn failure | `OmegaError::Provider` | `"failed to run claude CLI: {io_error}"` |
 | CLI exits with non-zero status | `OmegaError::Provider` | `"claude CLI exited with {status}: {stderr}"` |
-| JSON parse failure | No error (graceful degradation) | Warning logged, raw stdout used |
-| `error_max_turns` subtype with `session_id` | No error (auto-resume) | Warning logged with `effective_limit` (from caller) and `configured` (from `self.max_turns`), auto-resume loop retries with `--resume` up to `max_resume_attempts` times, with exponential backoff (2s, 4s, 8s, ...) between attempts |
-| `error_max_turns` subtype without `session_id` | No error (graceful degradation) | Warning logged with effective vs configured limits, result extracted if available |
+| CLI times out | `OmegaError::Provider` | `"claude CLI timed out after {N}s"` |
+| JSON parse failure | No error (graceful degradation) | Warning logged, raw stdout used (or user-friendly fallback if empty) |
+| `error_max_turns` with `session_id` | No error (auto-resume) | Auto-resume loop with exponential backoff |
 | Empty result + `is_error == true` | No error (fallback text) | `"Error from Claude: {subtype}"` |
-| Empty result + no error | No error (fallback text) | `"(No response text returned)"` |
-
----
-
-## Async Behavior
-
-- All public async methods use `tokio::process::Command` for non-blocking subprocess execution.
-- The `Provider` trait requires `Send + Sync`, which `ClaudeCodeProvider` satisfies (all fields are `Send + Sync`).
-- `complete()` measures wall-clock time using `std::time::Instant` (not async-aware, but correct for single-invocation latency).
+| Empty result + no error | No error (fallback text) | `"I received your message but wasn't able to generate a response. Please try again."` |
 
 ---
 
 ## Tests
 
-### `test_default_provider`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies the default constructor:
-
-- `name()` returns `"claude-code"`
-- `requires_api_key()` returns `false`
-- `max_turns` is `10`
-- `allowed_tools` is empty (full tool access)
-- `timeout` is `Duration::from_secs(3600)`
-- `working_dir` is `None`
-- `max_resume_attempts` is `5`
-- `model` is `""` (empty)
-
-```rust
-#[test]
-fn test_default_provider() {
-    let provider = ClaudeCodeProvider::new();
-    assert_eq!(provider.name(), "claude-code");
-    assert!(!provider.requires_api_key());
-    assert_eq!(provider.max_turns, 10);
-    assert!(provider.allowed_tools.is_empty());
-    assert_eq!(provider.timeout, Duration::from_secs(3600));
-    assert!(provider.working_dir.is_none());
-    assert_eq!(provider.max_resume_attempts, 5);
-    assert!(provider.model.is_empty());
-}
-```
-
-### `test_from_config_with_timeout`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `from_config()` correctly sets the `timeout` field from the provided `timeout_secs` parameter:
-
-- Constructs a provider with `timeout_secs = 300`, `working_dir = None`, `max_resume_attempts = 5`, and `model = "claude-sonnet-4-6"`.
-- Asserts `timeout` is `Duration::from_secs(300)`.
-
-```rust
-#[test]
-fn test_from_config_with_timeout() {
-    let provider = ClaudeCodeProvider::from_config(5, vec!["Bash".into()], 300, None, 5, "claude-sonnet-4-6".into());
-    assert_eq!(provider.timeout, Duration::from_secs(300));
-}
-```
-
-### `test_from_config_with_working_dir`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `from_config()` correctly sets the `working_dir` field when provided:
-
-- Constructs a provider with `working_dir = Some(PathBuf::from("/tmp/workspace"))` and `model = "claude-sonnet-4-6"`.
-- Asserts `working_dir` is `Some(PathBuf::from("/tmp/workspace"))`.
-
-```rust
-#[test]
-fn test_from_config_with_working_dir() {
-    let provider = ClaudeCodeProvider::from_config(
-        10,
-        vec!["Bash".into()],
-        600,
-        Some(PathBuf::from("/tmp/workspace")),
-        5,
-        "claude-sonnet-4-6".into(),
-    );
-    assert_eq!(provider.working_dir, Some(PathBuf::from("/tmp/workspace")));
-}
-```
-
-### `test_mcp_tool_patterns_empty`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `mcp_tool_patterns()` returns an empty `Vec` when given an empty slice of MCP servers.
-
-### `test_mcp_tool_patterns`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `mcp_tool_patterns()` generates correct `mcp__<name>__*` patterns for each MCP server in the input slice.
-
-### `test_write_and_cleanup_mcp_settings`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `write_mcp_settings()` writes a valid JSON structure to `{workspace}/.claude/settings.local.json`, and that `cleanup_mcp_settings()` removes the file afterwards.
-
-### `test_cleanup_mcp_settings_nonexistent`
-
-**Type:** Synchronous unit test (`#[test]`)
-
-Verifies that `cleanup_mcp_settings()` does not panic when called with a path to a non-existent file.
-
-**Note:** There are no integration tests that actually invoke the `claude` CLI, as that would require the binary to be installed in CI.
+| Test | Description |
+|------|-------------|
+| `test_default_provider` | Verifies defaults: `max_turns=25`, `allowed_tools=[]`, `timeout=3600s`, `working_dir=None`, `max_resume_attempts=5`, `model=""` |
+| `test_from_config_with_timeout` | Verifies `from_config()` sets `timeout`, `max_turns`, `max_resume_attempts`, `model` correctly |
+| `test_from_config_with_working_dir` | Verifies `from_config()` sets `working_dir` when provided |
+| `test_parse_response_max_turns_with_session` | Verifies `parse_response()` extracts text and model from `error_max_turns` response |
+| `test_parse_response_success` | Verifies `parse_response()` extracts text and model from success response |
+| `test_mcp_tool_patterns_empty` | Empty input produces empty output |
+| `test_mcp_tool_patterns` | Generates correct `mcp__<name>__*` patterns |
+| `test_write_and_cleanup_mcp_settings` | Writes valid JSON structure and cleanup removes the file |
+| `test_cleanup_mcp_settings_nonexistent` | Does not panic on non-existent file |
+| `test_build_run_cli_args_no_agent_name` | Without agent_name, `--agent` is absent; `-p`, `--output-format`, `--max-turns`, `--model` present |
+| `test_build_run_cli_args_with_agent_name` | With agent_name, `--agent <name>` appears before `-p` |
+| `test_build_run_cli_args_agent_with_model_override` | `--model` still applied with `--agent` |
+| `test_build_run_cli_args_agent_with_skip_permissions` | `--dangerously-skip-permissions` applied in agent mode |
+| `test_build_run_cli_args_agent_with_max_turns` | `--max-turns` present with correct value in agent mode |
+| `test_build_run_cli_args_agent_name_empty_string` | Empty agent_name does not emit `--agent` |
+| `test_build_run_cli_args_agent_name_with_session_id` | agent_name takes priority over session_id (`--agent` present, `--resume` absent) |
+| `test_build_run_cli_args_agent_name_path_traversal` | Path traversal in agent_name rejected (no `--agent` emitted) |
+| `test_build_run_cli_args_agent_name_with_slash` | Forward slash in agent_name rejected |
+| `test_build_run_cli_args_agent_name_with_backslash` | Backslash in agent_name rejected |
+| `test_build_run_cli_args_explicit_allowed_tools_no_agent` | Explicit tools produce `--allowedTools`, no `--dangerously-skip-permissions` |
+| `test_build_run_cli_args_disabled_tools` | `context_disabled_tools=true` produces `--allowedTools ""` |
 
 ---
 
 ## Expected JSON Response Format
-
-The CLI outputs a single JSON object on stdout:
 
 ```json
 {
@@ -453,8 +274,6 @@ The CLI outputs a single JSON object on stdout:
   "subtype": "success",
   "result": "The response text from Claude.",
   "is_error": false,
-  "cost_usd": 0.003,
-  "total_cost_usd": 0.003,
   "session_id": "abc123",
   "model": "claude-sonnet-4-20250514",
   "num_turns": 1
@@ -471,6 +290,6 @@ On max turns exceeded:
   "is_error": false,
   "session_id": "abc123",
   "model": "claude-sonnet-4-20250514",
-  "num_turns": 10
+  "num_turns": 25
 }
 ```

@@ -1,12 +1,22 @@
 # Technical Specification: Telegram Channel
 
-**File:** `backend/crates/omega-channels/src/telegram.rs`
+**Directory:** `backend/crates/omega-channels/src/telegram/` (directory module with 5 files)
 **Crate:** `omega-channels`
-**Last updated:** 2026-02-18
+**Last updated:** 2026-03-01
+
+## Module Structure
+
+| File | Visibility | Responsibility |
+|------|-----------|----------------|
+| `mod.rs` | pub | Struct definition (`TelegramChannel`), constructor, submodule declarations |
+| `polling.rs` | private | Long-polling update loop and `Channel` trait implementation |
+| `send.rs` | `pub(crate)` | Message sending: `send_text`, `send_photo_bytes`, `send_chat_action`, `register_commands` |
+| `types.rs` | `pub(crate)` | Telegram Bot API deserialization types |
+| `tests.rs` | `cfg(test)` | Unit tests for types, message splitting, and multibyte handling |
 
 ## Purpose
 
-Implements the `Channel` trait from `omega-core` for the Telegram Bot API. Uses HTTP long polling via `getUpdates` to receive messages and `sendMessage` / `sendChatAction` to send responses and typing indicators. This is the primary messaging channel for Omega.
+Implements the `Channel` trait from `omega-core` for the Telegram Bot API. Uses HTTP long polling via `getUpdates` to receive messages and `sendMessage` / `sendChatAction` / `sendPhoto` to send responses, photos, and typing indicators. This is the primary messaging channel for Omega.
 
 ---
 
@@ -129,33 +139,33 @@ Note: `message_id` and `from` are marked `#[allow(dead_code)]` -- `message_id` i
 pub fn new(config: TelegramConfig) -> Self
 ```
 
-Constructs a new `TelegramChannel`. Precomputes `base_url` from the bot token, initializes the HTTP client, and sets `last_update_id` to `None`.
+Constructs a new `TelegramChannel`. Precomputes `base_url` from the bot token, initializes the HTTP client, and sets `last_update_id` to `None`. Defined in `mod.rs`.
 
 ```rust
-async fn register_commands(&self)
+pub(crate) async fn register_commands(&self)
 ```
 
-Registers all bot commands with Telegram via `POST /setMyCommands`, enabling the autocomplete command menu for users. Called once at the beginning of `start()` before the polling loop. Best-effort: logs success or failure but does not propagate errors or prevent startup.
+Registers all bot commands with Telegram via `POST /setMyCommands`, enabling the autocomplete command menu for users. Called once at the beginning of `start()` before the polling loop. Best-effort: logs success or failure but does not propagate errors or prevent startup. Defined in `send.rs`.
 
 ```rust
-async fn send_message(&self, chat_id: i64, text: &str) -> Result<(), OmegaError>
+pub(crate) async fn send_text(&self, chat_id: i64, text: &str) -> Result<(), OmegaError>
 ```
 
-Sends a text message to the specified `chat_id`. Splits the text into chunks of up to 4096 characters (Telegram's limit) using `split_message()`. Each chunk is sent as a separate `sendMessage` request with `parse_mode: "Markdown"`. If Telegram rejects the Markdown (response contains `"can't parse entities"`), retries the chunk as plain text without `parse_mode`.
+Sends a text message to the specified `chat_id`. Splits the text into chunks of up to 4096 characters (Telegram's limit) using `split_message()` from `crate::utils`. Each chunk is sent as a separate `sendMessage` request with `parse_mode: "Markdown"`. If Telegram rejects the Markdown (response contains `"can't parse entities"`), retries the chunk as plain text without `parse_mode`. Defined in `send.rs`.
 
 ```rust
-async fn send_chat_action(&self, chat_id: i64, action: &str) -> Result<(), OmegaError>
+pub(crate) async fn send_chat_action(&self, chat_id: i64, action: &str) -> Result<(), OmegaError>
 ```
 
-Sends a chat action (e.g., `"typing"`) to the specified chat via the `sendChatAction` API endpoint.
+Sends a chat action (e.g., `"typing"`) to the specified chat via the `sendChatAction` API endpoint. Defined in `send.rs`.
 
 ```rust
-async fn send_photo_bytes(&self, chat_id: i64, image: &[u8], caption: &str) -> Result<(), OmegaError>
+pub(crate) async fn send_photo_bytes(&self, chat_id: i64, image: &[u8], caption: &str) -> Result<(), OmegaError>
 ```
 
-Sends a photo (image bytes) with a caption to a chat via the `sendPhoto` API endpoint. Uses multipart form upload with a generic `photo.png` filename. Telegram auto-detects the actual image format from the bytes.
+Sends a photo (image bytes) with a caption to a chat via the `sendPhoto` API endpoint. Uses multipart form upload with a generic `photo.png` filename. Telegram auto-detects the actual image format from the bytes. Defined in `send.rs`.
 
-### Free Functions
+### Free Functions (in `polling.rs`)
 
 ```rust
 async fn download_telegram_file(
@@ -166,23 +176,27 @@ async fn download_telegram_file(
 ) -> Result<Vec<u8>, OmegaError>
 ```
 
-Downloads a file from Telegram servers. First calls `getFile` to obtain the `file_path`, then downloads the file bytes from `https://api.telegram.org/file/bot{token}/{file_path}`.
+Downloads a file from Telegram servers. First calls `getFile` to obtain the `file_path`, enforces a 20 MB file size limit (`MAX_FILE_SIZE`), then downloads the file bytes from `https://api.telegram.org/file/bot{token}/{file_path}`.
+
+### Shared Functions (in `crate::whisper`)
 
 ```rust
-async fn transcribe_whisper(
+pub async fn transcribe_whisper(
     client: &reqwest::Client,
     api_key: &str,
     audio_bytes: &[u8],
 ) -> Result<String, OmegaError>
 ```
 
-Transcribes audio bytes using OpenAI's Whisper API (`POST /v1/audio/transcriptions`). Sends a multipart form with `model=whisper-1` and the audio as `voice.ogg`. Returns the transcribed text.
+Transcribes audio bytes using OpenAI's Whisper API (`POST /v1/audio/transcriptions`). Sends a multipart form with `model=whisper-1` and the audio as `voice.ogg`. Returns the transcribed text. Shared between Telegram and WhatsApp channels.
+
+### Shared Functions (in `crate::utils`)
 
 ```rust
-fn split_message(text: &str, max_len: usize) -> Vec<&str>
+pub fn split_message(text: &str, max_len: usize) -> Vec<&str>
 ```
 
-Splits a string into chunks no longer than `max_len` bytes. Prefers splitting at newline boundaries (`\n`) when possible to avoid breaking mid-line. Returns a `Vec` of string slices.
+Splits a string into chunks no longer than `max_len` bytes. All slice boundaries are aligned to UTF-8 char boundaries to avoid panics on multi-byte content (Cyrillic, CJK, emoji, etc.). Prefers splitting at newline boundaries (`\n`) when possible to avoid breaking mid-line. Returns a `Vec` of string slices. Shared between Telegram and WhatsApp channels.
 
 ---
 
@@ -204,13 +218,21 @@ Calls `register_commands()` to register the bot command menu with Telegram, then
 
 Parses `target` as an `i64` chat ID and calls `send_chat_action(chat_id, "typing")`. Returns a `Channel` error if the target cannot be parsed.
 
+### `async fn send_photo(&self, target: &str, image: &[u8], caption: &str) -> Result<(), OmegaError>`
+
+Parses `target` as an `i64` chat ID and delegates to `send_photo_bytes()`. Sends a photo (image bytes) with a caption via the Telegram `sendPhoto` API. Returns a `Channel` error if the target cannot be parsed.
+
 ### `async fn send(&self, message: OutgoingMessage) -> Result<(), OmegaError>`
 
-Extracts `reply_target` from the outgoing message (required; errors if absent), parses it as an `i64` chat ID, and delegates to `send_message()`.
+Extracts `reply_target` from the outgoing message (required; errors if absent), parses it as an `i64` chat ID, and delegates to `send_text()`.
 
 ### `async fn stop(&self) -> Result<(), OmegaError>`
 
 Logs `"Telegram channel stopped"` and returns `Ok(())`. The background polling task will terminate naturally when the `mpsc::Sender` is dropped (i.e., when the receiver side is dropped and the next `tx.send()` fails).
+
+### `fn as_any(&self) -> &dyn std::any::Any`
+
+Returns `self` as a dynamic `Any` reference. Used by the gateway for downcasting to access channel-specific methods (e.g., WhatsApp pairing from a Telegram command).
 
 ---
 
@@ -286,7 +308,7 @@ Telegram typing indicators auto-expire after approximately 5 seconds or when the
 
 ## Message Sending and Chunking
 
-### `send_message` Flow
+### `send_text` Flow
 
 1. Split the text into chunks of at most **4096 bytes** using `split_message()`.
 2. For each chunk:
@@ -350,6 +372,8 @@ All errors are wrapped in `OmegaError::Channel(String)`.
 
 ## Tests
 
+**File:** `backend/crates/omega-channels/src/telegram/tests.rs`
+
 ```rust
 #[cfg(test)]
 mod tests {
@@ -364,9 +388,8 @@ mod tests {
 
     #[test]
     fn test_tg_chat_group_detection()
-    // Deserializes a TgChat with `"type": "supergroup"` and verifies
-    // `chat_type` is `"supergroup"`. Also tests `matches!` logic for
-    // group/supergroup → `is_group = true`.
+    // Deserializes TgChat with "group", "supergroup", and "private" types.
+    // Verifies group/supergroup are detected, private is not.
 
     #[test]
     fn test_tg_chat_type_defaults_when_missing()
@@ -393,6 +416,16 @@ mod tests {
     fn test_tg_message_with_photo_no_caption()
     // Deserializes a TgMessage with a photo array but no caption.
     // Verifies photo sizes are correctly parsed and caption is None.
+
+    #[test]
+    fn test_split_message_multibyte()
+    // Tests splitting Cyrillic text (2-byte chars) at non-char boundaries.
+    // Verifies chunks are valid UTF-8 and respect max_len.
+
+    #[test]
+    fn test_split_message_emoji_boundary()
+    // Tests splitting emoji text (4-byte chars) at non-char boundaries.
+    // Verifies all content is preserved after reassembly.
 }
 ```
 
@@ -425,13 +458,13 @@ mod tests {
                               v
                         Gateway Loop
                               |
-                    +---------+---------+
-                    |                   |
-              send_typing()         send()
-                    |                   |
-             sendChatAction       sendMessage
-              (typing)          (Markdown/plain)
-                    |                   |
-                    v                   v
-                     Telegram Bot API
+                    +---------+---------+---------+
+                    |                   |         |
+              send_typing()         send()   send_photo()
+                    |                   |         |
+             sendChatAction       sendMessage  sendPhoto
+              (typing)          (Markdown/plain) (multipart)
+                    |                   |         |
+                    v                   v         v
+                           Telegram Bot API
 ```

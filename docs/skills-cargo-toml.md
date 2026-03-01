@@ -1,12 +1,17 @@
 # omega-skills: Cargo.toml Guide
 
-This document explains the Cargo manifest for the `omega-skills` crate -- what the crate does, what each dependency is for, how workspace inheritance works, and how to add new dependencies as the skill system grows.
+This document explains the Cargo manifest for the `omega-skills` crate -- what the crate does, what each dependency is for, how workspace inheritance works, and how to add new dependencies.
 
 ## What Is This Crate?
 
-`omega-skills` is where the skill and plugin system for Omega lives. While the core of Omega handles receiving messages, routing them to an AI provider, and sending back responses, the skills system is designed to give Omega the ability to _do things_ -- execute actions, call APIs, run commands, look up information, and generally extend beyond pure conversation.
+`omega-skills` is the skill and project loader for Omega. It scans `~/.omega/skills/*/SKILL.md` and `~/.omega/projects/*/ROLE.md` for definitions and exposes them to the system prompt so the AI knows what tools and contexts are available.
 
-The crate is currently in its early stages (Phase 4 of the project roadmap). It has a `builtin` module stubbed out for built-in skills that will ship with Omega, and the dependency set is already in place for building out the full skill framework.
+The crate provides:
+
+- **Skill loading** -- parse TOML or YAML frontmatter from `SKILL.md` files, check CLI tool availability, extract MCP server declarations, match trigger keywords
+- **Project loading** -- parse `ROLE.md` files with optional frontmatter for project-scoped skills
+- **Bundled skill deployment** -- embed core skills at compile time, deploy on first run without overwriting user edits
+- **Flat-to-directory migration** -- migrate legacy `skills/*.md` files to `skills/*/SKILL.md` layout
 
 The file lives at:
 
@@ -16,7 +21,7 @@ backend/crates/omega-skills/Cargo.toml
 
 ## How Workspace Inheritance Works
 
-You will notice that almost every field in this manifest says `workspace = true` rather than specifying a value directly:
+Almost every field in this manifest says `workspace = true` rather than specifying a value directly:
 
 ```toml
 [package]
@@ -42,22 +47,16 @@ repository = "https://github.com/omega-cortex/omega"
 The same pattern applies to dependencies. When you write:
 
 ```toml
-tokio = { workspace = true }
+serde = { workspace = true }
 ```
 
-Cargo looks up `tokio` in the root `[workspace.dependencies]` table and pulls in the version and feature flags defined there:
+Cargo looks up `serde` in the root `[workspace.dependencies]` table and pulls in the version and feature flags defined there. This keeps all version pinning in one place.
 
-```toml
-# Root Cargo.toml
-[workspace.dependencies]
-tokio = { version = "1", features = ["full"] }
-```
-
-This keeps all version pinning in one place. If you need to bump `tokio` from version 1 to version 2 someday, you change it once in the root and every crate in the workspace picks it up.
-
-Only `name` and `description` are defined locally, since those are unique to each crate and cannot be inherited.
+Only `name` and `description` are defined locally, since those are unique to each crate.
 
 ## Dependencies Explained
+
+The crate has exactly 4 dependencies:
 
 ### omega-core
 
@@ -65,24 +64,23 @@ Only `name` and `description` are defined locally, since those are unique to eac
 omega-core = { workspace = true }
 ```
 
-This is Omega's own core crate. It provides the shared types, traits, configuration structures, error types, and prompt sanitization logic that every crate in the workspace depends on. Skills need access to core types like messages, configuration, and error handling. The `Skill` trait (or whatever trait the skill system ultimately defines) will live alongside or extend the patterns established by core traits like `Provider` and `Channel`.
+Omega's core crate. Provides the `McpServer` type (used in skill trigger matching), configuration utilities, and shared types. Skills import `omega_core::context::McpServer` to populate MCP server lists that get passed to the provider layer.
 
-### tokio
-
-```toml
-tokio = { workspace = true }   # version 1, features = ["full"]
-```
-
-The async runtime that powers all of Omega. Skills are async by design -- they may need to make network calls, read files, execute subprocesses, or wait on timers. The `full` feature set ensures all of Tokio's capabilities are available, including `process` (for spawning commands), `net` (for network I/O), `time` (for timeouts and delays), and `fs` (for file system operations).
-
-### serde and serde_json
+### serde
 
 ```toml
-serde = { workspace = true }        # version 1, features = ["derive"]
-serde_json = { workspace = true }   # version 1
+serde = { workspace = true }   # version 1, features = ["derive"]
 ```
 
-Serialization framework. `serde` with the `derive` feature lets you put `#[derive(Serialize, Deserialize)]` on any struct, which you will use for skill configuration, skill metadata, and input/output data structures. `serde_json` handles the actual JSON parsing and generation, which is relevant any time a skill needs to work with structured data from an API or produce structured output.
+Serialization framework. Used with `#[derive(Deserialize)]` on frontmatter structs (`SkillFrontmatter`, `ProjectFrontmatter`, `McpFrontmatter`) to parse TOML frontmatter from skill and project files.
+
+### toml
+
+```toml
+toml = { workspace = true }
+```
+
+TOML parser. Used as the primary frontmatter format in `SKILL.md` and `ROLE.md` files. The crate tries `toml::from_str()` first and falls back to a lightweight YAML-style parser for compatibility.
 
 ### tracing
 
@@ -90,86 +88,59 @@ Serialization framework. `serde` with the `derive` feature lets you put `#[deriv
 tracing = { workspace = true }   # version 0.1
 ```
 
-Structured logging. The project rule is: no `println!`, use `tracing` instead. Typical usage in a skill:
+Structured logging. The project rule is: no `println!`, use `tracing` instead. Typical usage:
 
 ```rust
-tracing::info!(skill = "weather", "Executing weather lookup");
-tracing::debug!(city = %city, "Querying weather API");
-tracing::error!(%err, "Skill execution failed");
+tracing::info!(skill = "gog", "Skill loaded");
+tracing::warn!("skills: no valid frontmatter in {}", path.display());
 ```
 
-Note that `tracing-subscriber` (which actually outputs the logs to the console or a file) is **not** a dependency of `omega-skills`. That responsibility belongs to the root binary, which sets up the subscriber once at startup.
-
-### thiserror
-
-```toml
-thiserror = { workspace = true }   # version 2
-```
-
-Lets you derive `std::error::Error` on your own error enums with minimal boilerplate. You will use this for skill-specific error types:
-
-```rust
-#[derive(Debug, thiserror::Error)]
-pub enum SkillError {
-    #[error("Skill not found: {0}")]
-    NotFound(String),
-
-    #[error("Skill execution failed: {0}")]
-    ExecutionFailed(String),
-
-    #[error("Invalid skill input: {0}")]
-    InvalidInput(String),
-}
-```
-
-### anyhow
-
-```toml
-anyhow = { workspace = true }   # version 1
-```
-
-Provides `anyhow::Result<T>` for functions where you want to propagate errors without defining a custom error type for every situation. Useful in internal helper functions within skill implementations. For public API boundaries (like the skill trait itself), prefer `thiserror`-based types so callers can match on specific error variants.
-
-### async-trait
-
-```toml
-async-trait = { workspace = true }   # version 0.1
-```
-
-Enables async functions in trait definitions. The skill system will define traits that skill implementations must satisfy, and those traits will have async methods. For example:
-
-```rust
-#[async_trait]
-pub trait Skill: Send + Sync {
-    /// Human-readable name of this skill.
-    fn name(&self) -> &str;
-
-    /// Execute the skill with the given input.
-    async fn execute(&self, input: &str) -> Result<String>;
-}
-```
-
-Every skill implementation uses `#[async_trait]` on its `impl Skill for ...` block, just as providers use it for the `Provider` trait.
+Note that `tracing-subscriber` (which outputs logs to console or file) is **not** a dependency. That responsibility belongs to the root binary.
 
 ## What is NOT Here (and Why)
 
-You might notice that several workspace dependencies are absent from `omega-skills`:
+Several workspace dependencies are intentionally absent:
 
-| Crate                | Where it lives instead          | Why |
-|----------------------|---------------------------------|-----|
-| `reqwest`            | `omega-providers`, `omega-channels` | HTTP is not needed at the skill framework level. When individual skills need to make HTTP calls, reqwest can be added here or gated behind a feature flag. |
-| `sqlx`               | `omega-memory`                  | Database access goes through `omega-memory`, not directly from skills. |
-| `toml`               | `omega-core`                    | Config parsing is handled by core. Skills receive their configuration already parsed. |
-| `uuid`               | `omega-core`                    | Identifier generation happens at the core/gateway level, not in skills. |
-| `chrono`             | `omega-core`                    | Timestamp handling is a core concern. Skills receive timestamped messages. |
-| `clap`               | Root binary                     | CLI argument parsing happens only in `main.rs`. |
-| `tracing-subscriber` | Root binary                     | Log output setup is an application-level concern. |
+| Crate | Why absent |
+|-------|-----------|
+| `tokio` | All skill operations are synchronous (`std::fs`). No async I/O needed. |
+| `async-trait` | No async traits. The crate exposes plain functions, not trait impls. |
+| `thiserror` | No custom error types. Functions return `Vec` (empty on failure) or use `Option`. |
+| `anyhow` | No `Result` returns from public functions. Errors are logged via `tracing::warn` and skipped. |
+| `serde_json` | Not needed. Frontmatter is TOML (or YAML-style). The only JSON parsing is a minimal `extract_bins_from_metadata()` helper that uses string searching rather than a full parser. |
+| `reqwest` | No HTTP calls. Skills are file-based definitions, not runtime services. |
+| `sqlx` | Database access goes through `omega-memory`, not from skills. |
 
-This separation keeps `omega-skills` lean. As the skill system evolves, some of these dependencies may be added if genuinely needed, but the principle is to start minimal and add only what is required.
+This keeps `omega-skills` lean with minimal compile-time overhead.
+
+## Module Structure
+
+The crate is organized into 3 internal modules:
+
+| Module | Visibility | Purpose |
+|--------|-----------|---------|
+| `parse` | `mod` (private) | Shared utilities: `expand_tilde`, `unquote`, `parse_yaml_list`, `extract_bins_from_metadata`, `which_exists`, `data_path` |
+| `skills` | `mod` (private) | Skill loading, parsing, deployment, migration, trigger matching |
+| `projects` | `mod` (private) | Project loading, parsing, directory creation |
+
+The public API is re-exported from `lib.rs`:
+
+```rust
+// Skills
+pub use skills::{
+    build_skill_prompt, install_bundled_skills, load_skills,
+    match_skill_triggers, migrate_flat_skills, Skill,
+};
+
+// Projects
+pub use projects::{
+    ensure_projects_dir, get_project_instructions, load_projects, Project,
+};
+```
 
 ## How to Add a New Dependency
 
-Because all dependencies use workspace inheritance, adding a new dependency to `omega-skills` is a two-step process.
+Because all dependencies use workspace inheritance, adding a new dependency is a two-step process.
 
 **Step 1: Add it to the workspace root first.**
 
@@ -193,15 +164,7 @@ In `backend/crates/omega-skills/Cargo.toml`, add:
 my-new-crate = { workspace = true }
 ```
 
-**Step 3: If only this crate needs extra features,** you can extend the workspace definition:
-
-```toml
-my-new-crate = { workspace = true, features = ["extra-feature"] }
-```
-
-This adds `extra-feature` on top of whatever features the workspace already specifies.
-
-**Step 4: Verify everything compiles.**
+**Step 3: Verify everything compiles.**
 
 ```bash
 cargo check -p omega-skills
@@ -211,21 +174,14 @@ cargo test --workspace
 
 ### Before Adding a Dependency, Ask Yourself
 
-- **Does this belong in `omega-skills`, or should it live in a more specific crate?** If only one skill needs it, consider whether the skill itself should be a separate crate or whether the dependency should be feature-gated.
+- **Does this belong in `omega-skills`, or should it live in a more specific crate?** Skills are file-based definitions -- keep runtime dependencies minimal.
 - **Is this crate well-maintained and widely used?** Prefer established crates from the Rust ecosystem.
-- **Does it add significant compile time?** The skill crate is compiled as part of the full workspace, so heavy dependencies affect everyone.
+- **Does it add significant compile time?** The skill crate is compiled as part of the full workspace.
 - **Could `omega-core` already provide what you need?** Check core types and traits before pulling in something new.
-
-## Future Considerations
-
-As the skill system matures, there are several patterns that may be introduced:
-
-- **Feature flags for individual skills.** If some skills pull in heavy dependencies (e.g., a skill that does image processing with `image`), gating them behind feature flags allows users to compile only what they need.
-- **Dev dependencies for testing.** The crate currently has no `[dev-dependencies]`. When skill tests are added, consider `tokio-test` for async test utilities or `mockall` for mocking core traits.
-- **A `[build-dependencies]` section** is unlikely to be needed, but could appear if skill metadata requires build-time code generation.
 
 ## Things to Keep in Mind
 
 - Always run `cargo clippy --workspace && cargo test --workspace && cargo fmt --check` before committing changes to any `Cargo.toml` in the workspace.
-- The crate is currently a stub with a `lib.rs` and an empty `builtin` module. The dependency set is forward-looking -- it reflects what the skill system will need as it is built out during Phase 4.
-- The dependency set closely mirrors `omega-providers` (minus `reqwest`), which is intentional. Skills and providers share a similar architectural pattern: trait-based, async, backed by the core type system, with structured errors and logging.
+- The crate is fully implemented with 3 modules (`parse`, `skills`, `projects`) and comprehensive tests.
+- The dependency set is intentionally minimal (4 crates). The design avoids async, custom errors, and JSON parsing in favor of simplicity.
+- The `Skill` struct is a plain data struct, not a trait. Skills are file-based definitions loaded from disk, not runtime plugins.

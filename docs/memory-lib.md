@@ -5,9 +5,9 @@
 
 ## What is omega-memory?
 
-`omega-memory` is the persistence layer for the Omega agent. It stores conversation history, user facts, and a full audit trail of every interaction -- all backed by SQLite. Every message that flows through the gateway is recorded here, and every AI provider call is enriched with context retrieved from here.
+`omega-memory` is the persistence layer for the Omega agent. It stores conversation history, user facts, scheduled tasks, reward-based learning data, cross-channel aliases, CLI sessions, and a full audit trail of every interaction -- all backed by SQLite. Every message that flows through the gateway is recorded here, and every AI provider call is enriched with context retrieved from here.
 
-Think of it as the agent's long-term memory: it remembers what was said, who said it, what it learned about each user, and a summary of every past conversation.
+Think of it as the agent's long-term memory: it remembers what was said, who said it, what it learned about each user, what tasks are scheduled, what behavioral lessons have been distilled, and a summary of every past conversation.
 
 ## What does it provide?
 
@@ -15,17 +15,18 @@ The crate is organized into two public modules and re-exports their primary type
 
 | Module | What you get |
 |--------|-------------|
-| `store` | Conversation memory -- storing messages, building AI context, managing conversation lifecycles, tracking user facts |
+| `store` | Conversation memory -- storing messages, building AI context, managing conversation lifecycles, tracking user facts, aliases, limitations, scheduled tasks, reward-based learning (outcomes + lessons), and CLI sessions. Split into 8 focused submodules. |
 | `audit` | Audit log -- recording every interaction with status, timing, and provider details |
 
-The two primary types are re-exported for convenience:
+The primary types are re-exported for convenience:
 
 ```rust
 // Preferred imports (via re-export):
-use omega_memory::{Store, AuditLogger};
+use omega_memory::{Store, AuditLogger, DueTask, detect_language};
 
 // Also valid (via module path):
 use omega_memory::store::Store;
+use omega_memory::store::format_user_profile;
 use omega_memory::audit::{AuditLogger, AuditEntry, AuditStatus};
 ```
 
@@ -33,7 +34,7 @@ use omega_memory::audit::{AuditLogger, AuditEntry, AuditStatus};
 
 ## The Store
 
-The `Store` is the core of the memory system. It manages an SQLite database that holds conversations, messages, and user facts.
+The `Store` is the core of the memory system. It manages an SQLite database across 11 tables and 1 virtual table, implemented as a directory module with 8 submodules.
 
 ### Creating a store
 
@@ -54,39 +55,60 @@ On first call, `new()` will:
 1. Expand `~` to the user's home directory.
 2. Create parent directories if they do not exist.
 3. Open (or create) the SQLite database with WAL journal mode.
-4. Run all pending migrations automatically.
+4. Run all 13 pending migrations automatically.
 
 The store is `Clone` -- it wraps a connection pool internally, so cloning is cheap and shares the same pool.
 
 ### Building context for the AI provider
 
-The most important method. Given an incoming message, it assembles a full `Context` with history, facts, and a dynamic system prompt:
+The most important method. Given an incoming message and context needs, it assembles a full `Context` with history, facts, and a dynamic system prompt:
 
 ```rust
 use omega_core::message::IncomingMessage;
+use omega_core::context::ContextNeeds;
 
-let context = store.build_context(&incoming_message, &prompts.system).await?;
-// context.system_prompt  -- enriched with user facts and conversation summaries
+let needs = ContextNeeds {
+    summaries: true,
+    recall: true,
+    pending_tasks: true,
+    profile: true,
+    outcomes: true,
+};
+
+let context = store.build_context(
+    &incoming_message,
+    &prompts.system,
+    &needs,
+    active_project.as_deref(),
+).await?;
+// context.system_prompt  -- enriched with facts, summaries, recall, tasks, outcomes, lessons
 // context.history        -- recent messages from the current conversation
 // context.current_message -- the user's new message
 ```
 
 Under the hood, `build_context` does the following:
-1. Finds (or creates) the active conversation for this channel + sender.
-2. Loads the most recent messages from that conversation (up to `max_context_messages`).
-3. Fetches all known facts about the sender.
-4. Fetches the 3 most recent closed conversation summaries.
-5. Builds a dynamic system prompt that includes facts, summaries, and language detection.
+1. Finds (or creates) the active conversation for this channel + sender + project.
+2. Runs 7 parallel database queries via `tokio::join!`:
+   - Recent messages from the current conversation (up to `max_context_messages`)
+   - All known facts about the sender
+   - Recent closed conversation summaries (if `needs.summaries`)
+   - FTS5 semantic recall from past conversations (if `needs.recall`)
+   - Pending scheduled tasks (if `needs.pending_tasks`)
+   - Recent outcomes (if `needs.outcomes`)
+   - Learned behavioral lessons
+3. Resolves the user's language (stored preference > auto-detect > English).
+4. Computes progressive onboarding stage and injects hints on transitions.
+5. Builds a dynamic system prompt that includes facts, summaries, recall, tasks, outcomes, lessons, language directive, and onboarding hints.
 
 ### Storing exchanges
 
 After the AI provider responds, store both sides of the exchange:
 
 ```rust
-store.store_exchange(&incoming_message, &outgoing_response).await?;
+store.store_exchange(&incoming_message, &outgoing_response, "project-name").await?;
 ```
 
-This inserts two rows into the `messages` table -- one for the user's input (role `"user"`) and one for the assistant's response (role `"assistant"`). The assistant message also stores serialized metadata (provider, model, timing) in a `metadata_json` column.
+This inserts two rows into the `messages` table -- one for the user's input (role `"user"`) and one for the assistant's response (role `"assistant"`). The assistant message also stores serialized metadata (provider, model, timing) in a `metadata_json` column. The conversation is project-scoped.
 
 ### Conversation lifecycle
 
@@ -95,7 +117,7 @@ Conversations have automatic boundary detection. A conversation is considered "i
 ```rust
 // Find conversations that have been idle too long:
 let idle = store.find_idle_conversations().await?;
-// Returns Vec<(conversation_id, channel, sender_id)>
+// Returns Vec<(conversation_id, channel, sender_id, project)>
 
 // Close a conversation with a summary:
 store.close_conversation(&conv_id, "Discussed Rust error handling").await?;
@@ -104,7 +126,10 @@ store.close_conversation(&conv_id, "Discussed Rust error handling").await?;
 let active = store.find_all_active_conversations().await?;
 
 // Close the current conversation immediately (for /forget command):
-let was_closed = store.close_current_conversation("telegram", "12345").await?;
+let was_closed = store.close_current_conversation("telegram", "12345", "project").await?;
+
+// Get recent summaries across all users (for heartbeat):
+let summaries = store.get_all_recent_summaries(5).await?;
 ```
 
 When a user sends a new message after their conversation has timed out, `build_context` automatically creates a fresh conversation.
@@ -116,20 +141,141 @@ Facts are key-value pairs scoped to a sender. They persist across conversations 
 ```rust
 // Store a fact:
 store.store_fact("user123", "name", "Alice").await?;
-store.store_fact("user123", "language", "Spanish").await?;
+store.store_fact("user123", "timezone", "UTC-3").await?;
+
+// Retrieve a single fact:
+let tz = store.get_fact("user123", "timezone").await?;
 
 // Retrieve all facts:
 let facts = store.get_facts("user123").await?;
 // Returns Vec<(key, value)> ordered by key
 
 // Delete a specific fact:
-let deleted = store.delete_facts("user123", Some("language")).await?;
+let deleted = store.delete_fact("user123", "timezone").await?;
 
 // Delete all facts for a user:
 let deleted = store.delete_facts("user123", None).await?;
+
+// Check if a user is new (no 'welcomed' fact):
+let is_new = store.is_new_user("user123").await?;
+
+// Get all facts across all users (for heartbeat):
+let all_facts = store.get_all_facts().await?;
+
+// Get all users with a specific fact key:
+let active_project_users = store.get_all_facts_by_key("active_project").await?;
 ```
 
 Facts use an upsert pattern: storing a fact with an existing `(sender_id, key)` pair updates the value rather than creating a duplicate.
+
+### Cross-channel aliases
+
+Link users across channels so they share the same memory:
+
+```rust
+// Resolve a sender_id to its canonical form:
+let canonical = store.resolve_sender_id("5511999887766").await?;
+
+// Create an alias (WhatsApp phone -> Telegram ID):
+store.create_alias("5511999887766", "842277204").await?;
+
+// Find an existing user to link to:
+let canonical = store.find_canonical_user("5511999887766").await?;
+```
+
+### Limitations
+
+Track self-detected capability gaps:
+
+```rust
+// Store a limitation (deduplicates by title):
+let is_new = store.store_limitation(
+    "Cannot access Google Calendar",
+    "No direct API integration",
+    "Add Google Calendar MCP server"
+).await?;
+
+// Get all open limitations:
+let open = store.get_open_limitations().await?;
+// Returns Vec<(title, description, proposed_plan)>
+```
+
+### Scheduled tasks
+
+Create, query, and manage scheduled tasks:
+
+```rust
+// Create a task with deduplication:
+let id = store.create_task(
+    "telegram", "user123", "chat_id", "Call John",
+    "2026-03-01T15:00:00", Some("daily"), "reminder", ""
+).await?;
+
+// Get due tasks:
+let due = store.get_due_tasks().await?;
+
+// Complete a task:
+store.complete_task(&id, Some("daily")).await?;
+
+// Fail an action task (with retry):
+let will_retry = store.fail_task(&id, "provider timeout", 3).await?;
+
+// Get pending tasks for a user:
+let tasks = store.get_tasks_for_sender("user123").await?;
+
+// Cancel a task by ID prefix:
+store.cancel_task("abc123", "user123").await?;
+
+// Update task fields:
+store.update_task("abc123", "user123", Some("New desc"), None, None).await?;
+
+// Defer a task:
+store.defer_task(&id, "2026-03-02T15:00:00").await?;
+```
+
+### Reward-based learning
+
+Store outcomes (working memory) and distilled lessons (long-term memory):
+
+```rust
+// Store a raw outcome from a REWARD marker:
+store.store_outcome("user123", "code_review", 1, "Caught a bug early", "conversation", "omega").await?;
+
+// Get recent outcomes for a user (project-scoped):
+let outcomes = store.get_recent_outcomes("user123", 15, Some("omega")).await?;
+// Returns Vec<(score, domain, lesson, timestamp)>
+
+// Get recent outcomes across all users (for heartbeat):
+let all = store.get_all_recent_outcomes(24, 20, None).await?;
+
+// Store a distilled lesson (content-based dedup, capped at 10 per domain):
+store.store_lesson("user123", "code_review", "Always check error handling", "omega").await?;
+
+// Get lessons for a user:
+let lessons = store.get_lessons("user123", Some("omega")).await?;
+// Returns Vec<(domain, rule, project)>
+
+// Get all lessons (for heartbeat):
+let all_lessons = store.get_all_lessons(None).await?;
+```
+
+### CLI sessions
+
+Persist Claude Code CLI session IDs across restarts:
+
+```rust
+// Store/update a session:
+store.store_session("telegram", "user123", "omega", "session-abc").await?;
+
+// Look up a session:
+let session = store.get_session("telegram", "user123", "omega").await?;
+
+// Clear a specific project session:
+store.clear_session("telegram", "user123", "omega").await?;
+
+// Clear all sessions for a user:
+store.clear_all_sessions_for_sender("user123").await?;
+```
 
 ### Conversation history and statistics
 
@@ -206,15 +352,20 @@ Each entry gets a UUID and timestamp automatically.
 
 ## Database schema
 
-The memory system manages six tables (plus a migration tracker):
+The memory system manages 11 tables, 1 virtual table, and a migration tracker:
 
 | Table | Purpose |
 |-------|---------|
-| `conversations` | Conversation sessions with status, summary, and activity tracking |
+| `conversations` | Conversation sessions with status, summary, activity tracking, and project scope |
 | `messages` | Individual messages within conversations (user and assistant) |
+| `messages_fts` | FTS5 virtual table for full-text search across messages |
 | `facts` | Key-value facts about users, scoped by `sender_id` |
-| `outcomes` | Raw interaction outcomes -- short-term working memory (24-48h), scored +1/0/-1 per domain |
-| `lessons` | Distilled behavioral rules -- permanent long-term memory, upserted by (sender_id, domain) |
+| `scheduled_tasks` | Task queue with reminders, actions, repeat schedules, retry logic, and project scope |
+| `limitations` | Self-detected capability limitations |
+| `user_aliases` | Cross-channel user identity linking (alias -> canonical sender_id) |
+| `outcomes` | Raw interaction outcomes -- short-term working memory, scored per domain, project-scoped |
+| `lessons` | Distilled behavioral rules -- long-term memory, multiple per domain, project-scoped |
+| `project_sessions` | Persistent CLI session IDs scoped by (channel, sender_id, project) |
 | `audit_log` | Complete record of every interaction |
 | `_migrations` | Internal migration tracking (do not modify) |
 
@@ -222,20 +373,23 @@ The memory system manages six tables (plus a migration tracker):
 
 Migrations run automatically on `Store::new()`. The system is idempotent -- it tracks which migrations have been applied and skips those already recorded. It also handles bootstrapping from databases created before migration tracking was added.
 
-Migrations exist:
+All 13 migrations:
 1. **001_init** -- Base schema: conversations, messages, facts tables
 2. **002_audit_log** -- Audit log table
 3. **003_memory_enhancement** -- Conversation boundaries (status, summary, last_activity), facts scoped by sender_id
 4. **004_fts5_recall** -- FTS5 full-text search index for cross-conversation recall
 5. **005_scheduled_tasks** -- Task queue table with indexes
-6. **006_limitations** -- Internal limitations tracking
+6. **006_limitations** -- Internal limitations tracking table
 7. **007_task_type** -- Task type column for action scheduler
 8. **008_user_aliases** -- Cross-channel user aliases table
 9. **009_task_retry** -- Retry columns for action failure handling
 10. **010_outcomes** -- Reward-based learning: outcomes (working memory) and lessons (long-term memory) tables
+11. **011_project_learning** -- Project column on outcomes, lessons, and scheduled_tasks; recreates lessons with project in unique constraint
+12. **012_project_sessions** -- Project-scoped CLI sessions table; project column on conversations
+13. **013_multi_lessons** -- Removes unique constraint from lessons; allows multiple lessons per (sender, domain, project)
 
 New migrations can be added by:
-1. Creating a new SQL file in `backend/crates/omega-memory/migrations/` (e.g. `004_your_feature.sql`).
+1. Creating a new SQL file in `backend/crates/omega-memory/migrations/` (e.g. `014_your_feature.sql`).
 2. Adding the migration to the `migrations` array in `Store::run_migrations()`.
 
 ---
@@ -251,19 +405,31 @@ Incoming message arrives from a channel
 Auth check (allowed_users)
     |
     v
-store.build_context(&incoming, &prompts.system)  <-- Loads history, facts, summaries
-    |                                Builds enriched system prompt
-    v
-provider.complete(&context)     <-- AI generates response
+store.resolve_sender_id()        <-- Cross-channel alias resolution
     |
     v
-store.store_exchange(&incoming, &response)  <-- Persists both sides
+store.build_context(              <-- Loads history, facts, summaries,
+    &incoming,                        recall, tasks, outcomes, lessons
+    &prompts.system,                  Builds enriched system prompt
+    &needs,
+    active_project,
+)
     |
     v
-logger.log(&audit_entry)       <-- Records the interaction
+provider.complete(&context)      <-- AI generates response
     |
     v
-channel.send(response)         <-- Delivers response to user
+store.store_exchange(             <-- Persists both sides (project-scoped)
+    &incoming,
+    &response,
+    &project,
+)
+    |
+    v
+logger.log(&audit_entry)         <-- Records the interaction
+    |
+    v
+channel.send(response)           <-- Delivers response to user
 ```
 
 The store and logger are initialized once at startup and shared across the gateway via `Clone`:
@@ -281,24 +447,27 @@ let logger = AuditLogger::new(store.pool().clone());
 
 ### Adding a new query
 
-Add a public async method to the `Store` impl block in `store.rs`:
+Add a public async method to the appropriate submodule in `store/`:
 
 ```rust
-/// Get the total number of audit log entries.
-pub async fn audit_count(&self) -> Result<i64, OmegaError> {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM audit_log")
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| OmegaError::Memory(format!("query failed: {e}")))?;
-    Ok(count)
+// In store/conversations.rs, store/facts.rs, etc.
+impl Store {
+    /// Get the total number of audit log entries.
+    pub async fn audit_count(&self) -> Result<i64, OmegaError> {
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM audit_log")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| OmegaError::Memory(format!("query failed: {e}")))?;
+        Ok(count)
+    }
 }
 ```
 
-Follow the existing pattern: use `sqlx::query_as` for typed results, map errors to `OmegaError::Memory`, and keep the method async.
+Follow the existing pattern: use `sqlx::query_as` for typed results, map errors to `OmegaError::Memory`, and keep the method async. Place the method in the submodule that matches its domain (conversations, facts, tasks, etc.).
 
 ### Adding a new table
 
-1. Create a migration file (e.g. `migrations/004_schedules.sql`):
+1. Create a migration file (e.g. `migrations/014_schedules.sql`):
    ```sql
    CREATE TABLE IF NOT EXISTS schedules (
        id TEXT PRIMARY KEY,
@@ -309,29 +478,26 @@ Follow the existing pattern: use `sqlx::query_as` for typed results, map errors 
    );
    ```
 
-2. Register it in `run_migrations()`:
+2. Register it in `run_migrations()` in `store/mod.rs`:
    ```rust
    let migrations: &[(&str, &str)] = &[
-       ("001_init", include_str!("../migrations/001_init.sql")),
-       ("002_audit_log", include_str!("../migrations/002_audit_log.sql")),
-       ("003_memory_enhancement", include_str!("../migrations/003_memory_enhancement.sql")),
-       ("004_schedules", include_str!("../migrations/004_schedules.sql")),
+       // ... existing migrations ...
+       ("014_schedules", include_str!("../../migrations/014_schedules.sql")),
    ];
    ```
 
-3. Add query methods to `Store` as needed.
+3. Add query methods to the appropriate submodule (or create a new one).
 
-### Adding a new module
+### Adding a new submodule
 
-If you need a new subsystem (e.g. a scheduler store), add it as a sibling module:
+If the domain warrants a separate file:
 
-1. Create `backend/crates/omega-memory/src/scheduler.rs`.
-2. Declare it in `lib.rs`:
+1. Create `backend/crates/omega-memory/src/store/your_module.rs`.
+2. Declare it in `store/mod.rs`:
    ```rust
-   pub mod scheduler;
-   pub use scheduler::Scheduler;
+   mod your_module;
    ```
-3. Have it accept a `SqlitePool` (from `Store::pool()`) just like `AuditLogger` does.
+3. Implement methods on `Store` in the new file.
 
 ---
 
@@ -340,21 +506,34 @@ If you need a new subsystem (e.g. a scheduler store), add it as a sibling module
 | You want to... | Use this |
 |----------------|----------|
 | Initialize memory | `Store::new(&config.memory).await?` |
-| Build context for a provider | `store.build_context(&incoming, &prompts.system).await?` |
-| Store a message exchange | `store.store_exchange(&incoming, &response).await?` |
+| Build context for a provider | `store.build_context(&incoming, &base_prompt, &needs, project).await?` |
+| Store a message exchange | `store.store_exchange(&incoming, &response, "project").await?` |
 | Store a user fact | `store.store_fact("sender", "key", "value").await?` |
+| Get a single fact | `store.get_fact("sender", "key").await?` |
 | Get user facts | `store.get_facts("sender").await?` |
+| Delete a single fact | `store.delete_fact("sender", "key").await?` |
 | Delete user facts | `store.delete_facts("sender", Some("key")).await?` |
-| Close current conversation | `store.close_current_conversation("channel", "sender").await?` |
+| Check if new user | `store.is_new_user("sender").await?` |
+| Resolve cross-channel alias | `store.resolve_sender_id("sender").await?` |
+| Create cross-channel alias | `store.create_alias("alias", "canonical").await?` |
+| Close current conversation | `store.close_current_conversation("channel", "sender", "project").await?` |
 | Get conversation history | `store.get_history("channel", "sender", 10).await?` |
 | Get memory statistics | `store.get_memory_stats("sender").await?` |
 | Get database size | `store.db_size().await?` |
+| Create a scheduled task | `store.create_task(channel, sender, target, desc, due_at, repeat, type, project).await?` |
+| Get due tasks | `store.get_due_tasks().await?` |
+| Complete a task | `store.complete_task(&id, repeat).await?` |
+| Fail a task (with retry) | `store.fail_task(&id, "error", 3).await?` |
+| Cancel a task | `store.cancel_task("prefix", "sender").await?` |
+| Store a reward outcome | `store.store_outcome("sender", "domain", 1, "lesson", "source", "project").await?` |
+| Get recent outcomes (per user) | `store.get_recent_outcomes("sender", 15, Some("project")).await?` |
+| Get recent outcomes (all users) | `store.get_all_recent_outcomes(24, 20, None).await?` |
+| Store a distilled lesson | `store.store_lesson("sender", "domain", "rule", "project").await?` |
+| Get lessons (per user) | `store.get_lessons("sender", Some("project")).await?` |
+| Get lessons (all users) | `store.get_all_lessons(None).await?` |
+| Store a CLI session | `store.store_session("channel", "sender", "project", "session_id").await?` |
+| Get a CLI session | `store.get_session("channel", "sender", "project").await?` |
+| Clear a CLI session | `store.clear_session("channel", "sender", "project").await?` |
 | Create audit logger | `AuditLogger::new(store.pool().clone())` |
 | Log an interaction | `logger.log(&audit_entry).await?` |
-| Store a reward outcome | `store.store_outcome("sender", "domain", 1, "lesson", "conversation").await?` |
-| Get recent outcomes (per user) | `store.get_recent_outcomes("sender", 15).await?` |
-| Get recent outcomes (all users) | `store.get_all_recent_outcomes(24, 20).await?` |
-| Store a distilled lesson | `store.store_lesson("sender", "domain", "rule").await?` |
-| Get lessons (per user) | `store.get_lessons("sender").await?` |
-| Get lessons (all users) | `store.get_all_lessons().await?` |
 | Get connection pool | `store.pool()` |

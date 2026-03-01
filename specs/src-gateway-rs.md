@@ -1,7 +1,7 @@
 # Specification: backend/src/gateway/ (Directory Module)
 
 ## File Path
-`backend/src/gateway/` (directory module with 19 files)
+`backend/src/gateway/` (directory module with 24 files)
 
 ## Refactoring History
 - **2026-02-20:** Marker extraction/parsing/stripping functions (40+) extracted into `backend/src/markers.rs`. See `specs/src-markers-rs.md`.
@@ -10,30 +10,36 @@
 - **2026-02-23:** Project-scoped learning: `scheduler_action.rs` extracted from `scheduler.rs` (~310 lines), `heartbeat_helpers.rs` extracted from `heartbeat.rs` (~250 lines). `active_project` threaded through pipeline, routing, and process_markers.
 - **2026-02-28:** Topology extraction: `builds_topology.rs` added (TOML-defined pipeline phases, agent loader, bundled defaults). `builds_agents.rs` rewritten to load agents from topology instead of embedded const strings. `builds_i18n.rs` extracted from `builds_parse.rs` (phase/QA/review i18n messages, 8 languages) to keep `builds_parse.rs` under 500 lines.
 - **2026-02-28:** OMEGA Brain: `setup.rs` added (Brain setup session orchestrator), `setup_response.rs` added (response handling — confirmation and questioning phases, extracted for 500-line limit). `builds_agents.rs` extended with `BRAIN_AGENT` const and `write_single()` method. `keywords.rs` extended with setup i18n messages (8 languages). `pipeline.rs` extended with `/setup` intercept and `pending_setup` session check.
+- **2026-03-01 (audit sync):** 5 files identified that were added but not documented: `prompt_builder.rs` (extracted `build_system_prompt()` from `pipeline.rs`), `pipeline_builds.rs` (build-related pipeline stages extracted from `pipeline.rs`), `shared_markers.rs` (deduplicated CANCEL_TASK/UPDATE_TASK/REWARD/LESSON processing), `keywords_data.rs` (static keyword arrays extracted from `keywords.rs` for 500-line limit), `tests.rs` (gateway integration tests). Total: 24 files.
 
 ## Module Structure
 
-| File | Lines (prod) | Responsibility |
-|------|-------------|----------------|
-| `mod.rs` | ~824 | Struct Gateway, `new()`, `run()`, `dispatch_message()`, `shutdown()`, `send_text()`, tests |
-| `keywords.rs` | ~751 | Constants (`MAX_ACTION_RETRIES`, `SCHEDULING_KW`, `RECALL_KW`, `TASKS_KW`, `PROJECTS_KW`, `PROFILE_KW`, `OUTCOMES_KW`, `BUILDS_KW`, `META_KW`, `SYSTEM_FACT_KEYS`, `SETUP_TTL_SECS`), `kw_match()`, `is_valid_fact()`, setup i18n messages (8 languages: `setup_help_message`, `setup_intro_message`, `setup_followup_message`, `setup_proposal_message`, `setup_complete_message`, `setup_cancelled_message`, `setup_expired_message`, `setup_conflict_message`), tests |
-| `summarizer.rs` | ~276 | `summarize_and_extract()`, `background_summarizer()`, `summarize_conversation()`, `handle_forget()` |
-| `scheduler.rs` | ~105 | Slim orchestrator: `scheduler_loop()` polls due tasks, delegates action execution to `scheduler_action.rs` |
-| `scheduler_action.rs` | ~456 | Action task execution: `execute_action_task()`, system prompt enrichment, `ACTION_OUTCOME` parsing, marker processing, retry/failure handling |
-| `heartbeat.rs` | ~318 | `heartbeat_loop()` (global + per-project), `classify_heartbeat_groups()`, `execute_heartbeat_group()`, per-project heartbeat iteration via `get_all_facts_by_key("active_project")` |
-| `heartbeat_helpers.rs` | ~289 | `process_heartbeat_markers()`, `build_enrichment()`, `build_system_prompt()`, `send_heartbeat_result()` |
-| `pipeline.rs` | ~1000 | `handle_message()`, `build_system_prompt()`, resolves `active_project`, routes builds to `handle_build_request()`, `/setup` intercept with `pending_setup` session check, discovery session handling, all other messages to `handle_direct_response()` |
-| `routing.rs` | ~436 | `classify_and_route()` (dead code), `execute_steps()` (dead code), `handle_direct_response()`, passes `active_project` to `process_markers()` |
-| `builds.rs` | ~477 | Topology-driven build orchestrator: `handle_build_request()` iterates over `LoadedTopology.phases`, dispatching each based on `PhaseType` (ParseBrief, Standard, CorrectiveLoop, ParseSummary). `run_build_phase()` (agent-based with `--agent` flag), `audit_build()`, `chain_state()` helper. Delegates corrective loops to `builds_loop.rs`. |
-| `builds_loop.rs` | ~415 | Build pipeline corrective loops and validation: `run_corrective_loop()` (unified QA/reviewer loop from topology RetryConfig), `run_validation()` (topology-driven pre-phase checks), `save_chain_state()` (writes `docs/.workflow/chain-state.md` on failure), `has_files_matching()` (recursive file search). Legacy `run_qa_loop()`, `run_review_loop()`, `validate_phase_output()` retained for transition. |
-| `builds_parse.rs` | ~287 | Pure parsing functions and data structures for builds: `parse_project_brief()`, `parse_verification_result()`, `parse_review_result()`, `parse_build_summary()`, `parse_discovery_output()`, `parse_discovery_round()`, `truncate_brief_preview()`, `discovery_file_path()`. Data structures: `ProjectBrief`, `VerificationResult`, `ReviewResult`, `BuildSummary`, `ChainState`, `DiscoveryOutput`. Re-exports i18n functions from `builds_i18n.rs`. |
-| `builds_i18n.rs` | ~265 | Localized i18n messages for the build pipeline (8 languages x 7 phases): `phase_message()`, `phase_message_by_name()`, `qa_pass_message()`, `qa_retry_message()`, `qa_exhausted_message()`, `review_pass_message()`, `review_retry_message()`, `review_exhausted_message()`. Extracted from `builds_parse.rs` for the 500-line limit. |
-| `builds_agents.rs` | ~186 | Topology-based agent file lifecycle: `AgentFilesGuard` RAII struct (writes agent `.md` files from `LoadedTopology` to workspace `.claude/agents/`, ref-counted cleanup on Drop via `Mutex<HashMap>` refcount). `write_from_topology()` replaces old const-string `write()`. `write_single()` for individual agent file creation (used by Brain setup). `BRAIN_AGENT` const via `include_str!()`. |
-| `builds_topology.rs` | ~319 | TOML-defined topology schema: `Topology`, `Phase`, `PhaseType`, `ModelTier`, `RetryConfig`, `ValidationConfig` structs. `load_topology()` reads from `~/.omega/topologies/<name>/`, `deploy_bundled_topology()` writes defaults from `include_str!()`, `validate_topology_name()` guards against path traversal. `LoadedTopology` holds parsed TOML + agent content map. |
-| `auth.rs` | ~167 | `check_auth()`, `handle_whatsapp_qr()` |
-| `setup.rs` | ~318 | Brain setup session orchestrator: `start_setup_session()`, `execute_setup()`, `cleanup_setup_session()`, `audit_setup()`. Pure functions: `setup_context_path()`, `parse_setup_round()`, `parse_setup_output()`, `SetupOutput` enum. |
-| `setup_response.rs` | ~315 | Setup response handling (extracted for 500-line limit): `handle_setup_response()`, `handle_setup_confirmation()`, `handle_setup_questioning()`, `extract_proposal_preview()`. |
-| `process_markers.rs` | ~504 | `process_markers(incoming, text, active_project)`, `process_purge_facts()`, `process_improvement_markers()`, `send_task_confirmation()` |
+| File | Responsibility |
+|------|----------------|
+| `mod.rs` | Struct Gateway, `new()`, `run()`, `dispatch_message()`, `shutdown()`, `send_text()`, tests |
+| `pipeline.rs` | `handle_message()`, resolves `active_project`, routes builds, `/setup` intercept, discovery session, delegates to `handle_direct_response()` |
+| `pipeline_builds.rs` | Build-related pipeline stages: discovery continuation, build confirmation, build keyword handling |
+| `prompt_builder.rs` | `build_system_prompt()` -- full prompt construction with conditional section injection |
+| `routing.rs` | `classify_and_route()` (dead code), `execute_steps()` (dead code), `handle_direct_response()`, passes `active_project` to `process_markers()` |
+| `process_markers.rs` | `process_markers(incoming, text, active_project)`, `process_purge_facts()`, `process_improvement_markers()`, `send_task_confirmation()` |
+| `shared_markers.rs` | `process_task_and_learning_markers()` -- shared CANCEL_TASK, UPDATE_TASK, REWARD, LESSON processing (deduplicated across pipeline, action, heartbeat) |
+| `auth.rs` | `check_auth()`, `handle_whatsapp_qr()` |
+| `keywords.rs` | `kw_match()`, `is_valid_fact()`, setup i18n messages (8 languages), tests |
+| `keywords_data.rs` | Static keyword data arrays (`MAX_ACTION_RETRIES`, `SCHEDULING_KW`, `RECALL_KW`, `TASKS_KW`, `PROJECTS_KW`, `PROFILE_KW`, `OUTCOMES_KW`, `BUILDS_KW`, `META_KW`, `SYSTEM_FACT_KEYS`). Extracted for 500-line limit |
+| `scheduler.rs` | Slim orchestrator: `scheduler_loop()` polls due tasks, delegates action execution to `scheduler_action.rs` |
+| `scheduler_action.rs` | Action task execution: `execute_action_task()`, system prompt enrichment, `ACTION_OUTCOME` parsing, marker processing, retry/failure |
+| `heartbeat.rs` | `heartbeat_loop()` (global + per-project), `classify_heartbeat_groups()`, `execute_heartbeat_group()` |
+| `heartbeat_helpers.rs` | `process_heartbeat_markers()`, `build_enrichment()`, `build_system_prompt()`, `send_heartbeat_result()` |
+| `summarizer.rs` | `summarize_and_extract()`, `background_summarizer()`, `summarize_conversation()`, `handle_forget()` |
+| `builds.rs` | Topology-driven build orchestrator: `handle_build_request()`, `run_build_phase()`, `audit_build()`, `chain_state()` |
+| `builds_loop.rs` | Corrective loops and validation: `run_corrective_loop()`, `run_validation()`, `save_chain_state()`, `has_files_matching()` |
+| `builds_parse.rs` | Pure parsing: `parse_project_brief()`, `parse_verification_result()`, `parse_review_result()`, `parse_build_summary()`, `parse_discovery_output()`, etc. |
+| `builds_i18n.rs` | Localized i18n messages for build pipeline (8 languages x 7 phases) |
+| `builds_agents.rs` | `AgentFilesGuard` RAII struct, `write_from_topology()`, `write_single()`, `BRAIN_AGENT` const |
+| `builds_topology.rs` | TOML topology schema, `load_topology()`, `deploy_bundled_topology()`, `validate_topology_name()` |
+| `setup.rs` | Brain setup session orchestrator: `start_setup_session()`, `execute_setup()`, `cleanup_setup_session()`, `audit_setup()` |
+| `setup_response.rs` | Setup response handling: `handle_setup_response()`, `handle_setup_confirmation()`, `handle_setup_questioning()` |
+| `tests.rs` | Gateway integration tests |
 
 All submodules access `Gateway` fields via `pub(super)` visibility (module-internal, not public API).
 

@@ -11,8 +11,8 @@ backend/crates/omega-sandbox/
   Cargo.toml
   src/
     lib.rs               # Public API: protected_command() + is_write_blocked() + is_read_blocked()
-    seatbelt.rs          # macOS: Seatbelt blocklist (deny writes to system dirs, deny reads to data/config)
-    landlock_sandbox.rs  # Linux: Landlock allowlist + Refer-only restrictions on data/config
+    seatbelt.rs          # macOS: Seatbelt blocklist (deny writes to system dirs + config, deny reads to data/config)
+    landlock_sandbox.rs  # Linux: Landlock allowlist + Refer-only restrictions on data/config, pre-creates dirs
 ```
 
 ---
@@ -26,8 +26,10 @@ Protection works in three layers:
 ### Layer 1: Code-Level Protection (all platforms, primary)
 
 Two functions provide enforcement for HTTP-based providers (OpenAI, Anthropic, Ollama, OpenRouter, Gemini):
-- `is_write_blocked()` — called before write/edit operations
-- `is_read_blocked()` — called before read operations
+- `is_write_blocked(path, data_dir)` -- called before write/edit operations. Blocks `{data_dir}/data/`, `{data_dir}/config.toml`, and dangerous OS directories. Uses component-aware `Path::starts_with()` matching to avoid false positives (e.g. `/binaries/test` does not match `/bin`).
+- `is_read_blocked(path, data_dir, config_path)` -- called before read operations. Blocks `{data_dir}/data/`, `{data_dir}/config.toml`, and an optional external config path.
+
+Both functions resolve symlinks before comparison (via `try_canonicalize()`) and **fail closed for relative paths** -- any relative path returns `true` (blocked) to prevent traversal bypass.
 
 This works on all platforms, including those without OS-level sandbox support.
 
@@ -54,6 +56,7 @@ Platform-native mechanisms block the AI subprocess at the OS level:
 | Path | What it protects |
 |------|-----------------|
 | `~/.omega/data/` | OMEGA's core database (memory.db, audit trail, facts) |
+| `~/.omega/config.toml` | API keys and auth settings |
 | `/System` | macOS system |
 | `/bin`, `/sbin` | System binaries |
 | `/usr/bin`, `/usr/sbin`, `/usr/lib`, `/usr/libexec` | System binaries and libraries |
@@ -106,7 +109,7 @@ Full network access is available. Package installs (`npm install`, `pip install`
 The crate generates a Seatbelt profile and invokes `sandbox-exec -p <profile> -- claude ...`. The profile:
 
 1. Allows all operations by default (`(allow default)`)
-2. Denies writes to system dirs + data dir (`(deny file-write* ...)`)
+2. Denies writes to system dirs + data dir + config.toml (`(deny file-write* ...)`)
 3. Denies reads to data dir + config.toml (`(deny file-read* ...)`)
 
 If `/usr/bin/sandbox-exec` does not exist (unlikely on macOS), falls back to code-level enforcement with a warning.
@@ -118,7 +121,10 @@ The crate uses a broad allowlist plus restrictive overrides:
 - Read + execute on `/` (system dirs become read-only)
 - Full access to `$HOME`, `/tmp`
 - Optional full access to `/var/tmp`, `/opt`, `/srv`, `/run`, `/media`, `/mnt`
-- Refer-only access to `~/.omega/data/` and `~/.omega/config.toml` — via Landlock intersection semantics (`full_access ∩ Refer = Refer`), this blocks both reads and writes
+- Refer-only access to `~/.omega/data/` -- via Landlock intersection semantics (`full_access intersection Refer = Refer`), this blocks both reads and writes
+- Refer-only access to `~/.omega/config.toml` (only if the file exists)
+
+The `~/.omega/data/` directory is pre-created via `create_dir_all()` before the Landlock rule is applied, ensuring protection is active even on first run. Config.toml cannot be safely pre-created (an empty file breaks the TOML parser), so code-level enforcement covers the gap.
 
 Code-level enforcement via `is_read_blocked()` and `is_write_blocked()` provides additional protection.
 

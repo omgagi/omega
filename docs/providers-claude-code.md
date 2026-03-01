@@ -11,7 +11,7 @@ The Claude Code CLI provider is Omega's default AI backend. It works by shelling
 When Omega receives a message (from Telegram, CLI, etc.), the gateway assembles a `Context` containing the system prompt, conversation history, and the current message. That context is flattened into a single prompt string and passed to the `claude` CLI as a subprocess:
 
 ```
-claude -p "the prompt" --output-format json --max-turns 10 --allowedTools Bash --allowedTools Read ...
+claude -p "the prompt" --output-format json --max-turns 25 --dangerously-skip-permissions
 ```
 
 The CLI does its work (potentially taking multiple agentic turns), then returns a JSON object on stdout. Omega parses that JSON, extracts the response text and model info, and sends it back through the messaging channel.
@@ -28,7 +28,7 @@ You can create the provider in two ways:
 
 ```rust
 let provider = ClaudeCodeProvider::new();
-// max_turns: 10
+// max_turns: 25
 // allowed_tools: [] (empty = full tool access)
 ```
 
@@ -51,7 +51,7 @@ The default model to pass to the Claude Code CLI via `--model <value>`. When `fr
 
 ### `max_turns`
 
-Controls how many agentic turns the Claude CLI is allowed to take in a single invocation. An "agentic turn" is one cycle of the CLI using a tool (running a command, reading a file, etc.) and then deciding what to do next. The default of `10` is a reasonable balance between capability and cost.
+Controls how many agentic turns the Claude CLI is allowed to take in a single invocation. An "agentic turn" is one cycle of the CLI using a tool (running a command, reading a file, etc.) and then deciding what to do next. The default of `25` provides generous room for complex multi-step tasks.
 
 If Claude hits the max turns limit and the response includes a `session_id`, Omega automatically resumes the session by retrying with `--resume`, up to `max_resume_attempts` times (default: 5). Each retry waits with exponential backoff (2s, 4s, 8s, ...) to give the CLI session time to release. This allows complex multi-turn tasks to continue seamlessly across turn limits. If no `session_id` is returned or the retry limit is reached, Omega extracts whatever partial response was generated.
 
@@ -248,7 +248,7 @@ If the CLI returns something that is not valid JSON (unlikely but possible), Ome
 If the JSON parses correctly but `result` is empty or missing:
 
 - If `is_error` is `true`: the user sees `"Error from Claude: <subtype>"`.
-- Otherwise: the user sees `"(No response text returned)"`.
+- Otherwise: the user sees `"I received your message but wasn't able to generate a response. Please try again."`.
 
 ---
 

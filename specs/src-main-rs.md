@@ -11,25 +11,36 @@ The main entry point for the Omega binary. Orchestrates CLI argument parsing, ro
 - **tokio** — Async runtime with #[tokio::main] macro
 - **tracing** — Structured logging
 - **tracing_subscriber** — Log level filtering via environment
+- **tracing_appender** — Non-blocking file log appender for `~/.omega/logs/omega.log`
 - **anyhow** — Error handling (Result, bail! macro)
 - **libc** — FFI for geteuid() root detection
 - **std::sync::Arc** — Atomic reference counting for shared ownership
 - **std::collections::HashMap** — Channel registry
+- **std::path::PathBuf** — Workspace path construction
 
-## Imports
+## Module Declarations (14)
+- `crate::api` — HTTP API server (axum)
 - `crate::claudemd` — Workspace CLAUDE.md maintenance (init + periodic refresh)
-- `crate::commands` — Command handlers submodule
-- `crate::gateway` — Event loop gateway
+- `crate::commands` — Command handlers directory module
+- `crate::gateway` — Event loop gateway directory module
+- `crate::i18n` — Internationalization directory module (8 languages)
 - `crate::init` — Interactive setup wizard and non-interactive deployment
+- `crate::init_style` — Branded CLI output helpers
 - `crate::init_wizard` — Interactive wizard helpers (browser detection, Anthropic auth, WhatsApp setup, Google setup)
+- `crate::markers` — Marker extraction/parsing/stripping directory module
+- `crate::pair` — Standalone WhatsApp QR pairing
+- `crate::provider_builder` — Provider factory function
 - `crate::selfcheck` — Pre-startup health checks
 - `crate::service` — OS-aware service management
+- `crate::task_confirmation` — Task scheduling confirmation (anti-hallucination layer)
+
+## Imports
 - `omega_channels::telegram::TelegramChannel` — Telegram integration
-- `omega_core::config` — Configuration loading
+- `omega_channels::whatsapp::WhatsAppChannel` — WhatsApp integration
+- `omega_core::config` — Configuration loading, `shellexpand`, `Prompts`
 - `omega_core::context::Context` — Message context wrapper
-- `omega_core::traits::Provider` — Provider trait
 - `omega_memory::Store` — SQLite memory backend
-- `omega_providers::claude_code::ClaudeCodeProvider` — Claude Code CLI provider
+- `omega_providers::claude_code::ClaudeCodeProvider` — Claude Code CLI provider (for status check)
 
 ## Structs
 
@@ -53,9 +64,9 @@ The main entry point for the Omega binary. Orchestrates CLI argument parsing, ro
 - `Start` — Launch the Omega agent daemon (connects to channels, runs gateway loop)
 - `Status` — Health check: verify provider availability and channel configuration
 - `Ask { message: Vec<String> }` — One-shot query: send a message and exit (no persistent gateway)
-- `Init { telegram_token, allowed_users, claude_setup_token, whisper_key, sandbox, google_credentials, google_email }` — Interactive setup wizard or non-interactive deployment. When `--telegram-token` or `--allowed-users` is provided (via CLI or `OMEGA_` env vars), dispatches to `init::run_noninteractive()`. Otherwise runs the interactive wizard via `init::run()`. All fields are `Option<String>` and support env vars via clap's `env` feature (e.g., `OMEGA_TELEGRAM_TOKEN`).
-- `Pair` — Standalone WhatsApp QR pairing (or re-pairing)
-- `Service { action: ServiceAction }` — Manage the system service (install, uninstall, status)
+- `Init { telegram_token, allowed_users, claude_setup_token, whisper_key, google_credentials, google_email }` — Interactive setup wizard or non-interactive deployment. When `--telegram-token` or `--allowed-users` is provided (via CLI or `OMEGA_` env vars), dispatches to `init::run_noninteractive()`. Otherwise runs the interactive wizard via `init::run()`. All fields are `Option<String>` and support env vars via clap's `env` feature (e.g., `OMEGA_TELEGRAM_TOKEN`).
+- `Pair` — Standalone WhatsApp QR pairing (or re-pairing). Delegates to `pair::pair_whatsapp()`
+- `Service { action: ServiceAction }` — Manage the system service (install, uninstall, status). Delegates to `service::install/uninstall/status`
 
 ---
 
@@ -127,7 +138,13 @@ This is the only unsafe code in main.rs. It prevents Omega from running with ele
    - Return boxed trait object
 3. **Any other provider name:** bail with "unsupported provider" error
 
-**Note:** Extensible pattern for adding new providers (Anthropic, OpenAI, Ollama, OpenRouter).
+**Supported Providers (6):**
+- `"claude-code"` — ClaudeCodeProvider (fast = Sonnet, complex = Opus)
+- `"ollama"` — OllamaProvider (same model for fast and complex)
+- `"openai"` — OpenAiProvider (same model for fast and complex)
+- `"anthropic"` — AnthropicProvider (same model for fast and complex)
+- `"openrouter"` — OpenRouterProvider (same model for fast and complex)
+- `"gemini"` — GeminiProvider (same model for fast and complex)
 
 ---
 
@@ -328,12 +345,21 @@ Root check, provider availability, channel credentials, and self-checks all happ
 ---
 
 ## Module Dependencies
-- `commands` — Currently unused in main.rs (defined but not referenced)
-- `gateway` — Core event loop orchestrator
+- `api` — HTTP API server (spawned as background task in gateway)
+- `claudemd` — Workspace CLAUDE.md maintenance (spawned as background task in gateway)
+- `commands` — Bot command handlers (directory module, called from gateway pipeline)
+- `gateway` — Core event loop orchestrator (directory module)
+- `i18n` — Localized strings (directory module, called from commands and task_confirmation)
 - `init` — Setup wizard and non-interactive deployment
+- `init_style` — Branded CLI output helpers (used by init and init_wizard)
 - `init_wizard` — Interactive wizard helpers (browser detection, auth, pairing, Google setup)
+- `markers` — Marker extraction/parsing/stripping (directory module, called from gateway pipeline)
+- `pair` — Standalone WhatsApp QR pairing (called from main for Pair command)
+- `provider_builder` — Provider factory (called from main for Start and Ask commands)
 - `selfcheck` — Pre-flight verification
-- External crates provide: CLI parsing (clap with `env` feature), async runtime, logging, error handling, platform FFI
+- `service` — OS service management (called from main for Service command)
+- `task_confirmation` — Anti-hallucination task confirmations (called from gateway)
+- External crates provide: CLI parsing (clap with `env` feature), async runtime, logging, file logging (tracing-appender), error handling, platform FFI
 
 ---
 
@@ -375,11 +401,17 @@ Passes config to memory store (database path, schema version, etc.).
 | Component | Type | Purpose |
 |-----------|------|---------|
 | `Cli` | Struct | Argument parser definition |
-| `Commands` | Enum | Command variants (Start, Status, Ask, Init) |
+| `Commands` | Enum | Command variants (Start, Status, Ask, Init, Pair, Service) |
+| `ServiceAction` | Enum | Service subcommands (Install, Uninstall, Status) |
 | `main()` | Async Fn | Entry point, orchestrator |
+| `cmd_start()` | Async Fn | Start daemon (config, prompts, skills, provider, channels, memory, gateway) |
+| `cmd_status()` | Async Fn | Health check (provider availability, channel status) |
+| `cmd_ask()` | Async Fn | One-shot query (provider.complete) |
+| `init_stdout_tracing()` | Fn | Stdout-only tracing for non-daemon commands |
 | `build_provider()` | Fn | Provider factory (in `backend/src/provider_builder.rs`) |
+| `pair_whatsapp()` | Async Fn | WhatsApp QR pairing (in `backend/src/pair.rs`) |
 | Root Guard | Check | Prevents execution as root (unsafe libc call) |
-| Tracing Init | Logger | Structured logging setup |
+| Tracing Init | Logger | Dual-layer: stdout + file appender via tracing-appender |
 | Gateway Loop | Async | Event processor for Start command |
-| Config Loading | I/O | TOML parsing and env merge |
+| Config Loading | I/O | TOML parsing, layout migration, env merge |
 | Error Handling | Pattern | anyhow::Result, ? operator, bail! |

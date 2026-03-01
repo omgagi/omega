@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Gateway** is the central orchestrator of Omega's event loop, implemented as a directory module at `backend/src/gateway/` with 12 files. It sits at the intersection of:
+The **Gateway** is the central orchestrator of Omega's event loop, implemented as a directory module at `backend/src/gateway/` with 24 files. It sits at the intersection of:
 - **Messaging channels** (Telegram, WhatsApp) — where users send messages.
 - **AI providers** (Claude Code CLI, Anthropic API, etc.) — where reasoning happens.
 - **Memory store** (SQLite) — where conversation history and user facts are persisted.
@@ -17,14 +17,29 @@ The gateway was modularized from a single `backend/src/gateway.rs` into `backend
 | File | Responsibility |
 |------|----------------|
 | `mod.rs` | Gateway struct, `new()`, `run()`, `dispatch_message()`, `shutdown()`, `send_text()` |
-| `pipeline.rs` | `handle_message()` — the full message processing pipeline, `build_system_prompt()` |
+| `pipeline.rs` | `handle_message()` -- full message processing pipeline, `/setup` intercept, discovery sessions |
+| `pipeline_builds.rs` | Build-related pipeline stages: discovery continuation, build confirmation, build keyword handling |
+| `prompt_builder.rs` | `build_system_prompt()` -- full prompt construction with conditional section injection |
 | `routing.rs` | `classify_and_route()`, `execute_steps()`, `handle_direct_response()` |
 | `process_markers.rs` | `process_markers()`, `send_task_confirmation()` |
+| `shared_markers.rs` | Shared CANCEL_TASK, UPDATE_TASK, REWARD, LESSON processing (deduplicated) |
 | `auth.rs` | `check_auth()`, `handle_whatsapp_qr()` |
-| `scheduler.rs` | `scheduler_loop()` — background task delivery |
-| `heartbeat.rs` | `heartbeat_loop()` — periodic AI check-ins |
+| `keywords.rs` | `kw_match()`, `is_valid_fact()`, setup i18n messages |
+| `keywords_data.rs` | Static keyword arrays (extracted for 500-line limit) |
+| `scheduler.rs` | `scheduler_loop()` -- background task delivery |
+| `scheduler_action.rs` | Action task execution, retry/failure handling |
+| `heartbeat.rs` | `heartbeat_loop()` -- periodic AI check-ins (global + per-project) |
+| `heartbeat_helpers.rs` | Heartbeat marker processing, prompt building, result delivery |
 | `summarizer.rs` | `summarize_and_extract()`, `background_summarizer()`, `summarize_conversation()`, `handle_forget()` |
-| `keywords.rs` | Keyword constants (`SCHEDULING_KW`, `RECALL_KW`, etc.), `kw_match()`, `is_valid_fact()` |
+| `builds.rs` | Topology-driven build orchestrator |
+| `builds_loop.rs` | Corrective loops (QA/review) and validation |
+| `builds_parse.rs` | Pure parsing functions and data structures for builds |
+| `builds_i18n.rs` | Localized build pipeline messages (8 languages x 7 phases) |
+| `builds_agents.rs` | Agent file lifecycle (`AgentFilesGuard` RAII) |
+| `builds_topology.rs` | TOML topology schema, loader, bundled defaults |
+| `setup.rs` | Brain setup session orchestrator (`/setup` command) |
+| `setup_response.rs` | Setup response handling (confirmation + questioning phases) |
+| `tests.rs` | Gateway integration tests |
 
 All struct fields use `pub(super)` visibility, keeping the public API unchanged.
 

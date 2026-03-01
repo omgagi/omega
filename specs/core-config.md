@@ -57,6 +57,7 @@ Config
 | `memory` | `MemoryConfig` | `#[serde(default)]` | `MemoryConfig::default()` |
 | `heartbeat` | `HeartbeatConfig` | `#[serde(default)]` | `HeartbeatConfig::default()` |
 | `scheduler` | `SchedulerConfig` | `#[serde(default)]` | `SchedulerConfig::default()` |
+| `api` | `ApiConfig` | `#[serde(default)]` | `ApiConfig::default()` |
 
 Derives: `Debug, Clone, Serialize, Deserialize`
 
@@ -66,7 +67,7 @@ General agent identity and runtime settings.
 
 | Field | Type | Default Function | Default Value |
 |-------|------|-----------------|---------------|
-| `name` | `String` | `default_name()` | `"Omega"` |
+| `name` | `String` | `default_name()` | `"OMEGA \u{03a9}"` |
 | `data_dir` | `String` | `default_data_dir()` | `"~/.omega"` |
 | `log_level` | `String` | `default_log_level()` | `"info"` |
 
@@ -107,15 +108,15 @@ When the config file is absent, the `load()` function explicitly constructs a `P
 | Field | Type | Default Function | Default Value |
 |-------|------|-----------------|---------------|
 | `enabled` | `bool` | `default_true()` | `true` |
-| `max_turns` | `u32` | `default_max_turns()` | `10` |
-| `allowed_tools` | `Vec<String>` | `default_allowed_tools()` | `["Bash", "Read", "Write", "Edit"]` |
+| `max_turns` | `u32` | `default_max_turns()` | `25` |
+| `allowed_tools` | `Vec<String>` | `default_allowed_tools()` | `[]` (empty = full tool access) |
 | `timeout_secs` | `u64` | `default_timeout_secs()` | `3600` |
 | `max_resume_attempts` | `u32` | `default_max_resume_attempts()` | `5` |
 | `model` | `String` | `default_model()` | `"claude-sonnet-4-6"` |
 | `model_complex` | `String` | `default_model_complex()` | `"claude-opus-4-6"` |
 
 Derives: `Debug, Clone, Serialize, Deserialize`
-Implements: `Default` (manual, sets `enabled` to `true`, `max_turns` to `default_max_turns()`, `allowed_tools` to `default_allowed_tools()`, `timeout_secs` to `default_timeout_secs()`, `max_resume_attempts` to `default_max_resume_attempts()`, `model` to `default_model()`, `model_complex` to `default_model_complex()`).
+Implements: `Default` (manual, sets `enabled` to `true`, `max_turns` to `25`, `allowed_tools` to `vec![]`, `timeout_secs` to `default_timeout_secs()`, `max_resume_attempts` to `default_max_resume_attempts()`, `model` to `default_model()`, `model_complex` to `default_model_complex()`).
 
 ### `AnthropicConfig`
 
@@ -124,6 +125,9 @@ Implements: `Default` (manual, sets `enabled` to `true`, `max_turns` to `default
 | `enabled` | `bool` | serde default | `false` |
 | `api_key` | `String` | serde default | `""` |
 | `model` | `String` | `default_anthropic_model()` | `"claude-sonnet-4-20250514"` |
+| `max_tokens` | `u32` | `default_anthropic_max_tokens()` | `8192` |
+
+Note: `default_anthropic_max_tokens()` is a private function defined in `providers.rs` (not in `defaults.rs`).
 
 Derives: `Debug, Clone, Serialize, Deserialize`
 
@@ -184,20 +188,23 @@ Derives: `Debug, Clone, Serialize, Deserialize, Default`
 | `enabled` | `bool` | `false` |
 | `bot_token` | `String` | `""` |
 | `allowed_users` | `Vec<i64>` | `[]` |
+| `whisper_api_key` | `Option<String>` | `None` |
 
 Derives: `Debug, Clone, Serialize, Deserialize`
 
-Note: `allowed_users` contains Telegram numeric user IDs. An empty list means "allow all" (per gateway auth logic).
+Note: `allowed_users` contains Telegram numeric user IDs. An empty list means "allow all" (per gateway auth logic). `whisper_api_key` enables Whisper voice transcription when present (OpenAI API key).
 
 ### `WhatsAppConfig`
 
 | Field | Type | Default Value |
 |-------|------|---------------|
 | `enabled` | `bool` | `false` |
-| `bridge_url` | `String` | `""` |
-| `phone_number` | `String` | `""` |
+| `allowed_users` | `Vec<String>` | `[]` |
+| `whisper_api_key` | `Option<String>` | `None` |
 
 Derives: `Debug, Clone, Serialize, Deserialize`
+
+Note: `allowed_users` contains phone numbers (e.g., `["5511999887766"]`). An empty list means "allow all". Session data is stored at `{data_dir}/whatsapp_session/`. Pairing is done by scanning a QR code (like WhatsApp Web). `whisper_api_key` enables Whisper voice transcription when present.
 
 ### `MemoryConfig`
 
@@ -261,14 +268,14 @@ All private functions in the module that supply serde defaults:
 
 | Function | Return Type | Value |
 |----------|------------|-------|
-| `default_name()` | `String` | `"Omega"` |
+| `default_name()` | `String` | `"OMEGA \u{03a9}"` |
 | `default_data_dir()` | `String` | `"~/.omega"` |
 | `default_log_level()` | `String` | `"info"` |
 | `default_provider()` | `String` | `"claude-code"` |
 | `default_true()` | `bool` | `true` |
 | `default_deny_message()` | `String` | `"Access denied. You are not authorized to use this agent."` |
-| `default_max_turns()` | `u32` | `10` |
-| `default_allowed_tools()` | `Vec<String>` | `["Bash", "Read", "Write", "Edit"]` |
+| `default_max_turns()` | `u32` | `25` |
+| `default_allowed_tools()` | `Vec<String>` | `[]` (empty) |
 | `default_anthropic_model()` | `String` | `"claude-sonnet-4-20250514"` |
 | `default_openai_model()` | `String` | `"gpt-4o"` |
 | `default_openai_base_url()` | `String` | `"https://api.openai.com/v1"` |
@@ -284,6 +291,8 @@ All private functions in the module that supply serde defaults:
 | `default_model_complex()` | `String` | `"claude-opus-4-6"` |
 | `default_heartbeat_interval()` | `u64` | `30` |
 | `default_poll_interval()` | `u64` | `60` |
+| `default_api_host()` | `String` | `"127.0.0.1"` |
+| `default_api_port()` | `u16` | `3000` |
 
 ---
 
@@ -417,6 +426,7 @@ Channel and provider sub-configs use `Option<T>` rather than `#[serde(default)]`
 | `[memory]` | `Config.memory` |
 | `[heartbeat]` | `Config.heartbeat` |
 | `[scheduler]` | `Config.scheduler` |
+| `[api]` | `Config.api` |
 
 ---
 

@@ -15,7 +15,7 @@
 |----------|--------|----------|-------|-----------|--------|
 | P0 | COMPLETE | 4 | 4 | 0 | `8c97586` |
 | P1 | COMPLETE | 15 | 14 | 1 | `0b6d08e` |
-| P2 | COMPLETE | 30 | 19 | 11 | `dfebb30` |
+| P2 | COMPLETE | 30 | 30 | 0 | `dfebb30`, `b4c88c7` |
 | P3 | SKIPPED | 12 | 0 | 0 | -- |
 
 ## Findings Detail
@@ -37,7 +37,7 @@
 | P1-004 | Agent name path traversal unvalidated | FIXED | `0b6d08e` |
 | P1-005 | String-level prefix matching false positives | FIXED | `0b6d08e` |
 | P1-006 | Per-message filesystem I/O for project loading | FIXED | `0b6d08e` |
-| P1-007 | O(n^2) message cloning in agentic loops | ESCALATED | -- |
+| P1-007 | O(n^2) message cloning in agentic loops | N/A | -- (claude-code only, HTTP providers unused) |
 | P1-008 | Missing tests for auth module | FIXED | `0b6d08e` |
 | P1-009 | Landlock restrictions skip non-existent paths | FIXED | `0b6d08e` |
 | P1-010 | selfcheck.rs no timeout on HTTP request | FIXED | `0b6d08e` |
@@ -50,33 +50,33 @@
 ### P2: Minor
 | ID | Title | Status | Fix Commit |
 |----|-------|--------|------------|
-| P2-SEC-001 | Override phrase detection bypassable | ESCALATED | -- |
+| P2-SEC-001 | Override phrase detection bypassable | FIXED | `b4c88c7` |
 | P2-SEC-002 | No path traversal validation in skill loading | FIXED | `dfebb30` |
-| P2-SEC-003 | MCP command field trusted without validation | ESCALATED | -- |
+| P2-SEC-003 | MCP command field trusted without validation | FIXED | `b4c88c7` |
 | P2-PERF-001 | WhatsApp store INSERTs without transaction | FIXED | `dfebb30` |
 | P2-PERF-002 | WhatsApp store INSERTs without transaction (skdm) | FIXED | `dfebb30` |
 | P2-PERF-003 | New reqwest::Client per voice message | FIXED | `dfebb30` |
-| P2-PERF-004 | DESC + reverse instead of ASC subquery | ESCALATED | -- |
-| P2-PERF-005 | 7 sequential DB queries could be parallelized | ESCALATED | -- |
-| P2-DEBT-001 | migrate_layout blocking I/O | ESCALATED | -- |
-| P2-DEBT-002 | install_bundled_prompts blocking I/O | ESCALATED | -- |
-| P2-DEBT-003 | config::load blocking I/O | ESCALATED | -- |
+| P2-PERF-004 | DESC + reverse instead of ASC subquery | FIXED | `b4c88c7` |
+| P2-PERF-005 | 7 sequential DB queries could be parallelized | FIXED | `b4c88c7` |
+| P2-DEBT-001 | migrate_layout blocking I/O | FIXED | `b4c88c7` |
+| P2-DEBT-002 | install_bundled_prompts blocking I/O | FIXED | `b4c88c7` |
+| P2-DEBT-003 | config::load blocking I/O | FIXED | `b4c88c7` |
 | P2-DEBT-004 | send_photo_bytes swallows errors | FIXED | `0b6d08e` |
 | P2-DEBT-005 | split_message duplicated | FIXED | `dfebb30` |
 | P2-DEBT-006 | download_telegram_file no size limit | FIXED | `dfebb30` |
-| P2-DEBT-007 | format! for SQL offset | ESCALATED | -- |
-| P2-DEBT-008 | get_due_tasks returns 8-element tuple | FIXED | pending |
-| P2-DEBT-009 | build_system_prompt has 9 parameters | FIXED | pending |
-| P2-DEBT-010 | Gateway::new takes 14 parameters | FIXED | pending |
-| P2-DEBT-011 | println in non-interactive init | ESCALATED | -- |
-| P2-DEBT-012 | TODO comments in builds modules | ESCALATED | -- |
+| P2-DEBT-007 | format! for SQL offset | FIXED | `b4c88c7` |
+| P2-DEBT-008 | get_due_tasks returns 8-element tuple | FIXED | `b4c88c7` |
+| P2-DEBT-009 | build_system_prompt has 9 parameters | FIXED | `b4c88c7` |
+| P2-DEBT-010 | Gateway::new takes 14 parameters | FIXED | `b4c88c7` |
+| P2-DEBT-011 | println in non-interactive init | FIXED | `b4c88c7` |
+| P2-DEBT-012 | TODO comments in builds modules | FIXED | `b4c88c7` |
 | P2-DEAD-001 | Dead code in routing.rs | FIXED | `dfebb30` |
-| P2-DEAD-002 | #[allow(dead_code)] on unused fields | ESCALATED | -- |
+| P2-DEAD-002 | #[allow(dead_code)] on unused fields | FIXED | `b4c88c7` |
 | P2-TEST-001 | No tests for OmegaError | FIXED | `dfebb30` |
 | P2-TEST-002 | No tests for message types | FIXED | `dfebb30` |
-| P2-TEST-003 | Provider factory has no tests | FIXED | pending |
-| P2-TEST-004 | Pipeline has no direct tests | FIXED | pending |
-| P2-TEST-005 | Marker processing orchestration untested | FIXED | pending |
+| P2-TEST-003 | Provider factory has no tests | FIXED | `b4c88c7` |
+| P2-TEST-004 | Pipeline has no direct tests | FIXED | `b4c88c7` |
+| P2-TEST-005 | Marker processing orchestration untested | FIXED | `b4c88c7` |
 | P2-TEST-006 | AuditLogger::log() has no test | FIXED | `dfebb30` |
 | P2-COMP-001 | Stale .gitignore entry | FIXED | `dfebb30` |
 | P2-COMP-002 | unsafe not in CLAUDE.md exemptions | FIXED | `dfebb30` |

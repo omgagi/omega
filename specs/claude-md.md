@@ -2,7 +2,7 @@
 
 ## File Path and Purpose
 
-**File:** `/Users/isudoajl/ownCloud/Projects/omega/CLAUDE.md`
+**File:** `CLAUDE.md` (repository root)
 
 **Purpose:** Project instructions and development guidelines for the Omega AI agent infrastructure. This file establishes the contract between the developer and Claude Code AI, defining architecture decisions, design constraints, build procedures, and security requirements that shape all development work on the codebase.
 
@@ -10,46 +10,62 @@
 
 ## Sections Breakdown
 
-### 1. Project Definition
+### 1. Agent Identity (SIGMA CODE AGENT)
+
+The file opens with the SIGMA CODE AGENT identity block (vSigma-CODE), which defines:
+- **Unbreakable Rules** -- 6 non-negotiable principles about code honesty and verification
+- **Purpose** -- Produce production-surviving code
+- **Core Principle** -- Every system has constraints and failure modes
+- **Quality Compass** -- Truth, Responsibility, Faithfulness, Self-control, Humility
+- **Output Style** -- Default "Scalpel Mode" (minimal), with Mirror, Map, and Evidence fallback modes
+- **Trap Detection** -- 6 common anti-patterns to flag
+
+### 2. Project Definition
 
 Omega is a personal AI agent infrastructure written in Rust that:
 - Connects to messaging platforms (Telegram, WhatsApp)
-- Delegates reasoning to configurable AI backends
+- Delegates reasoning to configurable AI backends (6 providers)
 - Uses Claude Code CLI as the default zero-config provider
-- Repository: `github.com/omega-cortex/omega`
+- Repository: `github.com/omgagi/omega`
+- Mission: Simplicity-first design ("less will always be more")
 
-### 2. Architecture
+### 3. First Principle
+
+"The best engine part is the one you can remove." All architecture must be monolithic and modular, like Legos.
+
+### 4. Critical Rules (8)
+
+| Rule | Description |
+|------|-------------|
+| 1. Environment | All commands must run via Nix flakes (`nix develop --command bash -c "..."`) |
+| 2. Pre-Commit Gate | 6 mandatory steps: update specs, update docs, update CLAUDE.md (if needed), verify build, verify tests, commit |
+| 3. Feature Testing | Every feature must include a test (unit, integration, or regression) |
+| 4. Language Compliance | 8 languages: English, Spanish, Portuguese, French, German, Italian, Dutch, Russian |
+| 5. Post-Implementation | Always ask: "Do you want to make a commit and push?" |
+| 6. Prompt Sync | Delete runtime copies when source prompts change |
+| 7. Output Filtering | Redirect verbose output to `/tmp/` and filter for errors/warnings |
+| 8. Modularization | No `.rs` file may exceed 500 lines (excluding tests). `gateway/mod.rs` is orchestrator only |
+
+### 5. Architecture
 
 #### Cargo Workspace Structure
 
-The project is organized as a 6-crate Rust workspace:
+The project is organized as a 6-crate Rust workspace (all under `backend/`):
 
-| Crate | Purpose | Status |
-|-------|---------|--------|
-| `omega-core` | Types, traits, config, error handling, prompt sanitization | Complete |
-| `omega-providers` | AI backends (Claude Code CLI, Anthropic, OpenAI, Ollama, OpenRouter) | Complete |
-| `omega-channels` | Messaging platforms (Telegram, WhatsApp) | Telegram complete, WhatsApp planned |
-| `omega-memory` | SQLite storage, conversation history, audit log | Complete |
-| `omega-skills` | Skill/plugin system | Planned |
-| `omega-sandbox` | Secure command execution | Planned |
+| Crate | Purpose |
+|-------|---------|
+| `omega-core` | Types, traits, config, error handling, prompt sanitization |
+| `omega-providers` | 6 AI backends: Claude Code CLI, Ollama, OpenAI, Anthropic, OpenRouter, Gemini. HTTP providers include agentic tool loop + MCP client |
+| `omega-channels` | Messaging platforms: Telegram (voice/photo), WhatsApp (voice/image/pairing). Private-mode only |
+| `omega-memory` | SQLite storage: conversations, audit, scheduled tasks, user profiles, aliases, reward-based learning |
+| `omega-skills` | Skill loader + project loader + MCP server activation |
+| `omega-sandbox` | OS-level protection: Seatbelt (macOS), Landlock (Linux). Always active |
 
-#### Gateway Event Loop
+Trading: External `omega-trader` binary invoked via the `ibkr-trader` skill.
 
-The core processing pipeline in `backend/src/gateway.rs` follows this flow:
+#### Gateway
 
-```
-Message → Auth → Sanitize → Memory (context) → Provider → Memory (store) → Audit → Send
-```
-
-Each stage is responsible for:
-1. **Message**: Incoming message from a channel
-2. **Auth**: Validate user permissions per channel
-3. **Sanitize**: Neutralize injection patterns
-4. **Memory (context)**: Retrieve conversation history and context
-5. **Provider**: Delegate to AI backend (Claude Code CLI by default)
-6. **Memory (store)**: Persist response and metadata
-7. **Audit**: Log all operations for compliance
-8. **Send**: Return response to user via channel
+`backend/src/gateway/` directory module -- orchestrates message pipeline from arrival through auth, context building, keyword-gated prompt composition, model routing (Sonnet for simple, Opus for complex), provider call, marker processing, and response delivery. See `docs/architecture.md` for the full pipeline and feature details.
 
 ---
 
@@ -58,6 +74,7 @@ Each stage is responsible for:
 ### Individual Commands
 
 ```bash
+cd backend
 cargo check                  # Type check all crates (fast validation)
 cargo clippy --workspace     # Linter (zero warnings required)
 cargo test --workspace       # Run all tests (must all pass)
@@ -70,22 +87,8 @@ cargo build --release        # Optimized binary for distribution
 **All three commands must pass before every commit:**
 
 ```bash
-cargo clippy --workspace && cargo test --workspace && cargo fmt --check
+cd backend && cargo clippy --workspace && cargo test --workspace && cargo fmt --check
 ```
-
-This ensures:
-- No compiler warnings
-- All tests pass
-- Code is properly formatted (check mode)
-- Ready for merge
-
-### Command Explanations
-
-- **`cargo check`**: Fast validation without code generation; useful during development
-- **`cargo clippy --workspace`**: Catches common mistakes and idiomatic Rust violations; zero warnings policy
-- **`cargo test --workspace`**: Executes all unit and integration tests across all crates
-- **`cargo fmt`**: Enforces consistent formatting; `--check` mode validates without modifying
-- **`cargo build --release`**: Produces optimized binary with minimal size and maximum performance
 
 ---
 
@@ -94,158 +97,98 @@ This ensures:
 These rules are non-negotiable and must be followed in all code:
 
 ### 1. Error Handling
-- **No `unwrap()`** — Always use `?` operator and proper error types
+- **No `unwrap()`** -- Always use `?` operator and proper error types
 - Never panic in production code
-- Rationale: Provides graceful degradation and proper error propagation
 
 ### 2. Logging
-- **Tracing, not `println!`** — Use the `tracing` crate exclusively
+- **Tracing, not `println!`** -- Use the `tracing` crate exclusively
 - No debug output to stdout; all logging goes through structured tracing
-- Rationale: Enables log filtering, async-safe logging, and production observability
 
-### 3. Unsafe Code
+### 3. CLI UX
+- **CLI UX uses `cliclack`** -- Styled prompts for interactive flows. No plain `println!`
+
+### 4. Unsafe Code
 - **No `unsafe`** unless absolutely necessary
-- Only exception: `libc::geteuid()` for root detection in security guard
-- Rationale: Maintains memory safety and prevents subtle bugs
+- Exceptions: `libc::geteuid()` for root detection, `CommandExt::pre_exec` for Landlock sandbox
 
-### 4. Async Runtime
-- **Async everywhere** — Use `tokio` runtime for all I/O operations
-- No blocking I/O in async contexts
-- Rationale: Enables concurrent message handling and responsive system
+### 5. Async Runtime
+- **Async everywhere** -- Use `tokio` runtime for all I/O operations
 
-### 5. Data Storage
-- **SQLite for everything** — Use SQLite for memory, audit logs, and state
-- No external databases (PostgreSQL, MySQL, etc.)
-- Rationale: Single embedded dependency, self-contained, portable
+### 6. Data Storage
+- **SQLite for everything** -- Memory, audit logs, scheduled tasks, learning. No external databases
 
-### 6. Configuration
-- **Config from file + env** — TOML is primary, environment variables override
-- Follow hierarchy: env vars > config file > defaults
-- Rationale: Flexible deployment (dev, staging, prod) without code changes
+### 7. Configuration
+- **Config from file + env** -- TOML primary, environment variables override
 
-### 7. Documentation
+### 8. Documentation
 - **Every public function gets a doc comment**
-- Include examples for complex APIs
-- Document panic conditions (though avoid panics)
-- Rationale: Self-documenting code aids maintenance and AI assistance
 
 ---
 
 ## Security Constraints
 
 ### Runtime Protection
-
-1. **Root Execution Guard**
-   - Omega **must not run as root**
-   - Guard in `main.rs` rejects execution with UID 0
-   - Rationale: Prevents privilege escalation attacks; limits blast radius
-
-2. **Nested Session Prevention**
-   - Claude Code provider explicitly removes `CLAUDECODE` env var
-   - Prevents infinite session recursion if Omega calls itself
-   - Rationale: Protects against resource exhaustion DoS
+1. **Root Execution Guard** -- Omega must not run as root; guard in `main.rs` rejects execution with UID 0
+2. **Nested Session Prevention** -- Claude Code provider explicitly removes `CLAUDECODE` env var
 
 ### Input Validation
-
-3. **Prompt Sanitization**
-   - Implemented in `backend/crates/omega-core/src/sanitize.rs`
-   - Neutralizes injection patterns before reaching provider
-   - Protects against prompt injection attacks
-   - Rationale: Defense-in-depth; untrusted user input is sanitized
+3. **Prompt Sanitization** -- `omega-core/src/sanitize.rs` neutralizes injection patterns
 
 ### Access Control
-
-4. **Per-Channel Authorization**
-   - Auth enforced via `allowed_users` configuration per channel
-   - Prevents unauthorized users from issuing commands
-   - Rationale: Multi-tenant isolation; principle of least privilege
+4. **Per-Channel Authorization** -- Auth enforced via `allowed_users` configuration per channel
 
 ### Secret Management
+5. **Configuration File Protection** -- `config.toml` is gitignored; secrets only in local config
 
-5. **Configuration File Protection**
-   - `config.toml` is gitignored — never commit secrets
-   - API keys, tokens stored only in local config
-   - Environment variables can override for deployment
-   - Rationale: Prevents accidental credential leakage in version control
+### Sandbox Protection
+6. **Three layers** -- Code-level (`is_write_blocked()`/`is_read_blocked()`), OS-level (Seatbelt/Landlock), prompt-level (WORKSPACE_CLAUDE.md). Protected: `~/.omega/data/memory.db`, `~/.omega/config.toml`. Writable store: `~/.omega/stores/`
 
 ---
 
 ## File Conventions
 
 ### Configuration Files
-
 - **`config.toml`**: User's local configuration (gitignored, contains secrets)
 - **`config.example.toml`**: Template configuration (committed, shows available options)
-- Deployment: Copy `config.example.toml` to `config.toml` and customize
 
 ### Runtime Artifacts
-
-- **Database**: `~/.omega/data/memory.db` (SQLite, conversation history)
-- **Logs**: `~/.omega/logs/omega.log` (structured logs from tracing)
-- **Service**: `~/Library/LaunchAgents/com.omega-cortex.omega.plist` (macOS LaunchAgent)
-
-### Directory Structure
-
-- `~/.omega/` created automatically on first run
-- Permissions: User-read/write only (0600 for security-sensitive files)
-- Backup: Recommended to back up `~/.omega/data/memory.db` periodically
-
----
-
-## Provider Priority and Implementation
-
-### Claude Code CLI (Primary Provider)
-
-Claude Code is the default and primary provider. Implementation details:
-
-#### Invocation
-```bash
-claude -p --output-format json
-```
-
-#### Response Format
-```json
-{
-  "type": "result",
-  "subtype": "success",
-  "result": "...",
-  "model": "claude-opus-4.6",
-  "session_id": "..."
-}
-```
-
-#### Response Subtypes
-- `"success"`: Normal response; use `result` field
-- `"error_max_turns"`: Hit conversation turn limit; extract `result` if available, otherwise return meaningful fallback
-- Other errors: Log and return error message
-
-#### Integration Points
-- `backend/crates/omega-providers/src/lib.rs`: Provider trait and implementations
-- All responses are JSON-decoded and processed uniformly
-- Model information captured in audit logs
-
-### Secondary Providers (Planned)
-
-For Phase 4, additional providers will be supported:
-- Anthropic API (direct API calls)
-- OpenAI (GPT models via API)
-- Ollama (local LLM inference)
-- OpenRouter (multi-model proxy)
-
-Each provider implements the same `Provider` trait for uniform handling.
+- **Database:** `~/.omega/data/memory.db`
+- **Logs:** `~/.omega/logs/omega.log`
+- **Prompts (bundled):** `prompts/SYSTEM_PROMPT.md`, `prompts/WELCOME.toml`, `prompts/WORKSPACE_CLAUDE.md`
+- **Prompts (runtime):** `~/.omega/prompts/` (auto-deployed on first run)
+- **Skills:** `~/.omega/skills/*/SKILL.md`
+- **Projects:** `~/.omega/projects/*/ROLE.md`
+- **Workspace:** `~/.omega/workspace/` (AI subprocess working directory)
+- **Builds:** `~/.omega/workspace/builds/<project-name>/`
+- **Topologies (bundled):** `topologies/development/`
+- **Topologies (runtime):** `~/.omega/topologies/`
+- **Stores:** `~/.omega/stores/` (domain-specific databases)
+- **Heartbeat:** `~/.omega/prompts/HEARTBEAT.md` (global), `~/.omega/projects/<name>/HEARTBEAT.md` (per-project)
+- **Service (macOS):** `~/Library/LaunchAgents/com.omega-cortex.omega.plist`
+- **Service (Linux):** `~/.config/systemd/user/omega.service`
 
 ---
 
-## Design Philosophy Summary
+## Providers (6)
 
-**Omega embodies these core principles:**
+| Provider | Auth | Notes |
+|----------|------|-------|
+| `claude-code` (default) | CLI subprocess | `claude -p --output-format json --model <model>`, auto-resume on max_turns |
+| `ollama` | None | Local server |
+| `openai` | Bearer token | Also works with OpenAI-compatible endpoints |
+| `anthropic` | `x-api-key` header | System prompt as top-level field |
+| `openrouter` | Bearer token | Reuses OpenAI types |
+| `gemini` | URL query param | Role mapping: assistant to model |
 
-1. **Zero-Config Default**: Claude Code CLI works out-of-the-box; minimal setup
-2. **Security First**: Root guard, sanitization, auth enforcement, no secrets in git
-3. **Production Ready**: Proper error handling, structured logging, graceful degradation
-4. **Rust Idioms**: Type safety, ownership-driven design, zero-cost abstractions
-5. **Extensibility**: Crate-based modularity, trait-based provider pattern, planned plugin system
-6. **Observability**: Structured logging, audit trail, conversation history
+`build_provider()` (in `provider_builder.rs`) returns `(Box<dyn Provider>, model_fast, model_complex)`. Claude Code: fast=Sonnet, complex=Opus. HTTP providers: both set to the configured model.
+
+---
+
+## Documentation References
+
+- **`specs/SPECS.md`** -- Master index of technical specifications for every file
+- **`docs/DOCS.md`** -- Master index of developer-facing guides and references
+- **`docs/architecture.md`** -- Full system design, gateway pipeline, and feature details
 
 ---
 
@@ -254,33 +197,29 @@ Each provider implements the same `Provider` trait for uniform handling.
 ### File Locations
 | Item | Path |
 |------|------|
-| Project instructions | `./CLAUDE.md` |
-| Config template | `./config.example.toml` |
-| Core crate | `./backend/crates/omega-core/` |
-| Provider implementations | `./backend/crates/omega-providers/` |
-| Channel integrations | `./backend/crates/omega-channels/` |
-| Memory system | `./backend/crates/omega-memory/` |
-| Gateway | `./backend/src/gateway.rs` |
-| Sanitization | `./backend/crates/omega-core/src/sanitize.rs` |
-| Main entry | `./backend/src/main.rs` |
+| Project instructions | `CLAUDE.md` |
+| Config template | `backend/config.example.toml` |
+| Core crate | `backend/crates/omega-core/` |
+| Provider implementations | `backend/crates/omega-providers/` |
+| Channel integrations | `backend/crates/omega-channels/` |
+| Memory system | `backend/crates/omega-memory/` |
+| Skill system | `backend/crates/omega-skills/` |
+| Sandbox | `backend/crates/omega-sandbox/` |
+| Gateway | `backend/src/gateway/` |
+| Markers | `backend/src/markers/` |
+| I18n | `backend/src/i18n/` |
+| Commands | `backend/src/commands/` |
+| Sanitization | `backend/crates/omega-core/src/sanitize.rs` |
+| Main entry | `backend/src/main.rs` |
 
 ### Critical Commands
 ```bash
 # Validate code quality
-cargo clippy --workspace && cargo test --workspace && cargo fmt --check
+cd backend && cargo clippy --workspace && cargo test --workspace && cargo fmt --check
 
 # Build for distribution
 cargo build --release
 
 # Run locally
-./backend/target/release/omega ask "What is Rust?"
+./target/release/omega start
 ```
-
-### Security Checklist
-- [ ] No `unwrap()` without explicit error handling
-- [ ] No `println!()` — use `tracing`
-- [ ] No secrets in config.toml (use config.example.toml)
-- [ ] User auth configured in config.toml
-- [ ] All public functions documented
-- [ ] Tests pass: `cargo test --workspace`
-- [ ] No warnings: `cargo clippy --workspace`

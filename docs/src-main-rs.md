@@ -6,13 +6,14 @@ The `backend/src/main.rs` file is the entry point for the Omega binary. It handl
 
 ## What is Omega?
 
-Omega is a personal AI agent infrastructure that connects to messaging platforms (like Telegram) and delegates reasoning tasks to Claude AI via the Claude Code CLI. Think of it as a bridge between your favorite chat platform and your AI assistant.
+Omega is a personal AI agent infrastructure that connects to messaging platforms (Telegram and WhatsApp) and delegates reasoning to configurable AI backends (6 providers, with Claude Code CLI as the default). Think of it as a bridge between your favorite chat platform and your AI assistant.
 
 When you run Omega:
-1. It connects to your configured messaging channels
+1. It connects to your configured messaging channels (Telegram, WhatsApp, or both)
 2. Listens for incoming messages
-3. Sends them to Claude for processing
-4. Returns Claude's response back to your chat platform
+3. Classifies complexity and routes to the appropriate AI model (Sonnet for simple, Opus for complex)
+4. Returns the AI's response back to your chat platform
+5. Runs background loops (scheduler, heartbeat, summarizer)
 
 ## Getting Started
 
@@ -145,7 +146,7 @@ OMEGA_TELEGRAM_TOKEN="123:ABC" OMEGA_ALLOWED_USERS="842277204" omega init
 
 # Full options
 omega init --telegram-token "123:ABC" --allowed-users "842277204" \
-  --claude-setup-token "..." --whisper-key "sk-..." --sandbox rx \
+  --claude-setup-token "..." --whisper-key "sk-..." \
   --google-credentials ~/client_secret.json --google-email user@gmail.com
 ```
 
@@ -157,7 +158,6 @@ omega init --telegram-token "123:ABC" --allowed-users "842277204" \
 | `--allowed-users` | `OMEGA_ALLOWED_USERS` | Comma-separated Telegram user IDs |
 | `--claude-setup-token` | `OMEGA_CLAUDE_SETUP_TOKEN` | Anthropic setup token for headless auth |
 | `--whisper-key` | `OMEGA_WHISPER_KEY` | OpenAI API key for Whisper transcription |
-| `--sandbox` | `OMEGA_SANDBOX` | Sandbox mode: `sandbox`, `rx`, or `rwx` |
 | `--google-credentials` | `OMEGA_GOOGLE_CREDENTIALS` | Path to Google OAuth client_secret.json |
 | `--google-email` | `OMEGA_GOOGLE_EMAIL` | Gmail address for Google Workspace |
 

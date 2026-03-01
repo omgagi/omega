@@ -38,31 +38,38 @@ decisions, keeping classification fast and cheap.
 
 Runs an arbitrary shell command.
 
-- **Sandbox enforcement**: In `Sandbox` and `Rx` modes, write access is restricted to
-  `~/.omega/` + `/tmp`. In `Rwx` mode, there are no write restrictions.
-- **Timeout**: 120 seconds. Commands that exceed this are killed and an error is returned.
-- **Output truncation**: stdout + stderr combined are truncated to **30,000 characters** to
-  prevent a runaway command from filling the context window.
+- **Sandbox enforcement**: Uses `omega_sandbox::protected_command()` with the always-on blocklist.
+  Write access to dangerous system directories and OMEGA's core database is blocked.
+  Writes to the workspace (`~/.omega/workspace/`), data directory (`~/.omega/`), and `/tmp` are allowed.
+- **Timeout**: 120 seconds. Commands that exceed this are killed (`kill_on_drop(true)` prevents
+  orphan processes) and an error is returned.
+- **Output truncation**: stdout + stderr combined are truncated to **30,000 bytes** (at a valid
+  UTF-8 character boundary) to prevent a runaway command from filling the context window.
 
 ### `read`
 
-Reads the contents of a file at an absolute path.
+Reads the contents of a file.
 
-- **Output truncation**: file contents are truncated to **50,000 characters**.
-- No sandbox restriction on reads (read-only operation).
+- **Path resolution**: Relative paths are resolved against `workspace_path` and lexically
+  normalized (removing `.` and `..` components via `resolve_path()`) to prevent sandbox bypass.
+- **Read protection**: `omega_sandbox::is_read_blocked()` blocks reads to `{data_dir}/data/`
+  (memory.db), `{data_dir}/config.toml` (API keys), and the external `config_path` if set.
+- **Output truncation**: file contents are truncated to **50,000 bytes** (at a valid UTF-8
+  character boundary).
 
 ### `write`
 
-Writes content to a file at an absolute path, creating parent directories as needed.
+Writes content to a file, creating parent directories as needed.
 
-- **Sandbox enforcement**: same rules as `bash` — writes outside `~/.omega/` and `/tmp` are
-  blocked in `Sandbox` and `Rx` modes.
+- **Path resolution**: Same as `read` — relative paths resolved and normalized via `resolve_path()`.
+- **Sandbox enforcement**: `omega_sandbox::is_write_blocked()` blocks writes to dangerous
+  system directories and OMEGA's core database.
 
 ### `edit`
 
-Performs a targeted string replacement in an existing file (old string → new string).
+Performs a targeted string replacement in an existing file (old string -> new string).
 
-- **Sandbox enforcement**: same rules as `write`.
+- **Path resolution and sandbox**: Same as `write`.
 - Returns an error if the file does not exist or the old string is not found.
 
 ---
@@ -136,23 +143,30 @@ Long tool outputs are truncated before being appended to the conversation:
 
 | Tool | Limit |
 |------|-------|
-| `bash` | 30,000 characters |
-| `read` | 50,000 characters |
+| `bash` | 30,000 bytes |
+| `read` | 50,000 bytes |
 | MCP tools | No truncation (server controls output size) |
 
-Truncation appends `\n[output truncated]` so the model knows the output was cut. This prevents
-a single tool result from exhausting the provider's context window.
+Truncation is byte-boundary-aware using `floor_char_boundary` to avoid splitting multi-byte UTF-8
+characters (Cyrillic, emoji, CJK, etc.). The truncated output includes a notice:
+`... (output truncated: N total bytes, showing first M)` so the model knows the output was cut.
 
 ---
 
 ## Sandbox Enforcement
 
-Filesystem protection is always-on. The `ToolExecutor` uses `omega_sandbox::is_write_blocked()` to
-check every write operation, and `omega_sandbox::protected_command()` wraps subprocess execution
-with OS-level protection:
+Filesystem protection is always-on. The `ToolExecutor` uses `omega_sandbox` functions to enforce
+the blocklist and `resolve_path()` to normalize paths before checking:
 
+- **Path normalization:** All file tools (read, write, edit) resolve paths via `resolve_path()`,
+  which joins relative paths against `workspace_path` and lexically normalizes them (removing
+  `.` and `..` components via `normalize_path()`). This prevents sandbox bypass via traversal
+  patterns like `../../data/memory.db`.
 - **`bash` tool:** Subprocess launched via `protected_command()`, which applies OS-level blocklist
   enforcement (Seatbelt on macOS, Landlock on Linux).
+- **`read` tool:** Path checked via `is_read_blocked()` before reading. Blocks access to
+  `{data_dir}/data/` (memory.db), `{data_dir}/config.toml` (API keys), and the external
+  `config_path` (if set via `with_config_path()`).
 - **`write` / `edit` tools:** Path checked via `is_write_blocked()` before any write operation.
   Writes to dangerous system directories and OMEGA's core database are blocked. Writes to the
   workspace (`~/.omega/workspace/`), data directory (`~/.omega/`), and `/tmp` are allowed.
@@ -163,7 +177,7 @@ No configuration is needed -- protection is automatic.
 
 ## Model Routing for Non-Claude Providers
 
-`build_provider()` in `backend/crates/omega-providers/src/lib.rs` now returns a tuple:
+`build_provider()` in `backend/src/provider_builder.rs` returns a tuple:
 
 ```
 (Box<dyn Provider>, model_fast: String, model_complex: String)

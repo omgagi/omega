@@ -121,17 +121,41 @@ pub async fn shutdown_mcp(&mut self)
 
 ### `is_write_blocked(path, data_dir) -> bool`
 
-Uses the always-on blocklist approach to check whether a write to the given path should be blocked. Writes to dangerous system directories and OMEGA's core database are blocked. Writes to the workspace (`~/.omega/workspace/`), the data directory (`~/.omega/`), and `/tmp` are allowed. For relative paths, the path is resolved against `workspace_path` before checking.
+Imported from `omega_sandbox`. Uses the always-on blocklist approach to check whether a write to the given path should be blocked. Writes to dangerous system directories and OMEGA's core database are blocked. Writes to the workspace (`~/.omega/workspace/`), the data directory (`~/.omega/`), and `/tmp` are allowed.
+
+**Path resolution:** All built-in tools (read, write, edit) resolve paths via `self.resolve_path()` before checking the sandbox. This normalizes relative paths against `workspace_path` and removes `..` traversal components, preventing bypass via `../data/memory.db`.
 
 ### `is_read_blocked(path, data_dir, config_path) -> bool`
 
-Checks whether a read from the given path should be blocked. Blocks reads to `{data_dir}/data/` (memory.db), `{data_dir}/config.toml` (API keys), and the external `config_path` if set. Used by the `read` tool to prevent credential exfiltration.
+Imported from `omega_sandbox`. Checks whether a read from the given path should be blocked. Blocks reads to `{data_dir}/data/` (memory.db), `{data_dir}/config.toml` (API keys), and the external `config_path` if set. Used by the `read` tool to prevent credential exfiltration.
 
 ## Helper Functions
 
-### `truncate_output(s: &str, max_chars: usize) -> String`
+### `resolve_path(&self, path_str: &str) -> PathBuf`
 
-Returns `s` unchanged if `s.len() <= max_chars`. Otherwise returns the first `max_chars` bytes followed by a newline and a truncation notice: `... (output truncated: N total chars, showing first M)`.
+**Visibility:** Private method on `ToolExecutor`.
+
+Resolves a path string to a normalized absolute path. Relative paths are joined against `workspace_path` and then lexically normalized via `normalize_path()` (removing `.` and `..` components) to prevent sandbox bypass via traversal (e.g., `../../data/memory.db`). Absolute paths are normalized directly.
+
+```rust
+fn resolve_path(&self, path_str: &str) -> PathBuf
+```
+
+### `normalize_path(path: &Path) -> PathBuf`
+
+**Visibility:** Private free function.
+
+Lexically normalizes a path by resolving `.` and `..` components without touching the filesystem. Unlike `fs::canonicalize`, this works on non-existent paths. Essential for preventing sandbox bypass via `../../` traversal on paths that don't exist on disk.
+
+```rust
+fn normalize_path(path: &Path) -> PathBuf
+```
+
+### `truncate_output(s: &str, max_bytes: usize) -> String`
+
+**Visibility:** Private free function.
+
+Returns `s` unchanged if `s.len() <= max_bytes`. Otherwise truncates at a valid UTF-8 character boundary (using `floor_char_boundary`) and appends a truncation notice: `... (output truncated: N total bytes, showing first M)`. The byte-boundary-aware truncation prevents panics on multi-byte characters (Cyrillic, emoji, etc.).
 
 ### `builtin_tool_defs() -> Vec<ToolDef>`
 
@@ -170,15 +194,23 @@ pub(crate) fn tools_enabled(context: &Context) -> bool
 | `test_builtin_tool_defs_count` | Verifies exactly 4 built-in tools with names bash, read, write, edit |
 | `test_tool_def_serialization` | Verifies each `ToolDef` serializes to JSON with name, description, parameters |
 | `test_truncate_output_short` | Verifies short string returned unchanged |
-| `test_truncate_output_exact` | Verifies string at exactly `max_chars` returned unchanged |
-| `test_truncate_output_long` | Verifies long string truncated with truncation notice and total char count |
-| `test_is_write_blocked_allows_workspace` | Verifies writes inside `~/.omega/` and `/tmp` are not blocked |
-| `test_is_write_blocked_denies_system` | Verifies writes to `/etc/passwd` and other system paths are blocked |
+| `test_truncate_output_exact` | Verifies string at exactly `max_bytes` returned unchanged |
+| `test_truncate_output_long` | Verifies long string truncated with truncation notice and total byte count |
 | `test_exec_bash_empty_command` | Verifies bash tool returns error when `command` param is absent |
 | `test_exec_bash_echo` | Verifies `echo hello` produces non-error output containing "hello" |
 | `test_exec_read_nonexistent` | Verifies read tool returns error for a nonexistent file path |
 | `test_exec_write_and_read` | Verifies write creates file and read retrieves the exact content; cleans up |
 | `test_exec_edit` | Verifies edit replaces first occurrence of old_string; confirms new content; cleans up |
-| `test_exec_write_denied_sandbox` | Verifies write to `/etc/test` is denied in `Sandbox` mode with "denied" in message |
+| `test_exec_read_denied_protected_path` | Verifies read of `{data_dir}/data/memory.db` is denied |
+| `test_exec_read_denied_config` | Verifies read of `{data_dir}/config.toml` is denied |
+| `test_exec_write_denied_protected_path` | Verifies write to `{data_dir}/data/memory.db` is denied |
 | `test_tool_executor_mcp_tool_map_routing` | Verifies `mcp_tool_map` and `mcp_clients` are empty on construction |
 | `test_execute_unknown_tool` | Verifies `execute()` returns error with "Unknown tool" for an unrecognized tool name |
+| `test_resolve_path_absolute` | Verifies absolute paths pass through unchanged |
+| `test_resolve_path_relative` | Verifies relative paths are joined against workspace_path |
+| `test_resolve_path_traversal_normalized` | Verifies `../data/memory.db` normalizes to `{data_dir}/data/memory.db` |
+| `test_exec_read_denied_relative_traversal` | Verifies relative path traversal `../data/memory.db` is denied by sandbox |
+| `test_exec_write_denied_config_toml` | Verifies write to `{data_dir}/config.toml` is denied |
+| `test_with_config_path` | Verifies `with_config_path()` sets config_path on the executor |
+| `test_truncate_output_multibyte_boundary` | Verifies truncation at mid-Cyrillic-character boundary does not panic |
+| `test_truncate_output_emoji_boundary` | Verifies truncation at mid-emoji boundary does not panic |

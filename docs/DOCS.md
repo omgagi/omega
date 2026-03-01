@@ -12,13 +12,18 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [architecture.md](architecture.md) — End-to-end message flow (Telegram -> Gateway -> Claude Code -> response), concurrency model, session persistence, multi-agent pipeline architecture (topology-driven sequential chain, TOPOLOGY.toml format, file-mediated handoffs, bounded corrective loops, pre/post validation, self-healing audit), background loops, efficiency summary
 
 ### Binary (`backend/src/`)
-- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing, root guard, provider/channel bootstrap
-- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 19-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, heartbeat, summarizer, keywords, builds (orchestrator + loop + parse + agents + topology + i18n), setup + setup_response (Brain orchestrator)
+- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Pair/Service), root guard, provider/channel bootstrap
+- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 24-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, heartbeat, summarizer, keywords, builds (orchestrator + loop + parse + agents + topology + i18n), setup + setup_response (Brain orchestrator)
 - [src-commands-rs.md](src-commands-rs.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, purge, help)
 - [src-selfcheck-rs.md](src-selfcheck-rs.md) — Startup health checks
 - [src-service-rs.md](src-service-rs.md) — OS-aware service management (macOS LaunchAgent / Linux systemd)
 - [src-init-rs.md](src-init-rs.md) — Setup wizard (interactive + non-interactive modes), config generation
 - [src-init-style-rs.md](src-init-style-rs.md) — Branded CLI output helpers for init wizard (console::Style, gutter-bar visual language)
+- [src-init-wizard-rs.md](src-init-wizard-rs.md) — Interactive-only init helpers (browser detection, Anthropic auth, WhatsApp QR, Google OAuth)
+- [src-i18n-rs.md](src-i18n-rs.md) — Internationalization module (8 languages, static lookups, format helpers)
+- [src-task-confirmation-rs.md](src-task-confirmation-rs.md) — Task scheduling confirmation (anti-hallucination, duplicate detection, localized messages)
+- [src-markers-rs.md](src-markers-rs.md) — Marker module — 5 source submodules + tests (40+ functions, ~180 tests)
+- [src-api-rs.md](src-api-rs.md) — HTTP API server (axum, health check, webhook, WhatsApp QR pairing)
 - [claudemd.md](claudemd.md) — Workspace CLAUDE.md maintenance (auto-creation and periodic refresh for Claude Code subprocess context)
 
 ### omega-core
@@ -58,10 +63,13 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [memory-migration-003.md](memory-migration-003.md) — Background summarization support
 - [memory-migration-004.md](memory-migration-004.md) — FTS5 cross-conversation recall
 - [memory-migration-005.md](memory-migration-005.md) — Scheduled tasks table and indexes
+- [memory-migration-006.md](memory-migration-006.md) — Limitations table (historical — originally for self-introspection, now used by SKILL_IMPROVE)
 - [memory-migration-007.md](memory-migration-007.md) — Task type column for action scheduler
+- [memory-migration-008.md](memory-migration-008.md) — User aliases table (custom name/emoji mapping per sender)
 - [memory-migration-009.md](memory-migration-009.md) — Task retry columns for action failure handling
 - [memory-migration-010.md](memory-migration-010.md) — Reward-based learning tables (outcomes + lessons)
 - [memory-migration-011.md](memory-migration-011.md) — Project-scoped learning (project column on outcomes, lessons, scheduled_tasks)
+- [memory-migration-012.md](memory-migration-012.md) — Project-scoped sessions (project_sessions table, project column on conversations)
 - [memory-migration-013.md](memory-migration-013.md) — Multi-lesson support (remove UNIQUE constraint, content dedup, per-domain cap)
 
 ### omega-skills
@@ -84,6 +92,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 
 ### Audits
 - [audits/audit-builds-2026-02-27.md](audits/audit-builds-2026-02-27.md) — Builds module code review (guard race, name validation, depth limit, spec drift)
+- [audits/audit-full-2026-03-01.md](audits/audit-full-2026-03-01.md) — Full codebase audit (109 findings: 4 P0, 15 P1, 30 P2, 12 P3, 48 drift — all P0-P2 fixed)
 
 ### Root / Workspace
 - [cargo-toml-root.md](cargo-toml-root.md) — Root Cargo.toml workspace configuration

@@ -8,7 +8,7 @@
 
 `omega-sandbox` is Omega's OS-level system protection layer. It blocks AI provider subprocesses from writing to dangerous system directories and OMEGA's core database using a blocklist approach -- Apple Seatbelt on macOS, Landlock LSM on Linux, and code-level enforcement on all platforms.
 
-The crate exports two functions: `protected_command()` (OS-level protection for CLI provider) and `is_write_blocked()` (code-level enforcement for HTTP providers).
+The crate exports three functions: `protected_command()` (OS-level protection for CLI provider), `is_write_blocked()` (code-level write enforcement for HTTP providers), and `is_read_blocked()` (code-level read enforcement for sensitive files like `memory.db` and `config.toml`).
 
 ## How Workspace Inheritance Works
 

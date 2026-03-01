@@ -40,7 +40,7 @@ The config file is gitignored because it may contain secrets (API keys, bot toke
 
 ```toml
 [omega]
-name = "OMEGA"
+name = "OMEGA \u{03a9}"
 data_dir = "~/.omega"
 log_level = "info"
 
@@ -53,7 +53,7 @@ default = "claude-code"
 
 [provider.claude-code]
 enabled = true
-max_turns = 10
+max_turns = 25
 allowed_tools = []  # empty = full tool access
 timeout_secs = 3600
 max_resume_attempts = 5
@@ -64,6 +64,7 @@ model_complex = "claude-opus-4-6"
 enabled = false
 api_key = ""
 model = "claude-sonnet-4-20250514"
+max_tokens = 8192
 
 [provider.openai]
 enabled = false
@@ -81,6 +82,11 @@ enabled = false
 api_key = ""
 model = "anthropic/claude-sonnet-4-20250514"
 
+[provider.gemini]
+enabled = false
+api_key = ""
+model = "gemini-2.0-flash"
+
 [channel.telegram]
 enabled = false
 bot_token = ""
@@ -88,8 +94,7 @@ allowed_users = []
 
 [channel.whatsapp]
 enabled = false
-bridge_url = "http://localhost:3000"
-phone_number = ""
+allowed_users = []
 
 [memory]
 backend = "sqlite"
@@ -108,6 +113,11 @@ active_end = "22:00"
 channel = "telegram"
 reply_target = ""
 
+[api]
+enabled = false
+host = "127.0.0.1"
+port = 3000
+api_key = ""
 ```
 
 Every section except `[omega]` can be omitted entirely and Omega will use defaults.
@@ -120,7 +130,7 @@ Every section except `[omega]` can be omitted entirely and Omega will use defaul
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `name` | string | `"Omega"` | Display name for the agent. Used in system prompts and logs. |
+| `name` | string | `"OMEGA \u{03a9}"` | Display name for the agent. Used in system prompts and logs. |
 | `data_dir` | string | `"~/.omega"` | Directory for databases, logs, and runtime files. The `~` is expanded to your home directory at runtime. |
 | `log_level` | string | `"info"` | Tracing level. Can also be overridden by the `RUST_LOG` environment variable. |
 
@@ -144,7 +154,7 @@ This is the primary, zero-config provider. It shells out to the `claude` CLI too
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | bool | `true` | Whether this provider is available for selection. |
-| `max_turns` | integer | `10` | Maximum number of agentic turns Claude Code can take per request. |
+| `max_turns` | integer | `25` | Maximum number of agentic turns Claude Code can take per request. |
 | `allowed_tools` | array of strings | `[]` (empty = full tool access) | Which Claude Code tools the agent is allowed to use. Empty array grants access to all tools. |
 | `timeout_secs` | integer | `3600` | Max seconds to wait for CLI response. 60-minute ceiling. |
 | `max_resume_attempts` | integer | `5` | Max auto-resume attempts when CLI hits max turns with a session ID. |
@@ -160,6 +170,7 @@ No API key is needed -- Claude Code uses the local CLI's authentication.
 | `enabled` | bool | `false` | Enable this provider. |
 | `api_key` | string | `""` | Your Anthropic API key. Can also be set via `ANTHROPIC_API_KEY` env var. |
 | `model` | string | `"claude-sonnet-4-20250514"` | Model identifier. |
+| `max_tokens` | integer | `8192` | Maximum tokens for the response. |
 
 #### `[provider.openai]` -- OpenAI-Compatible API
 
@@ -188,6 +199,14 @@ No API key needed -- Ollama runs locally.
 | `api_key` | string | `""` | Your OpenRouter API key. Can also be set via `OPENROUTER_API_KEY` env var. |
 | `model` | string | `""` | Model identifier (e.g., `"anthropic/claude-sonnet-4-20250514"`). |
 
+#### `[provider.gemini]` -- Google Gemini API
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Enable this provider. |
+| `api_key` | string | `""` | Your Gemini API key. |
+| `model` | string | `"gemini-2.0-flash"` | Model identifier. |
+
 ### `[channel.telegram]` -- Telegram Bot
 
 | Key | Type | Default | Description |
@@ -196,13 +215,15 @@ No API key needed -- Ollama runs locally.
 | `bot_token` | string | `""` | Bot token from @BotFather. Can also be set via `TELEGRAM_BOT_TOKEN` env var. |
 | `allowed_users` | array of integers | `[]` | Telegram user IDs allowed to interact. Empty means allow all. |
 
-### `[channel.whatsapp]` -- WhatsApp Bridge
+### `[channel.whatsapp]` -- WhatsApp (Native)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | bool | `false` | Enable the WhatsApp channel. |
-| `bridge_url` | string | `""` | URL of the WhatsApp bridge server. |
-| `phone_number` | string | `""` | Phone number for the bridge. |
+| `allowed_users` | array of strings | `[]` | Phone numbers allowed to interact (e.g., `["5511999887766"]`). Empty means allow all. |
+| `whisper_api_key` | string | `null` | OpenAI API key for Whisper voice transcription. When present, voice messages are transcribed. |
+
+Session data is stored at `{data_dir}/whatsapp_session/`. Pairing is done by scanning a QR code (like WhatsApp Web).
 
 ### `[memory]` -- Conversation Storage
 
@@ -233,6 +254,17 @@ The scheduler delivers reminders and recurring tasks that users create through n
 | `reply_target` | string | `""` | Platform-specific target for delivery (e.g., a Telegram chat ID). |
 
 The heartbeat calls the AI provider periodically to perform a health check. If the provider responds with `HEARTBEAT_OK`, the result is suppressed (log only). Otherwise, the response is sent as an alert to the configured channel and reply target. An optional `~/.omega/prompts/HEARTBEAT.md` file can contain a checklist for the AI to evaluate.
+
+### `[api]` -- HTTP API Server
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `false` | Whether the HTTP API server is started. Disabled by default. |
+| `host` | string | `"127.0.0.1"` | IP address to bind to. Use `"0.0.0.0"` for external access. |
+| `port` | integer | `3000` | Port to listen on. |
+| `api_key` | string | `""` | Bearer token for API authentication. Empty = no auth (suitable for local-only use). |
+
+When enabled, serves health check and WhatsApp QR pairing endpoints for SaaS dashboard integration.
 
 ### Filesystem Protection (Always-On)
 

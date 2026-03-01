@@ -22,12 +22,13 @@ The crate is organized into six public modules:
 | `sanitize` | Prompt injection defense |
 | `traits` | The `Provider` and `Channel` trait interfaces |
 
-There are no re-exports at the crate root. You always access items through their module path:
+The crate root re-exports the `shellexpand` utility function for convenience. All other items are accessed through their module path:
 
 ```rust
 use omega_core::config::Config;
 use omega_core::error::OmegaError;
 use omega_core::traits::Provider;
+use omega_core::shellexpand; // Re-exported from config
 ```
 
 ---
@@ -52,7 +53,7 @@ The top-level `Config` contains nested sections:
 let cfg = config::load("config.toml")?;
 
 // General settings
-println!("Agent name: {}", cfg.omega.name);        // "Omega"
+println!("Agent name: {}", cfg.omega.name);        // "OMEGA \u{03a9}"
 println!("Data dir: {}", cfg.omega.data_dir);       // "~/.omega"
 
 // Auth
@@ -63,7 +64,7 @@ println!("Default provider: {}", cfg.provider.default); // "claude-code"
 
 // Claude Code specifics
 if let Some(cc) = &cfg.provider.claude_code {
-    println!("Max turns: {}", cc.max_turns);         // 10
+    println!("Max turns: {}", cc.max_turns);         // 25
     println!("Tools: {:?}", cc.allowed_tools);       // [] (empty = full tool access)
 }
 
@@ -81,24 +82,28 @@ All sections except `omega` are optional in the TOML file -- they default gracef
 
 ### Provider configs
 
-Five provider backends have dedicated config structs:
+Six provider backends have dedicated config structs:
 
-- **`ClaudeCodeConfig`** -- `enabled`, `max_turns`, `allowed_tools`
-- **`AnthropicConfig`** -- `enabled`, `api_key`, `model`
+- **`ClaudeCodeConfig`** -- `enabled`, `max_turns`, `allowed_tools`, `timeout_secs`, `max_resume_attempts`, `model`, `model_complex`
+- **`AnthropicConfig`** -- `enabled`, `api_key`, `model`, `max_tokens`
 - **`OpenAiConfig`** -- `enabled`, `api_key`, `model`, `base_url`
 - **`OllamaConfig`** -- `enabled`, `base_url`, `model`
 - **`OpenRouterConfig`** -- `enabled`, `api_key`, `model`
+- **`GeminiConfig`** -- `enabled`, `api_key`, `model`
 
 Each is an `Option` inside `ProviderConfig`, so they only appear in the config file when needed.
 
 ### Channel configs
 
-- **`TelegramConfig`** -- `enabled`, `bot_token`, `allowed_users` (list of Telegram user IDs)
-- **`WhatsAppConfig`** -- `enabled`, `bridge_url`, `phone_number`
+- **`TelegramConfig`** -- `enabled`, `bot_token`, `allowed_users` (list of Telegram user IDs), `whisper_api_key`
+- **`WhatsAppConfig`** -- `enabled`, `allowed_users` (list of phone numbers), `whisper_api_key`
 
 ### Other sections
 
 - **`MemoryConfig`** -- backend type (`"sqlite"`), database path, max context window size
+- **`HeartbeatConfig`** -- periodic AI check-in settings (enabled, interval, active hours, channel, reply_target)
+- **`SchedulerConfig`** -- task scheduler settings (enabled, poll_interval_secs)
+- **`ApiConfig`** -- HTTP API server settings (enabled, host, port, api_key)
 - **Filesystem protection** -- always-on via `omega_sandbox` crate (blocklist approach, no config needed)
 - **`AuthConfig`** -- global auth toggle and the message shown to unauthorized users
 
@@ -338,19 +343,29 @@ impl Channel for MyChannel {
         Ok(())
     }
 
+    // send_photo() has a default no-op implementation
+    async fn send_photo(&self, target: &str, image: &[u8], caption: &str) -> Result<(), OmegaError> {
+        Ok(())
+    }
+
     async fn stop(&self) -> Result<(), OmegaError> {
         // Graceful shutdown
         Ok(())
     }
+
+    // Required: enables the gateway to downcast to channel-specific types
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 ```
 
-Five methods:
+Seven methods:
 - `name()` -- Human-readable identifier
 - `start()` -- Begin listening; returns a `tokio::sync::mpsc::Receiver` that yields incoming messages
 - `send()` -- Send a response back through the channel
 - `send_typing()` -- Optional typing indicator (defaults to no-op)
+- `send_photo()` -- Optional photo sending (defaults to no-op)
 - `stop()` -- Graceful shutdown
+- `as_any()` -- Downcast support for channel-specific methods
 
 ---
 

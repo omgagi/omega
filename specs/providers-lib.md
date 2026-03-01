@@ -52,7 +52,7 @@ Each module exports a provider struct with `from_config()` constructor and `Prov
 | `claude_code` | `ClaudeCodeProvider` | max_turns, allowed_tools, timeout_secs, working_dir, max_resume_attempts, model |
 | `ollama` | `OllamaProvider` | base_url, model, workspace_path |
 | `openai` | `OpenAiProvider` | base_url, api_key, model, workspace_path |
-| `anthropic` | `AnthropicProvider` | api_key, model, workspace_path |
+| `anthropic` | `AnthropicProvider` | api_key, model, max_tokens, workspace_path |
 | `openrouter` | `OpenRouterProvider` | api_key, model, workspace_path |
 | `gemini` | `GeminiProvider` | api_key, model, workspace_path |
 

@@ -419,7 +419,7 @@ No watchlist items. Configure ~/.omega/prompts/HEARTBEAT.md
 
 ## Localized Responses
 
-All commands respond in your preferred language. Omega supports 8 languages: English, Spanish, Portuguese, French, German, Italian, Dutch, and Russian. The language is resolved from your `preferred_language` setting (set via `/language` or auto-detected on first contact). If no language is set, English is used as the default. Translations are provided by the `i18n` module (`backend/src/i18n.rs`).
+All commands respond in your preferred language. Omega supports 8 languages: English, Spanish, Portuguese, French, German, Italian, Dutch, and Russian. The language is resolved from your `preferred_language` setting (set via `/language` or auto-detected on first contact). If no language is set, English is used as the default. Translations are provided by the `i18n` module (`backend/src/i18n/`).
 
 ---
 
