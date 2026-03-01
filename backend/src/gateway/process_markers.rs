@@ -327,9 +327,8 @@ impl Gateway {
                     HeartbeatAction::SetInterval(mins) => {
                         self.heartbeat_interval.store(*mins, Ordering::Relaxed);
                         config::patch_heartbeat_interval(&self.config_path, *mins);
+                        self.heartbeat_notify.notify_one();
                         info!("heartbeat: interval changed to {mins} minutes");
-                        // No separate notification — the AI's response text already
-                        // confirms the change to the user.
                     }
                 }
             }

@@ -12,6 +12,7 @@ use omega_memory::{audit::AuditLogger, Store};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tracing::{error, info, warn};
 
 impl Gateway {
@@ -31,6 +32,7 @@ impl Gateway {
         prompts: Prompts,
         model_complex: String,
         heartbeat_interval: Arc<AtomicU64>,
+        heartbeat_notify: Arc<Notify>,
         audit: AuditLogger,
         provider_name: String,
         data_dir: String,
@@ -91,6 +93,7 @@ impl Gateway {
                                 &prompts,
                                 &model_complex,
                                 &heartbeat_interval,
+                                &heartbeat_notify,
                                 &audit,
                                 &provider_name,
                                 &data_dir,

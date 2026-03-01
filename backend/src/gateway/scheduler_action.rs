@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::Notify;
 use tracing::{error, info, warn};
 
 use super::keywords::MAX_ACTION_RETRIES;
@@ -39,6 +40,7 @@ pub(super) async fn execute_action_task(
     prompts: &Prompts,
     model_complex: &str,
     heartbeat_interval: &Arc<AtomicU64>,
+    heartbeat_notify: &Arc<Notify>,
     audit: &AuditLogger,
     provider_name: &str,
     data_dir: &str,
@@ -188,6 +190,7 @@ pub(super) async fn execute_action_task(
                 reply_target,
                 project,
                 heartbeat_interval,
+                heartbeat_notify,
             )
             .await;
 
@@ -337,6 +340,7 @@ async fn process_action_markers(
     reply_target: &str,
     project: &str,
     heartbeat_interval: &Arc<AtomicU64>,
+    heartbeat_notify: &Arc<Notify>,
 ) {
     // SCHEDULE markers.
     for sched_line in extract_all_schedule_markers(text) {
@@ -401,6 +405,7 @@ async fn process_action_markers(
         for action in &hb_actions {
             if let HeartbeatAction::SetInterval(mins) = action {
                 heartbeat_interval.store(*mins, Ordering::Relaxed);
+                heartbeat_notify.notify_one();
                 info!("heartbeat: interval changed to {mins} minutes (via scheduler)");
             }
         }

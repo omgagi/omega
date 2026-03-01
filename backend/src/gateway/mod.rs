@@ -37,7 +37,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, Notify};
 use tracing::{error, info, warn};
 
 /// The central gateway that routes messages between channels and providers.
@@ -63,6 +63,8 @@ pub struct Gateway {
     pub(super) active_senders: Mutex<HashMap<String, Vec<IncomingMessage>>>,
     /// Shared heartbeat interval (minutes) — updated at runtime via `HEARTBEAT_INTERVAL:` marker.
     pub(super) heartbeat_interval: Arc<AtomicU64>,
+    /// Wakes the heartbeat loop when `HEARTBEAT_INTERVAL:` changes so it re-sleeps with the new value.
+    pub(super) heartbeat_notify: Arc<Notify>,
     /// Path to config.toml — used for persisting runtime changes (e.g. heartbeat interval).
     pub(super) config_path: String,
 }
@@ -88,6 +90,7 @@ impl Gateway {
     ) -> Self {
         let audit = AuditLogger::new(memory.pool().clone());
         let heartbeat_interval = Arc::new(AtomicU64::new(heartbeat_config.interval_minutes));
+        let heartbeat_notify = Arc::new(Notify::new());
         Self {
             provider,
             channels,
@@ -106,6 +109,7 @@ impl Gateway {
             model_complex,
             active_senders: Mutex::new(HashMap::new()),
             heartbeat_interval,
+            heartbeat_notify,
             config_path,
         }
     }
@@ -201,6 +205,7 @@ impl Gateway {
             let sched_prompts = self.prompts.clone();
             let sched_model = self.model_complex.clone();
             let sched_hb_interval = self.heartbeat_interval.clone();
+            let sched_hb_notify = self.heartbeat_notify.clone();
             let sched_audit = AuditLogger::new(self.memory.pool().clone());
             let sched_provider_name = self.provider.name().to_string();
             let sched_data_dir = self.data_dir.clone();
@@ -216,6 +221,7 @@ impl Gateway {
                     sched_prompts,
                     sched_model,
                     sched_hb_interval,
+                    sched_hb_notify,
                     sched_audit,
                     sched_provider_name,
                     sched_data_dir,
@@ -236,6 +242,7 @@ impl Gateway {
             let hb_prompts = self.prompts.clone();
             let hb_memory = self.memory.clone();
             let hb_interval = self.heartbeat_interval.clone();
+            let hb_notify = self.heartbeat_notify.clone();
             let hb_model = self.model_complex.clone();
             let hb_model_fast = self.model_fast.clone();
             let hb_skills = self.skills.clone();
@@ -250,6 +257,7 @@ impl Gateway {
                     hb_prompts,
                     hb_memory,
                     hb_interval,
+                    hb_notify,
                     hb_model,
                     hb_model_fast,
                     hb_skills,

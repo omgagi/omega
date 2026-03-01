@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::Notify;
 use tracing::{error, info, warn};
 
 /// Compute the next clock-aligned boundary in minutes-since-midnight.
@@ -75,6 +76,7 @@ impl Gateway {
         prompts: Prompts,
         memory: Store,
         interval: Arc<AtomicU64>,
+        notify: Arc<Notify>,
         model_complex: String,
         model_fast: String,
         skills: Vec<omega_skills::Skill>,
@@ -97,9 +99,13 @@ impl Gateway {
                     config.active_start,
                     secs / 60
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
-                // After waking from a potentially long sleep (system sleep may
-                // have delayed us further), re-check active hours from the top.
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(secs)) => {}
+                    _ = notify.notified() => {
+                        info!("heartbeat: interval changed during quiet hours, recalculating");
+                    }
+                }
+                // After waking (timer or notify), re-check from the top.
                 continue;
             }
 
@@ -111,7 +117,15 @@ impl Gateway {
                 let cm = u64::from(now.hour()) * 60 + u64::from(now.minute());
                 next_clock_boundary(cm, mins)
             };
-            tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
+            let interrupted = tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(wait_secs)) => false,
+                _ = notify.notified() => true,
+            };
+
+            if interrupted {
+                info!("heartbeat: interval changed, recalculating next boundary");
+                continue;
+            }
 
             // Wall-clock re-snap: if system sleep caused us to overshoot the
             // target boundary, recalculate from the actual wake-up time.
@@ -511,5 +525,35 @@ mod tests {
         let secs = secs_until_active_start("08:00");
         assert!(secs > 0);
         assert!(secs <= 24 * 3600);
+    }
+
+    // --- REQ-HBINT-001: Notify interrupts sleep on interval change ---
+
+    #[tokio::test]
+    async fn test_notify_interrupts_boundary_sleep() {
+        let notify = Arc::new(Notify::new());
+        let notify2 = notify.clone();
+
+        // Spawn a task that sleeps for a long boundary (60 min) but should be
+        // interrupted by the notify within milliseconds.
+        let handle = tokio::spawn(async move {
+            let start = Instant::now();
+            let interrupted = tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(3600)) => false,
+                _ = notify2.notified() => true,
+            };
+            (interrupted, start.elapsed())
+        });
+
+        // Small delay to ensure the task is sleeping.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        notify.notify_one();
+
+        let (interrupted, elapsed) = handle.await.unwrap();
+        assert!(interrupted, "sleep should be interrupted by notify");
+        assert!(
+            elapsed.as_secs() < 2,
+            "should wake up promptly, not after the full sleep"
+        );
     }
 }
