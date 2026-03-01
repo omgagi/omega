@@ -158,6 +158,9 @@ impl Gateway {
                     error!("failed to activate project {project_name}: {e}");
                 } else {
                     info!("project activated: {project_name}");
+                    marker_results.push(MarkerResult::ProjectActivated {
+                        name: project_name.clone(),
+                    });
                 }
             } else {
                 warn!("project activate marker for unknown project: {project_name}");

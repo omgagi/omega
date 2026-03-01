@@ -88,18 +88,43 @@ pub fn purge_result(lang: &str, purged: usize, keys_display: &str) -> String {
     }
 }
 
-/// Format the project activated confirmation.
-pub fn project_activated(lang: &str, name: &str) -> String {
+/// Convert a kebab-case project directory name to a Title Case display name.
+///
+/// Examples: `realtor` -> `Realtor`, `real-estate` -> `Real Estate`.
+pub fn humanize_project_name(name: &str) -> String {
+    name.split('-')
+        .map(|segment| {
+            let mut chars = segment.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let upper: String = first.to_uppercase().collect();
+                    format!("{upper}{}", chars.as_str())
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Format the project persona greeting (used on all project activation paths).
+pub fn project_persona_greeting(lang: &str, persona: &str) -> String {
     match lang {
-        "Spanish" => format!("Proyecto '{name}' activado. Conversaci\u{00f3}n borrada."),
-        "Portuguese" => format!("Projeto '{name}' ativado. Conversa apagada."),
-        "French" => format!("Projet '{name}' activ\u{00e9}. Conversation effac\u{00e9}e."),
-        "German" => format!("Projekt '{name}' aktiviert. Gespr\u{00e4}ch gel\u{00f6}scht."),
-        "Italian" => format!("Progetto '{name}' attivato. Conversazione cancellata."),
-        "Dutch" => format!("Project '{name}' geactiveerd. Gesprek gewist."),
-        "Russian" => format!("\u{041f}\u{0440}\u{043e}\u{0435}\u{043a}\u{0442} '{name}' \u{0430}\u{043a}\u{0442}\u{0438}\u{0432}\u{0438}\u{0440}\u{043e}\u{0432}\u{0430}\u{043d}. \u{0420}\u{0430}\u{0437}\u{0433}\u{043e}\u{0432}\u{043e}\u{0440} \u{0443}\u{0434}\u{0430}\u{043b}\u{0451}\u{043d}."),
-        _ => format!("Project '{name}' activated. Conversation cleared."),
+        "Spanish" => format!("Hola, soy *OMEGA \u{03a9} {persona}*, \u{00bf}qu\u{00e9} puedo hacer por ti?"),
+        "Portuguese" => format!("Ol\u{00e1}, sou o *OMEGA \u{03a9} {persona}*, o que posso fazer por voc\u{00ea}?"),
+        "French" => format!("Bonjour, je suis *OMEGA \u{03a9} {persona}*, que puis-je faire pour vous?"),
+        "German" => format!("Hallo, ich bin *OMEGA \u{03a9} {persona}*, was kann ich f\u{00fc}r dich tun?"),
+        "Italian" => format!("Ciao, sono *OMEGA \u{03a9} {persona}*, cosa posso fare per te?"),
+        "Dutch" => format!("Hallo, ik ben *OMEGA \u{03a9} {persona}*, wat kan ik voor je doen?"),
+        "Russian" => format!("\u{041f}\u{0440}\u{0438}\u{0432}\u{0435}\u{0442}, \u{044f} *OMEGA \u{03a9} {persona}*, \u{0447}\u{0435}\u{043c} \u{043c}\u{043e}\u{0433}\u{0443} \u{043f}\u{043e}\u{043c}\u{043e}\u{0447}\u{044c}?"),
+        _ => format!("Hi, I'm *OMEGA \u{03a9} {persona}*, what can I do for you?"),
     }
+}
+
+/// Format the project activated confirmation with persona greeting.
+pub fn project_activated(lang: &str, name: &str) -> String {
+    let persona = humanize_project_name(name);
+    project_persona_greeting(lang, &persona)
 }
 
 /// Format the project not found message.
@@ -145,18 +170,20 @@ pub fn active_project(lang: &str, name: &str) -> String {
     }
 }
 
-/// Format the project switched confirmation (context changed, old keeps monitoring).
+/// Format the project switched confirmation (persona greeting + old project monitoring note).
 pub fn project_switched(lang: &str, new_name: &str, old_name: &str) -> String {
-    match lang {
-        "Spanish" => format!("Cambiado a '{new_name}'. '{old_name}' sigue siendo monitoreado."),
-        "Portuguese" => format!("Mudou para '{new_name}'. '{old_name}' continua sendo monitorado."),
-        "French" => format!("Pass\u{00e9} \u{00e0} '{new_name}'. '{old_name}' continue d'\u{00ea}tre surveill\u{00e9}."),
-        "German" => format!("Gewechselt zu '{new_name}'. '{old_name}' wird weiterhin \u{00fc}berwacht."),
-        "Italian" => format!("Passato a '{new_name}'. '{old_name}' continua a essere monitorato."),
-        "Dutch" => format!("Overgeschakeld naar '{new_name}'. '{old_name}' wordt nog steeds gemonitord."),
-        "Russian" => format!("\u{041f}\u{0435}\u{0440}\u{0435}\u{043a}\u{043b}\u{044e}\u{0447}\u{0435}\u{043d}\u{043e} \u{043d}\u{0430} '{new_name}'. '{old_name}' \u{043f}\u{0440}\u{043e}\u{0434}\u{043e}\u{043b}\u{0436}\u{0430}\u{0435}\u{0442} \u{043e}\u{0442}\u{0441}\u{043b}\u{0435}\u{0436}\u{0438}\u{0432}\u{0430}\u{0442}\u{044c}\u{0441}\u{044f}."),
-        _ => format!("Switched to '{new_name}'. '{old_name}' continues being monitored."),
-    }
+    let greeting = project_activated(lang, new_name);
+    let monitoring = match lang {
+        "Spanish" => format!("'{old_name}' sigue siendo monitoreado."),
+        "Portuguese" => format!("'{old_name}' continua sendo monitorado."),
+        "French" => format!("'{old_name}' continue d'\u{00ea}tre surveill\u{00e9}."),
+        "German" => format!("'{old_name}' wird weiterhin \u{00fc}berwacht."),
+        "Italian" => format!("'{old_name}' continua a essere monitorato."),
+        "Dutch" => format!("'{old_name}' wordt nog steeds gemonitord."),
+        "Russian" => format!("'{old_name}' \u{043f}\u{0440}\u{043e}\u{0434}\u{043e}\u{043b}\u{0436}\u{0430}\u{0435}\u{0442} \u{043e}\u{0442}\u{0441}\u{043b}\u{0435}\u{0436}\u{0438}\u{0432}\u{0430}\u{0442}\u{044c}\u{0441}\u{044f}."),
+        _ => format!("'{old_name}' continues being monitored."),
+    };
+    format!("{greeting}\n{monitoring}")
 }
 
 /// Format the "Scheduled N tasks:" header.

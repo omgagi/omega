@@ -337,16 +337,7 @@ pub(super) fn setup_proposal_message(lang: &str, preview: &str) -> String {
 
 /// Localized message when setup completes successfully.
 pub(super) fn setup_complete_message(lang: &str, project: &str) -> String {
-    match lang {
-        "Spanish" => format!("*OMEGA \u{3a9}* est\u{e1} configurado como tu experto en *{project}*. Tu proyecto est\u{e1} activo."),
-        "Portuguese" => format!("*OMEGA \u{3a9}* est\u{e1} configurado como seu especialista em *{project}*. Seu projeto est\u{e1} ativo."),
-        "French" => format!("*OMEGA \u{3a9}* est configur\u{e9} comme votre expert en *{project}*. Votre projet est actif."),
-        "German" => format!("*OMEGA \u{3a9}* ist als Experte f\u{fc}r *{project}* konfiguriert. Dein Projekt ist aktiv."),
-        "Italian" => format!("*OMEGA \u{3a9}* \u{e8} configurato come tuo esperto in *{project}*. Il tuo progetto \u{e8} attivo."),
-        "Dutch" => format!("*OMEGA \u{3a9}* is geconfigureerd als expert in *{project}*. Je project is actief."),
-        "Russian" => format!("*OMEGA \u{3a9}* \u{43d}\u{430}\u{441}\u{442}\u{440}\u{43e}\u{435}\u{43d} \u{43a}\u{430}\u{43a} \u{44d}\u{43a}\u{441}\u{43f}\u{435}\u{440}\u{442} \u{432} *{project}*. \u{412}\u{430}\u{448} \u{43f}\u{440}\u{43e}\u{435}\u{43a}\u{442} \u{430}\u{43a}\u{442}\u{438}\u{432}\u{435}\u{43d}."),
-        _ => format!("*OMEGA \u{3a9}* is now configured as your *{project}* expert. Your project is active."),
-    }
+    crate::i18n::project_activated(lang, project)
 }
 
 /// Localized message when setup is cancelled.

@@ -122,8 +122,9 @@ fn test_format_helpers() {
     // purge_result
     assert!(purge_result("English", 5, "a, b").contains("5"));
 
-    // project_activated
-    assert!(project_activated("Spanish", "test").contains("test"));
+    // project_activated (persona greeting)
+    assert!(project_activated("Spanish", "test").contains("Test"));
+    assert!(project_activated("English", "realtor").contains("OMEGA \u{03a9} Realtor"));
 
     // project_not_found
     assert!(project_not_found("English", "xyz").contains("xyz"));
@@ -178,4 +179,43 @@ fn test_help_commands_all_languages() {
             "help key '{key}' should contain '/{cmd}'"
         );
     }
+}
+
+#[test]
+fn test_humanize_project_name() {
+    assert_eq!(humanize_project_name("realtor"), "Realtor");
+    assert_eq!(humanize_project_name("real-estate"), "Real Estate");
+    assert_eq!(humanize_project_name("tech-youtuber"), "Tech Youtuber");
+    assert_eq!(humanize_project_name("a"), "A");
+    assert_eq!(humanize_project_name(""), "");
+    assert_eq!(humanize_project_name("trader"), "Trader");
+}
+
+#[test]
+fn test_project_persona_greeting_all_languages() {
+    let langs = [
+        "English", "Spanish", "Portuguese", "French", "German", "Italian", "Dutch", "Russian",
+    ];
+    for lang in langs {
+        let greeting = project_persona_greeting(lang, "Realtor");
+        assert!(
+            greeting.contains("OMEGA \u{03a9} Realtor"),
+            "{lang} greeting should contain persona: {greeting}"
+        );
+        assert!(!greeting.is_empty(), "{lang} greeting should not be empty");
+    }
+}
+
+#[test]
+fn test_project_persona_greeting_unknown_language_fallback() {
+    let greeting = project_persona_greeting("Klingon", "Trader");
+    assert!(greeting.contains("Hi, I'm"));
+    assert!(greeting.contains("OMEGA \u{03a9} Trader"));
+}
+
+#[test]
+fn test_project_switched_persona_greeting() {
+    let msg = project_switched("English", "realtor", "trader");
+    assert!(msg.contains("OMEGA \u{03a9} Realtor"));
+    assert!(msg.contains("'trader' continues being monitored."));
 }
