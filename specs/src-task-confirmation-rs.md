@@ -17,6 +17,11 @@ Anti-hallucination layer for task scheduling. When the AI emits SCHEDULE/SCHEDUL
 | `TaskCancelFailed` | `id_prefix`, `reason` | Task cancellation failed (no match or DB error) |
 | `TaskUpdated` | `id_prefix` | Task updated successfully via UPDATE_TASK marker |
 | `TaskUpdateFailed` | `id_prefix`, `reason` | Task update failed (no match or DB error) |
+| `SkillImproved` | `skill_name`, `lesson` | Skill lesson appended successfully |
+| `SkillImproveFailed` | `skill_name`, `reason` | Skill improvement failed |
+| `BugReported` | `description` | Bug logged to BUG.md |
+| `BugReportFailed` | `description`, `reason` | Bug report failed |
+| `ProjectActivated` | `name` | Project activated via marker (triggers persona greeting) |
 
 ## Functions
 

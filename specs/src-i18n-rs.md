@@ -21,7 +21,9 @@ Interpolated string builders for responses that include dynamic values:
 - `personality_updated(lang, pref)` -- personality change confirmation
 - `personality_show(lang, pref)` -- current personality display with reset hint
 - `purge_result(lang, purged, keys_display)` -- purge count with preserved keys
-- `project_activated(lang, name)` -- project activation confirmation
+- `humanize_project_name(name)` -- convert kebab-case directory name to Title Case (`realtor` -> `Realtor`, `real-estate` -> `Real Estate`)
+- `project_persona_greeting(lang, persona)` -- persona-branded greeting in 8 languages: "Hi, I'm *OMEGA Ω {persona}*, what can I do for you?"
+- `project_activated(lang, name)` -- project activation with persona greeting (auto-derives display name via `humanize_project_name`)
 - `project_not_found(lang, name)` -- project not found with hint
 - `active_project(lang, name)` -- active project display with deactivate hint
 - `tasks_confirmed(lang, n)` -- scheduled N tasks header

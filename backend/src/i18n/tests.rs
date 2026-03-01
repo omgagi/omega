@@ -194,7 +194,14 @@ fn test_humanize_project_name() {
 #[test]
 fn test_project_persona_greeting_all_languages() {
     let langs = [
-        "English", "Spanish", "Portuguese", "French", "German", "Italian", "Dutch", "Russian",
+        "English",
+        "Spanish",
+        "Portuguese",
+        "French",
+        "German",
+        "Italian",
+        "Dutch",
+        "Russian",
     ];
     for lang in langs {
         let greeting = project_persona_greeting(lang, "Realtor");

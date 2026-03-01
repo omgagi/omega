@@ -104,6 +104,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [improvements/build-discovery-phase-improvement.md](improvements/build-discovery-phase-improvement.md) — Interactive discovery session before build pipeline (multi-round clarification, cancel support)
 - [improvements/topology-extraction-requirements.md](improvements/topology-extraction-requirements.md) — Phase 1: Extract hardcoded 7-phase build pipeline into config-driven TOPOLOGY.toml + external agent .md files
 - [improvements/topology-extraction-architecture.md](improvements/topology-extraction-architecture.md) — Architecture design for topology extraction: builds_topology.rs schema/loader, orchestrator refactoring, agent lifecycle, validation, failure modes, security model
+- [improvements/project-personality-improvement.md](improvements/project-personality-improvement.md) — Project-specific OMEGA persona greeting on activation (i18n template, 8 languages, auto-derived persona name from directory)
 
 ### Bugfixes
 - [bugfixes/p0-audit-2026-02-23-analysis.md](bugfixes/p0-audit-2026-02-23-analysis.md) — P0 audit findings (UTF-8 panics, HTTP timeouts, etc.)

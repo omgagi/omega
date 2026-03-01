@@ -912,31 +912,23 @@ mod tests {
     #[test]
     fn test_setup_complete_message_all_languages() {
         let project = "realtor";
-
-        let en = setup_complete_message("English", project);
-        assert!(en.contains("*realtor*"), "English must bold project name");
-        assert!(en.contains("expert") || en.contains("configured"));
-
-        let es = setup_complete_message("Spanish", project);
-        assert!(es.contains("*realtor*"));
-
-        let pt = setup_complete_message("Portuguese", project);
-        assert!(pt.contains("*realtor*"));
-
-        let fr = setup_complete_message("French", project);
-        assert!(fr.contains("*realtor*"));
-
-        let de = setup_complete_message("German", project);
-        assert!(de.contains("*realtor*"));
-
-        let it = setup_complete_message("Italian", project);
-        assert!(it.contains("*realtor*"));
-
-        let nl = setup_complete_message("Dutch", project);
-        assert!(nl.contains("*realtor*"));
-
-        let ru = setup_complete_message("Russian", project);
-        assert!(ru.contains("*realtor*"));
+        let langs = [
+            "English",
+            "Spanish",
+            "Portuguese",
+            "French",
+            "German",
+            "Italian",
+            "Dutch",
+            "Russian",
+        ];
+        for lang in langs {
+            let msg = setup_complete_message(lang, project);
+            assert!(
+                msg.contains("OMEGA \u{03a9} Realtor"),
+                "{lang} setup message should contain persona: {msg}"
+            );
+        }
     }
 
     // Requirement: REQ-BRAIN-014 (Should)

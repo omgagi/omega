@@ -32,7 +32,10 @@ let msg = i18n::tasks_confirmed("French", 3);
 // Returns: "3 taches programmees"
 
 let msg = i18n::project_activated("German", "trading-bot");
-// Returns: "Projekt aktiviert: trading-bot"
+// Returns: "Hallo, ich bin *OMEGA Ω Trading Bot*, was kann ich für dich tun?"
+
+let name = i18n::humanize_project_name("real-estate");
+// Returns: "Real Estate"
 ```
 
 ## Module Structure
@@ -55,7 +58,9 @@ let msg = i18n::project_activated("German", "trading-bot");
 | `personality_updated(lang, pref)` | Personality change confirmation |
 | `personality_show(lang, pref)` | Current personality display with hint |
 | `purge_result(lang, purged, keys)` | Purge count with preserved keys |
-| `project_activated(lang, name)` | Project activation confirmation |
+| `humanize_project_name(name)` | Convert kebab-case dir name to Title Case display name |
+| `project_persona_greeting(lang, persona)` | Persona-branded greeting: "Hi, I'm *OMEGA Ω {persona}*..." |
+| `project_activated(lang, name)` | Project activation with persona greeting (auto-derives name) |
 | `project_not_found(lang, name)` | Project not found with hint |
 | `active_project(lang, name)` | Active project display with deactivate hint |
 | `tasks_confirmed(lang, n)` | "Scheduled N tasks" header |
