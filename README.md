@@ -52,21 +52,17 @@ Cargo workspace with 6 crates:
 ## Quick Start
 
 ```bash
-# Build (requires Rust nightly for WhatsApp dependency)
-cd backend && cargo +nightly build --release
-
-# Interactive setup -- walks you through everything
-./target/release/omega init
-
-# Start
-./target/release/omega start
+curl -fsSL https://raw.githubusercontent.com/omgagi/omega/main/install.sh | bash
 ```
 
-Or manual setup:
+This downloads the latest release binary for your platform, installs it to `~/.local/bin/`, and runs `omega init` to walk you through setup.
+
+Or build from source:
 
 ```bash
-cp backend/config.example.toml backend/config.toml   # Edit with your settings
-cd backend && ./target/release/omega start
+cd backend && cargo +nightly build --release
+./target/release/omega init
+./target/release/omega start
 ```
 
 ## How It Works
