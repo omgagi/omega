@@ -97,6 +97,9 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [omega-init-visual-requirements.md](omega-init-visual-requirements.md) — OMEGA Init Wizard Visual Identity: branded chrome for init.rs + init_wizard.rs, init_style.rs helper module, dark/technical aesthetic using console::Style
 - [omega-init-visual-architecture.md](omega-init-visual-architecture.md) — Architecture design for Init Visual Identity: init_style.rs module layout, cyan color palette, gutter-bar visual language, 10 helper functions, integration pattern, visual coexistence with cliclack widgets
 
+### Release
+- [release-process.md](../docs/release-process.md) — Version bump, tagging, CI release pipeline, SHA256 checksums
+
 ### Improvements
 - [improvements/builds-routing-improvement.md](improvements/builds-routing-improvement.md) — [SUPERSEDED] Multi-phase builds pipeline replacing single-shot build execution
 - [improvements/build-agent-pipeline-improvement.md](improvements/build-agent-pipeline-improvement.md) — Replace 5-phase hardcoded prompts with 7-phase agent pipeline using `--agent` flag and embedded agent definitions

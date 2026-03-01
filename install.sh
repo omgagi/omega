@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="omega-cortex/omega"
+REPO="omgagi/omega"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 # ── Detect OS and architecture ───────────────────────────────────────────────

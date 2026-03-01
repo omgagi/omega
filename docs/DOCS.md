@@ -90,6 +90,9 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 ### Self-Configuration
 - [omega-brain.md](omega-brain.md) — OMEGA Brain: `/setup` command for non-technical onboarding, multi-round session, automatic project creation (ROLE.md, HEARTBEAT.md, schedules)
 
+### Release
+- [release-process.md](release-process.md) — Version bump, tagging, CI release pipeline (3 targets, SHA256 checksums, tag validation)
+
 ### Audits
 - [audits/audit-builds-2026-02-27.md](audits/audit-builds-2026-02-27.md) — Builds module code review (guard race, name validation, depth limit, spec drift)
 - [audits/audit-full-2026-03-01.md](audits/audit-full-2026-03-01.md) — Full codebase audit (109 findings: 4 P0, 15 P1, 30 P2, 12 P3, 48 drift — all P0-P2 fixed)
