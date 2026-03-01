@@ -60,7 +60,7 @@ let name = i18n::humanize_project_name("real-estate");
 | `purge_result(lang, purged, keys)` | Purge count with preserved keys |
 | `humanize_project_name(name)` | Convert kebab-case dir name to Title Case display name |
 | `project_persona_greeting(lang, persona)` | Persona-branded greeting: "Hi, I'm *OMEGA Ω {persona}*..." |
-| `project_activated(lang, name)` | Project activation with persona greeting (auto-derives name) |
+| `project_activated(lang, name)` | Project activation with persona greeting (auto-derives name). Used by `/project <name>` and `PROJECT_ACTIVATE:` marker |
 | `project_not_found(lang, name)` | Project not found with hint |
 | `active_project(lang, name)` | Active project display with deactivate hint |
 | `tasks_confirmed(lang, n)` | "Scheduled N tasks" header |

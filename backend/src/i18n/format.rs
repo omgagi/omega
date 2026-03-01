@@ -170,22 +170,6 @@ pub fn active_project(lang: &str, name: &str) -> String {
     }
 }
 
-/// Format the project switched confirmation (persona greeting + old project monitoring note).
-pub fn project_switched(lang: &str, new_name: &str, old_name: &str) -> String {
-    let greeting = project_activated(lang, new_name);
-    let monitoring = match lang {
-        "Spanish" => format!("'{old_name}' sigue siendo monitoreado."),
-        "Portuguese" => format!("'{old_name}' continua sendo monitorado."),
-        "French" => format!("'{old_name}' continue d'\u{00ea}tre surveill\u{00e9}."),
-        "German" => format!("'{old_name}' wird weiterhin \u{00fc}berwacht."),
-        "Italian" => format!("'{old_name}' continua a essere monitorato."),
-        "Dutch" => format!("'{old_name}' wordt nog steeds gemonitord."),
-        "Russian" => format!("'{old_name}' \u{043f}\u{0440}\u{043e}\u{0434}\u{043e}\u{043b}\u{0436}\u{0430}\u{0435}\u{0442} \u{043e}\u{0442}\u{0441}\u{043b}\u{0435}\u{0436}\u{0438}\u{0432}\u{0430}\u{0442}\u{044c}\u{0441}\u{044f}."),
-        _ => format!("'{old_name}' continues being monitored."),
-    };
-    format!("{greeting}\n{monitoring}")
-}
-
 /// Format the "Scheduled N tasks:" header.
 pub fn tasks_confirmed(lang: &str, n: usize) -> String {
     match lang {

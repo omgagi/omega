@@ -484,7 +484,6 @@ No projects found. Create folders in ~/.omega/projects/ with ROLE.md
 **Behavior:**
 - **No argument** (`/project`): Shows the current active project or instructions.
 - **`/project off`**: Creates `.disabled` marker for the current project (stops its heartbeat), then deletes the `active_project` fact. Full deactivation — both conversation context and monitoring.
-- **`/project change <name>`**: Switches conversation context to a new project without disabling the old project's heartbeat. Removes `.disabled` for the new project (if present). Old project's heartbeat continues running.
 - **`/project <name>`**: Activates a project by name. Validates the name exists via `get_project_instructions()`. Removes `.disabled` marker (ensures heartbeat runs). Stores the `active_project` fact. Closes current conversation for clean context.
 
 **Response Format (Show Current):**
@@ -495,12 +494,7 @@ Use /project off to deactivate.
 
 **Response Format (Activate):**
 ```
-Project 'real-estate' activated. Conversation cleared.
-```
-
-**Response Format (Switch/Change):**
-```
-Switched to 'nutrition'. 'real-estate' continues being monitored.
+Hi, I'm *OMEGA Ω Real Estate*, what can I do for you?
 ```
 
 **Response Format (Deactivate):**

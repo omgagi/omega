@@ -75,7 +75,7 @@ A **project** is a named scope defined by a `ROLE.md` file at `~/.omega/projects
 
 **Activation**: A project is activated by setting the `active_project` user fact (via `/project <name>` command or `PROJECT_ACTIVATE:` marker). Deactivation deletes that fact and creates a `.disabled` marker file to stop its heartbeat.
 
-**Switching**: `/project change <name>` switches conversation context without deactivating the old project's heartbeat. The old project keeps being monitored while the conversation scope changes to the new one.
+**Switching**: Use `/project <name>` to switch to a different project. This activates the new project (removes `.disabled` marker) and stores the `active_project` fact.
 
 **What project scoping affects**:
 - **Conversations**: `build_context()` filters conversations by `project` column. Active project conversations are separate from "no project" conversations.
@@ -91,7 +91,7 @@ A **project** is a named scope defined by a `ROLE.md` file at `~/.omega/projects
 **Yes.** The heartbeat system runs in two phases:
 
 1. **Global heartbeat**: Reads `~/.omega/prompts/HEARTBEAT.md`, classifies items into groups, executes each group.
-2. **Per-project heartbeats**: `run_project_heartbeats()` scans the `~/.omega/projects/` directory for all projects that have a `HEARTBEAT.md` file and do NOT have a `.disabled` marker. `/project off` creates `.disabled` (stops both heartbeat and conversation context). `/project change <name>` switches conversation context without creating `.disabled` for the old project, so its heartbeat continues.
+2. **Per-project heartbeats**: `run_project_heartbeats()` scans the `~/.omega/projects/` directory for all projects that have a `HEARTBEAT.md` file and do NOT have a `.disabled` marker. `/project off` creates `.disabled` (stops both heartbeat and conversation context). `/project <name>` activates a project by removing its `.disabled` marker.
 
 Per-project heartbeats get:
 - The project's `ROLE.md` instructions in the system prompt

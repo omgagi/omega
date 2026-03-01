@@ -219,10 +219,3 @@ fn test_project_persona_greeting_unknown_language_fallback() {
     assert!(greeting.contains("Hi, I'm"));
     assert!(greeting.contains("OMEGA \u{03a9} Trader"));
 }
-
-#[test]
-fn test_project_switched_persona_greeting() {
-    let msg = project_switched("English", "realtor", "trader");
-    assert!(msg.contains("OMEGA \u{03a9} Realtor"));
-    assert!(msg.contains("'trader' continues being monitored."));
-}

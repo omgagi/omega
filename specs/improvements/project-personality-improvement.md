@@ -28,7 +28,7 @@
 | IMP-001 | `humanize_project_name()` utility (kebab to Title Case) | Must |
 | IMP-002 | `project_persona_greeting()` i18n (8 languages) | Must |
 | IMP-003 | `/project <name>` uses persona greeting | Must |
-| IMP-004 | `/project change <name>` uses greeting + monitoring note | Must |
+| IMP-004 | ~~`/project change <name>` uses greeting + monitoring note~~ | ~~Removed~~ |
 | IMP-005 | `PROJECT_ACTIVATE:` marker emits persona greeting follow-up | Should |
 | IMP-006 | `/setup` completion uses persona greeting | Should |
 | IMP-007 | Scheduler action path stays silent (no change) | Must |
@@ -39,7 +39,6 @@
 | Path | Current | Improved |
 |------|---------|----------|
 | `/project realtor` | "Project 'realtor' activated." | "Hi, I'm *OMEGA Ω Realtor*..." |
-| `/project change realtor` | "Switched to 'realtor'..." | Persona greeting + monitoring note |
 | `PROJECT_ACTIVATE:` marker | No greeting (marker stripped) | Follow-up persona greeting |
 | `/setup` completion | "configured as your expert..." | Persona greeting |
 | Scheduler action | Silent | **No change** |

@@ -239,7 +239,7 @@ After running the global heartbeat (`~/.omega/prompts/HEARTBEAT.md`), the heartb
 
 ### How It Works
 
-1. **Scan project directories** -- The heartbeat scans `~/.omega/projects/` for all subdirectories that do NOT have a `.disabled` marker file. `/project off` creates this marker (stops heartbeat + clears conversation context). `/project change <name>` switches conversation context without creating `.disabled` for the old project, so its heartbeat continues.
+1. **Scan project directories** -- The heartbeat scans `~/.omega/projects/` for all subdirectories that do NOT have a `.disabled` marker file. `/project off` creates this marker (stops heartbeat + clears conversation context). `/project <name>` activates a project by removing its `.disabled` marker.
 2. **Check for .disabled marker** -- Projects with `~/.omega/projects/<name>/.disabled` are skipped entirely. The marker is created by `/project off` and `PROJECT_DEACTIVATE`, and removed by `/project <name>` and `PROJECT_ACTIVATE:`.
 3. **Check for HEARTBEAT.md** -- For each non-disabled project directory, check if `~/.omega/projects/<name>/HEARTBEAT.md` exists and has content
 3. **Load ROLE.md** -- The project's `ROLE.md` is prepended to the system prompt, giving the AI project-specific role context

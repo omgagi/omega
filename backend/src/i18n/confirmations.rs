@@ -95,16 +95,6 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             "Russian" => "\u{041f}\u{0440}\u{043e}\u{0435}\u{043a}\u{0442} \u{0434}\u{0435}\u{0430}\u{043a}\u{0442}\u{0438}\u{0432}\u{0438}\u{0440}\u{043e}\u{0432}\u{0430}\u{043d}. \u{0420}\u{0430}\u{0437}\u{0433}\u{043e}\u{0432}\u{043e}\u{0440} \u{0443}\u{0434}\u{0430}\u{043b}\u{0451}\u{043d}.",
             _ => "Project deactivated. Conversation cleared.",
         },
-        "project_change_usage" => match lang {
-            "Spanish" => "Uso: /project change <nombre>",
-            "Portuguese" => "Uso: /project change <nome>",
-            "French" => "Utilisation: /project change <nom>",
-            "German" => "Verwendung: /project change <Name>",
-            "Italian" => "Uso: /project change <nome>",
-            "Dutch" => "Gebruik: /project change <naam>",
-            "Russian" => "\u{0418}\u{0441}\u{043f}\u{043e}\u{043b}\u{044c}\u{0437}\u{043e}\u{0432}\u{0430}\u{043d}\u{0438}\u{0435}: /project change <\u{0438}\u{043c}\u{044f}>",
-            _ => "Usage: /project change <name>",
-        },
         "no_active_project" => match lang {
             "Spanish" => "No hay proyecto activo.",
             "Portuguese" => "Nenhum projeto ativo.",
