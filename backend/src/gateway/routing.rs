@@ -1,4 +1,4 @@
-//! Classification-based routing, multi-step execution, and direct response handling.
+//! Direct response handling: provider call, session retry, markers, audit, delivery.
 
 use super::Gateway;
 use crate::markers::*;
@@ -12,167 +12,6 @@ use std::path::PathBuf;
 use tracing::{error, info, warn};
 
 impl Gateway {
-    /// Classify a message and route to the appropriate model.
-    ///
-    /// Intentionally kept but currently unused: all conversations route DIRECT.
-    /// Heartbeat uses a similar classifier pattern. Will be re-enabled when
-    /// multi-step execution is restored. See `execute_steps()` below.
-    #[allow(dead_code)]
-    pub(super) async fn classify_and_route(
-        &self,
-        message: &str,
-        active_project: Option<&str>,
-        recent_history: &[ContextEntry],
-        skill_names: &[&str],
-    ) -> Option<Vec<String>> {
-        let context_block =
-            build_classification_context(active_project, recent_history, skill_names);
-        let context_section = if context_block.is_empty() {
-            String::new()
-        } else {
-            format!("Context:\n{context_block}\n\n")
-        };
-
-        let planning_prompt = format!(
-            "You are a task classifier. Do NOT use any tools — respond with text only.\n\n\
-             Respond DIRECT if the request is:\n\
-             - A simple question, greeting, or conversation\n\
-             - One or more routine actions (reminders, scheduling, sending messages, storing \
-             information, short lookups)\n\n\
-             Respond with a numbered step list ONLY if the request requires genuinely complex \
-             work that benefits from decomposition — such as multi-file code changes, deep \
-             research and synthesis, building something new, or tasks where each step produces \
-             context the next step needs.\n\n\
-             When in doubt, prefer DIRECT.\n\n\
-             {context_section}\
-             Request: {message}"
-        );
-
-        let mut ctx = Context::new(&planning_prompt);
-        ctx.max_turns = Some(25); // Classification is best-effort — generous limit avoids noisy warnings.
-        ctx.allowed_tools = Some(vec![]); // No tools during classification.
-        ctx.model = Some(self.model_fast.clone());
-        match self.provider.complete(&ctx).await {
-            Ok(resp) => parse_plan_response(&resp.text),
-            Err(e) => {
-                warn!("classification call failed, falling back to direct: {e}");
-                None
-            }
-        }
-    }
-
-    /// Execute a list of steps autonomously, with progress updates and retry.
-    ///
-    /// Intentionally kept but currently unused: paired with `classify_and_route()`.
-    /// Will be re-enabled when multi-step execution is restored.
-    #[allow(dead_code)]
-    pub(super) async fn execute_steps(
-        &self,
-        incoming: &IncomingMessage,
-        original_task: &str,
-        context: &Context,
-        steps: &[String],
-        active_project: Option<&str>,
-    ) {
-        let total = steps.len();
-        info!("pre-flight planning: decomposed into {total} steps");
-
-        // Announce the plan.
-        let announcement = format!("On it — {total} things to work through. I'll keep you posted.");
-        self.send_text(incoming, &announcement).await;
-
-        let mut completed_summary = String::new();
-
-        for (i, step) in steps.iter().enumerate() {
-            let step_num = i + 1;
-            info!("planning: executing step {step_num}/{total}: {step}");
-
-            // Build step prompt with context.
-            let step_prompt = if completed_summary.is_empty() {
-                format!(
-                    "Original task: {original_task}\n\n\
-                     Execute step {step_num}/{total}: {step}"
-                )
-            } else {
-                format!(
-                    "Original task: {original_task}\n\n\
-                     Completed so far:\n{completed_summary}\n\n\
-                     Now execute step {step_num}/{total}: {step}"
-                )
-            };
-
-            let mut step_ctx = Context::new(&step_prompt);
-            step_ctx.system_prompt = context.system_prompt.clone();
-            step_ctx.mcp_servers = context.mcp_servers.clone();
-            step_ctx.model = context.model.clone();
-
-            // Retry loop for each step (up to 3 attempts).
-            let mut step_result = None;
-            for attempt in 1..=3u32 {
-                match self.provider.complete(&step_ctx).await {
-                    Ok(resp) => {
-                        step_result = Some(resp);
-                        break;
-                    }
-                    Err(e) => {
-                        warn!("planning: step {step_num} attempt {attempt}/3 failed: {e}");
-                        if attempt < 3 {
-                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        }
-                    }
-                }
-            }
-
-            match step_result {
-                Some(mut step_resp) => {
-                    // Process markers on each step result.
-                    let step_markers = self
-                        .process_markers(incoming, &mut step_resp.text, active_project)
-                        .await;
-
-                    completed_summary.push_str(&format!("- Step {step_num}: {step} (done)\n"));
-
-                    // Send progress update.
-                    let progress = format!("✓ {step} ({step_num}/{total})");
-                    self.send_text(incoming, &progress).await;
-
-                    // Send task confirmation if any tasks were scheduled in this step.
-                    if !step_markers.is_empty() {
-                        self.send_task_confirmation(incoming, &step_markers).await;
-                    }
-
-                    // Audit each step.
-                    let _ = self
-                        .audit
-                        .log(&AuditEntry {
-                            channel: incoming.channel.clone(),
-                            sender_id: incoming.sender_id.clone(),
-                            sender_name: incoming.sender_name.clone(),
-                            input_text: format!("[Step {step_num}/{total}] {step}"),
-                            output_text: Some(step_resp.text.clone()),
-                            provider_used: Some(step_resp.metadata.provider_used.clone()),
-                            model: step_resp.metadata.model.clone(),
-                            processing_ms: Some(step_resp.metadata.processing_time_ms as i64),
-                            status: AuditStatus::Ok,
-                            denial_reason: None,
-                        })
-                        .await;
-                }
-                None => {
-                    completed_summary.push_str(&format!("- Step {step_num}: {step} (FAILED)\n"));
-                    let fail_msg = format!("✗ Couldn't complete: {step} ({step_num}/{total})");
-                    self.send_text(incoming, &fail_msg).await;
-                }
-            }
-        }
-
-        // Send final summary.
-        let final_msg = format!("Done — all {total} wrapped up ✓");
-        self.send_text(incoming, &final_msg).await;
-
-        // Inbox images are cleaned up by InboxGuard in handle_message.
-    }
-
     /// Handle the direct response path: provider call, session retry, markers,
     /// audit, send response, workspace image delivery.
     #[allow(clippy::too_many_arguments)]
@@ -412,7 +251,7 @@ impl Gateway {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("image.png");
-                match std::fs::read(image_path) {
+                match tokio::fs::read(image_path).await {
                     Ok(bytes) => {
                         if let Err(e) = channel.send_photo(target, &bytes, filename).await {
                             warn!("failed to send workspace image {filename}: {e}");
@@ -424,7 +263,7 @@ impl Gateway {
                         warn!("failed to read workspace image {filename}: {e}");
                     }
                 }
-                if let Err(e) = std::fs::remove_file(image_path) {
+                if let Err(e) = tokio::fs::remove_file(image_path).await {
                     warn!("failed to remove workspace image {filename}: {e}");
                 }
             }

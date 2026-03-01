@@ -1,372 +1,16 @@
-//! Keyword constants and matching for conditional prompt injection.
+//! Keyword matching functions for conditional prompt injection.
+//!
+//! Static keyword data arrays live in `keywords_data.rs` (split for the
+//! 500-line-per-file rule). Re-exported here so the rest of the gateway
+//! module sees a single flat namespace.
 
-/// Maximum number of retries for failed action tasks.
-pub(super) const MAX_ACTION_RETRIES: u32 = 3;
-
-// --- Keyword lists for conditional prompt injection ---
-
-/// Keywords that trigger the scheduling context section.
-pub(super) const SCHEDULING_KW: &[&str] = &[
-    "remind",
-    "schedule",
-    "alarm",
-    "timer",
-    "tomorrow",
-    "next week",
-    "daily",
-    "weekly",
-    "monthly",
-    "weekday",
-    "cancel",
-    "update task",
-    "recurring",
-    "every morning",
-    "every day",
-    "every evening",
-    "appointment",
-    "due",
-    "at noon",
-    "recuerda",
-    "recuérd",
-    "recordar",
-    "alarma",
-    "agendar",
-    "lembr",
-    "rappel",
-    "erinner",
-    "ricorda",
-    "herinner",
-];
-
-/// Keywords that trigger semantic recall (FTS5 related past messages).
-pub(super) const RECALL_KW: &[&str] = &[
-    "remember",
-    "last time",
-    "you said",
-    "earlier",
-    "before",
-    "we talked",
-    "we discussed",
-    "you told",
-    "you mentioned",
-    "yesterday",
-    "last week",
-    "recuerd",
-    "dijiste",
-    "lembr",
-    "você disse",
-    "souvien",
-    "erinnerst",
-    "ricord",
-    "herinner",
-];
-
-/// Keywords that trigger pending tasks injection.
-pub(super) const TASKS_KW: &[&str] = &[
-    "task",
-    "reminder",
-    "pending",
-    "scheduled",
-    "what's coming",
-    "what's scheduled",
-    "my tasks",
-    "my reminders",
-    "tarea",
-    "recordatorio",
-    "pendiente",
-    "tarefa",
-    "lembrete",
-    "tâche",
-    "aufgabe",
-    "compito",
-    "taak",
-];
-
-/// Keywords that trigger the projects context section.
-pub(super) const PROJECTS_KW: &[&str] = &[
-    "project",
-    "activate",
-    "deactivate",
-    // es
-    "proyecto",
-    "activar",
-    "desactivar",
-    // pt
-    "projeto",
-    "ativar",
-    "desativar",
-    // fr
-    "projet",
-    "activer",
-    "désactiver",
-    // de
-    "projekt",
-    "aktivieren",
-    "deaktivieren",
-    // it
-    "progetto",
-    "attivare",
-    "disattivare",
-    // nl
-    "projecten",
-    "activeren",
-    "deactiveren",
-    // ru
-    "проект",
-    "активировать",
-    "деактивировать",
-];
-
-/// Keywords that trigger user profile injection into the system prompt.
-pub(super) const PROFILE_KW: &[&str] = &[
-    "who am i",
-    "my name",
-    "about me",
-    "my profile",
-    "my facts",
-    "what do you know",
-    "quién soy",
-    "mi nombre",
-    "sobre mí",
-    "quem sou",
-    "meu nome",
-    "sobre mim",
-    "qui suis",
-    "mon nom",
-    "wer bin ich",
-    "mein name",
-    "chi sono",
-    "mio nome",
-    "wie ben ik",
-    "mijn naam",
-    "кто я",
-];
-
-/// Keywords that trigger recent outcomes injection.
-pub(super) const OUTCOMES_KW: &[&str] = &[
-    "how did i",
-    "how am i doing",
-    "reward",
-    "outcome",
-    "feedback",
-    "performance",
-    "cómo lo hice",
-    "resultado",
-    "como me saí",
-    "desempenho",
-    "comment j'ai",
-    "résultat",
-    "wie habe ich",
-    "ergebnis",
-    "come ho fatto",
-    "risultato",
-    "hoe deed ik",
-    "resultaat",
-];
-
-/// Keywords that trigger the builds context section.
-pub(super) const BUILDS_KW: &[&str] = &[
-    "build me",
-    "build a ",
-    "build an ",
-    "scaffold",
-    "code me",
-    "code a ",
-    "code an ",
-    "develop a",
-    "develop an",
-    "make me a",
-    "write me a",
-    "new tool",
-    "new app",
-    "new service",
-    "new api",
-    "new library",
-    "new cli",
-    // Common English typos (mobile keyboard, missing/swapped letters)
-    "buil me",
-    "buil a ",
-    "buil an ",
-    "buidl",
-    "bulid",
-    "biuld",
-    "buld ",
-    "scafold",
-    "scaffol ",
-    "devlop",
-    "develp",
-    "develo a",
-    "mak me a",
-    "writ me a",
-    "wrte me a",
-    // Spanish
-    "constrúyeme",
-    "construye un",
-    "hazme un",
-    "hazme una",
-    "desarroll",
-    "codifica",
-    // Spanish typos
-    "contruyeme",
-    "construyem",
-    "hasme un",
-    // Portuguese
-    "construa um",
-    "crie um",
-    "desenvolva",
-    // Portuguese typos
-    "contrua um",
-    "desevolva",
-    // French
-    "construis",
-    "développe",
-    "code-moi",
-    "crée un",
-    "crée une",
-    "nouvel outil",
-    "nouvelle app",
-    // French typos
-    "developpe",
-    "cree un",
-    "cree une",
-    // German
-    "baue mir",
-    "erstelle",
-    "entwickle",
-    "programmier",
-    "neues tool",
-    "neue app",
-    // German typos
-    "erstele",
-    "enwickle",
-    // Italian
-    "costruisci",
-    "sviluppa",
-    "programma un",
-    "crea un",
-    "crea una",
-    "nuovo strumento",
-    "nuova app",
-    // Italian typos
-    "costruici",
-    "svilupa",
-    // Dutch
-    "bouw me",
-    "maak me",
-    "ontwikkel",
-    "codeer",
-    "nieuwe tool",
-    "nieuwe app",
-    // Dutch typos
-    "ontwikel",
-    "bouw mij",
-    // Russian
-    "построй",
-    "создай",
-    "разработай",
-    "напиши мне",
-    "новый инструмент",
-    "новое приложение",
-    // Russian typos
-    "пострй",
-    "сздай",
-    "разрабтай",
-];
-
-/// Simple confirmation words for build requests (lowercased).
-/// Safe because they are only checked during the 2-minute TTL window after
-/// OMEGA explicitly asked for confirmation — outside that window, "yes" is just "yes".
-pub(super) const BUILD_CONFIRM_KW: &[&str] = &[
-    // English
-    "yes",
-    "yeah",
-    "yep",
-    "y",
-    "go",
-    "do it",
-    "go ahead",
-    "start",
-    // Spanish
-    "sí",
-    "si",
-    "dale",
-    "hazlo",
-    "adelante",
-    // Portuguese
-    "sim",
-    "vai",
-    "bora",
-    // French
-    "oui",
-    "ouais",
-    "vas-y",
-    // German
-    "ja",
-    "jawohl",
-    "los",
-    "mach es",
-    // Italian
-    "sì",
-    "vai",
-    "fallo",
-    // Dutch
-    "ja",
-    "doe het",
-    "ga door",
-    // Russian
-    "да",
-    "давай",
-    "поехали",
-];
+pub(super) use super::keywords_data::*;
 
 /// Check if the trimmed, lowercased message is a build-specific confirmation phrase.
 pub(super) fn is_build_confirmed(msg: &str) -> bool {
     let normalized = msg.trim().to_lowercase();
     BUILD_CONFIRM_KW.iter().any(|kw| normalized == *kw)
 }
-
-/// Explicit cancellation words — immediately close the confirmation window.
-pub(super) const BUILD_CANCEL_KW: &[&str] = &[
-    // English
-    "no",
-    "nah",
-    "nope",
-    "n",
-    "cancel",
-    "stop",
-    "nevermind",
-    "never mind",
-    // Spanish
-    "no",
-    "cancelar",
-    "olvídalo",
-    "olvidalo",
-    // Portuguese
-    "não",
-    "nao",
-    "cancelar",
-    "esquece",
-    // French
-    "non",
-    "annuler",
-    "laisse tomber",
-    // German
-    "nein",
-    "abbrechen",
-    "lass es",
-    // Italian
-    "no",
-    "annulla",
-    "lascia stare",
-    // Dutch
-    "nee",
-    "annuleer",
-    "laat maar",
-    // Russian
-    "нет",
-    "отмена",
-    "не надо",
-];
 
 /// Check if the message is an explicit build cancellation.
 pub(super) fn is_build_cancelled(msg: &str) -> bool {
@@ -387,10 +31,6 @@ pub(super) fn build_cancelled_message(lang: &str) -> &'static str {
         _ => "Build cancelled.",
     }
 }
-
-/// Maximum seconds a pending build request stays valid. After this, the user
-/// must re-trigger the build keyword.
-pub(super) const BUILD_CONFIRM_TTL_SECS: i64 = 120;
 
 /// Localized confirmation prompt sent when a build keyword is detected.
 /// The user has BUILD_CONFIRM_TTL_SECS to reply with a simple "yes" / "sí" / "sim" etc.
@@ -447,20 +87,6 @@ pub(super) fn build_confirm_message(lang: &str, request_preview: &str) -> String
     }
 }
 
-/// Keywords that trigger the meta context section.
-pub(super) const META_KW: &[&str] = &[
-    "skill",
-    "improve",
-    "bug",
-    "limitation",
-    "whatsapp",
-    "qr",
-    "pair",
-    "personality",
-    "forget",
-    "purge",
-];
-
 /// Check if any keyword in the list is contained in the lowercased message.
 pub(super) fn kw_match(msg_lower: &str, keywords: &[&str]) -> bool {
     keywords.iter().any(|kw| msg_lower.contains(kw))
@@ -508,11 +134,8 @@ pub(super) fn is_valid_fact(key: &str, value: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Discovery session constants and localized messages
+// Discovery session localized messages
 // ---------------------------------------------------------------------------
-
-/// Maximum seconds a discovery session stays valid.
-pub(super) const DISCOVERY_TTL_SECS: i64 = 1800; // 30 minutes
 
 /// Localized message sent when discovery starts (first round questions).
 pub(super) fn discovery_intro_message(lang: &str, questions: &str) -> String {
@@ -604,9 +227,6 @@ pub(super) fn discovery_expired_message(lang: &str) -> &'static str {
     }
 }
 
-/// Maximum seconds a setup session stays valid.
-pub(super) const SETUP_TTL_SECS: i64 = 1800; // 30 minutes
-
 /// Localized message when user cancels discovery.
 pub(super) fn discovery_cancelled_message(lang: &str) -> &'static str {
     match lang {
@@ -628,28 +248,28 @@ pub(super) fn discovery_cancelled_message(lang: &str) -> &'static str {
 /// Localized help message for `/setup` command (shown when no description provided).
 pub(super) fn setup_help_message(lang: &str) -> &'static str {
     match lang {
-        "Spanish" => "Usa `/setup` seguido de una descripci\u{f3}n de tu negocio para que *OMEGA Ω* se configure como experto en tu dominio.\n\nEjemplo: `/setup Soy agente inmobiliario en Lisboa`",
-        "Portuguese" => "Use `/setup` seguido de uma descri\u{e7}\u{e3}o do seu neg\u{f3}cio para que *OMEGA Ω* se configure como especialista no seu dom\u{ed}nio.\n\nExemplo: `/setup Sou corretor de im\u{f3}veis em Lisboa`",
-        "French" => "Utilisez `/setup` suivi d'une description de votre activit\u{e9} pour que *OMEGA Ω* se configure comme expert de votre domaine.\n\nExemple : `/setup Je suis agent immobilier \u{e0} Lisbonne`",
-        "German" => "Verwende `/setup` gefolgt von einer Beschreibung deines Gesch\u{e4}fts, damit *OMEGA Ω* sich als Experte f\u{fc}r deine Dom\u{e4}ne konfiguriert.\n\nBeispiel: `/setup Ich bin Immobilienmakler in Lissabon`",
-        "Italian" => "Usa `/setup` seguito da una descrizione della tua attivit\u{e0} per configurare *OMEGA Ω* come esperto nel tuo dominio.\n\nEsempio: `/setup Sono un agente immobiliare a Lisbona`",
-        "Dutch" => "Gebruik `/setup` gevolgd door een beschrijving van je bedrijf om *OMEGA Ω* te configureren als domeinexpert.\n\nVoorbeeld: `/setup Ik ben makelaar in Lissabon`",
+        "Spanish" => "Usa `/setup` seguido de una descripci\u{f3}n de tu negocio para que *OMEGA \u{3a9}* se configure como experto en tu dominio.\n\nEjemplo: `/setup Soy agente inmobiliario en Lisboa`",
+        "Portuguese" => "Use `/setup` seguido de uma descri\u{e7}\u{e3}o do seu neg\u{f3}cio para que *OMEGA \u{3a9}* se configure como especialista no seu dom\u{ed}nio.\n\nExemplo: `/setup Sou corretor de im\u{f3}veis em Lisboa`",
+        "French" => "Utilisez `/setup` suivi d'une description de votre activit\u{e9} pour que *OMEGA \u{3a9}* se configure comme expert de votre domaine.\n\nExemple : `/setup Je suis agent immobilier \u{e0} Lisbonne`",
+        "German" => "Verwende `/setup` gefolgt von einer Beschreibung deines Gesch\u{e4}fts, damit *OMEGA \u{3a9}* sich als Experte f\u{fc}r deine Dom\u{e4}ne konfiguriert.\n\nBeispiel: `/setup Ich bin Immobilienmakler in Lissabon`",
+        "Italian" => "Usa `/setup` seguito da una descrizione della tua attivit\u{e0} per configurare *OMEGA \u{3a9}* come esperto nel tuo dominio.\n\nEsempio: `/setup Sono un agente immobiliare a Lisbona`",
+        "Dutch" => "Gebruik `/setup` gevolgd door een beschrijving van je bedrijf om *OMEGA \u{3a9}* te configureren als domeinexpert.\n\nVoorbeeld: `/setup Ik ben makelaar in Lissabon`",
         "Russian" => "\u{418}\u{441}\u{43f}\u{43e}\u{43b}\u{44c}\u{437}\u{443}\u{439}\u{442}\u{435} `/setup` \u{441} \u{43e}\u{43f}\u{438}\u{441}\u{430}\u{43d}\u{438}\u{435}\u{43c} \u{432}\u{430}\u{448}\u{435}\u{433}\u{43e} \u{431}\u{438}\u{437}\u{43d}\u{435}\u{441}\u{430}, \u{447}\u{442}\u{43e}\u{431}\u{44b} *OMEGA \u{3a9}* \u{43d}\u{430}\u{441}\u{442}\u{440}\u{43e}\u{438}\u{43b}\u{441}\u{44f} \u{43a}\u{430}\u{43a} \u{44d}\u{43a}\u{441}\u{43f}\u{435}\u{440}\u{442} \u{432} \u{432}\u{430}\u{448}\u{435}\u{439} \u{43e}\u{431}\u{43b}\u{430}\u{441}\u{442}\u{438}.\n\n\u{41f}\u{440}\u{438}\u{43c}\u{435}\u{440}: `/setup \u{42f} \u{440}\u{438}\u{44d}\u{43b}\u{442}\u{43e}\u{440} \u{432} \u{41b}\u{438}\u{441}\u{441}\u{430}\u{431}\u{43e}\u{43d}\u{435}`",
-        _ => "Use `/setup` followed by a description of your business so *OMEGA Ω* configures itself as your domain expert.\n\nExample: `/setup I'm a realtor in Lisbon`",
+        _ => "Use `/setup` followed by a description of your business so *OMEGA \u{3a9}* configures itself as your domain expert.\n\nExample: `/setup I'm a realtor in Lisbon`",
     }
 }
 
 /// Localized intro message when setup starts (first round questions).
 pub(super) fn setup_intro_message(lang: &str, questions: &str) -> String {
     let intro = match lang {
-        "Spanish" => "Para configurar *OMEGA Ω* como tu experto, necesito entender mejor tu negocio:",
-        "Portuguese" => "Para configurar *OMEGA Ω* como seu especialista, preciso entender melhor seu neg\u{f3}cio:",
-        "French" => "Pour configurer *OMEGA Ω* comme votre expert, j'ai besoin de mieux comprendre votre activit\u{e9} :",
-        "German" => "Um *OMEGA Ω* als deinen Experten einzurichten, muss ich dein Gesch\u{e4}ft besser verstehen:",
-        "Italian" => "Per configurare *OMEGA Ω* come tuo esperto, ho bisogno di capire meglio la tua attivit\u{e0}:",
-        "Dutch" => "Om *OMEGA Ω* als jouw expert in te stellen, moet ik je bedrijf beter begrijpen:",
+        "Spanish" => "Para configurar *OMEGA \u{3a9}* como tu experto, necesito entender mejor tu negocio:",
+        "Portuguese" => "Para configurar *OMEGA \u{3a9}* como seu especialista, preciso entender melhor seu neg\u{f3}cio:",
+        "French" => "Pour configurer *OMEGA \u{3a9}* comme votre expert, j'ai besoin de mieux comprendre votre activit\u{e9} :",
+        "German" => "Um *OMEGA \u{3a9}* als deinen Experten einzurichten, muss ich dein Gesch\u{e4}ft besser verstehen:",
+        "Italian" => "Per configurare *OMEGA \u{3a9}* come tuo esperto, ho bisogno di capire meglio la tua attivit\u{e0}:",
+        "Dutch" => "Om *OMEGA \u{3a9}* als jouw expert in te stellen, moet ik je bedrijf beter begrijpen:",
         "Russian" => "\u{427}\u{442}\u{43e}\u{431}\u{44b} \u{43d}\u{430}\u{441}\u{442}\u{440}\u{43e}\u{438}\u{442}\u{44c} *OMEGA \u{3a9}* \u{43a}\u{430}\u{43a} \u{432}\u{430}\u{448}\u{435}\u{433}\u{43e} \u{44d}\u{43a}\u{441}\u{43f}\u{435}\u{440}\u{442}\u{430}, \u{43c}\u{43d}\u{435} \u{43d}\u{443}\u{436}\u{43d}\u{43e} \u{43b}\u{443}\u{447}\u{448}\u{435} \u{43f}\u{43e}\u{43d}\u{44f}\u{442}\u{44c} \u{432}\u{430}\u{448} \u{431}\u{438}\u{437}\u{43d}\u{435}\u{441}:",
-        _ => "To configure *OMEGA Ω* as your expert, I need to understand your business better:",
+        _ => "To configure *OMEGA \u{3a9}* as your expert, I need to understand your business better:",
     };
     format!("{intro}\n\n{questions}")
 }

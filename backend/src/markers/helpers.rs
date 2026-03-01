@@ -1,5 +1,5 @@
 //! Miscellaneous helpers: status messages, provider errors, workspace images,
-//! active hours, classification, and inbox operations.
+//! active hours, plan parsing, and inbox operations.
 
 use std::path::PathBuf;
 
@@ -87,7 +87,7 @@ pub fn next_active_start_utc(start: &str) -> String {
 
     let now = Local::now();
     let start_time = NaiveTime::parse_from_str(start, "%H:%M")
-        .unwrap_or_else(|_| NaiveTime::from_hms_opt(8, 0, 0).unwrap());
+        .unwrap_or_else(|_| NaiveTime::from_hms_opt(8, 0, 0).expect("08:00 is always valid"));
 
     let today_candidate = now.date_naive().and_time(start_time);
     let candidate = if today_candidate > now.naive_local() {
@@ -105,51 +105,6 @@ pub fn next_active_start_utc(start: &str) -> String {
         .with_timezone(&chrono::Utc)
         .format("%Y-%m-%d %H:%M:%S")
         .to_string()
-}
-
-// ---------------------------------------------------------------------------
-// Classification helpers
-// ---------------------------------------------------------------------------
-
-/// Build a short context string for the complexity classifier.
-///
-/// Includes active project, last 3 messages (truncated to 80 chars each),
-/// and available skill names. Returns empty string if all fields are empty.
-pub fn build_classification_context(
-    active_project: Option<&str>,
-    history: &[omega_core::context::ContextEntry],
-    skill_names: &[&str],
-) -> String {
-    let mut ctx = String::new();
-
-    if let Some(proj) = active_project {
-        ctx.push_str(&format!("Active project: {proj}\n"));
-    }
-
-    // Last 3 messages, each truncated to ~80 chars.
-    let recent: Vec<_> = history.iter().rev().take(3).collect::<Vec<_>>();
-    if !recent.is_empty() {
-        ctx.push_str("Recent conversation:\n");
-        for entry in recent.iter().rev() {
-            let role = if entry.role == "user" {
-                "User"
-            } else {
-                "Assistant"
-            };
-            let content = if entry.content.len() > 80 {
-                format!("{}...", &entry.content[..80])
-            } else {
-                entry.content.clone()
-            };
-            ctx.push_str(&format!("{role}: {content}\n"));
-        }
-    }
-
-    if !skill_names.is_empty() {
-        ctx.push_str(&format!("Available skills: {}\n", skill_names.join(", ")));
-    }
-
-    ctx.trim().to_string()
 }
 
 /// Parse a plan/classification response into numbered steps.

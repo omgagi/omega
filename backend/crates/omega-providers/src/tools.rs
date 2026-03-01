@@ -68,15 +68,6 @@ impl ToolExecutor {
         }
     }
 
-    /// Set the path to the actual config.toml containing secrets.
-    ///
-    /// When set, the sandbox also blocks reads to this path (even if it
-    /// lives outside `data_dir`).
-    pub fn with_config_path(mut self, config_path: PathBuf) -> Self {
-        self.config_path = Some(config_path);
-        self
-    }
-
     /// Connect to MCP servers and discover their tools.
     pub async fn connect_mcp_servers(&mut self, servers: &[McpServer]) {
         for server in servers {

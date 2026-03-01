@@ -419,8 +419,7 @@ impl Gateway {
                     }
                     DiscoveryOutput::Questions(questions) => {
                         // Request was vague — start multi-round discovery session.
-                        let disc_file =
-                            discovery_file_path(&self.data_dir, &incoming.sender_id);
+                        let disc_file = discovery_file_path(&self.data_dir, &incoming.sender_id);
                         let discovery_dir = disc_file
                             .parent()
                             .expect("discovery path always has parent");
@@ -441,11 +440,8 @@ impl Gateway {
                         let _ = tokio::fs::write(&disc_file, &file_content).await;
 
                         // Store pending_discovery fact.
-                        let stamped = format!(
-                            "{}|{}",
-                            chrono::Utc::now().timestamp(),
-                            incoming.sender_id
-                        );
+                        let stamped =
+                            format!("{}|{}", chrono::Utc::now().timestamp(), incoming.sender_id);
                         let _ = self
                             .memory
                             .store_fact(&incoming.sender_id, "pending_discovery", &stamped)

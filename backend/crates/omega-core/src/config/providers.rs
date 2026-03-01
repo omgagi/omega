@@ -62,6 +62,12 @@ pub struct AnthropicConfig {
     pub api_key: String,
     #[serde(default = "default_anthropic_model")]
     pub model: String,
+    #[serde(default = "default_anthropic_max_tokens")]
+    pub max_tokens: u32,
+}
+
+fn default_anthropic_max_tokens() -> u32 {
+    8192
 }
 
 /// OpenAI-compatible provider config.

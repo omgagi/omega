@@ -84,6 +84,7 @@ pub fn build_provider(
                 Box::new(AnthropicProvider::from_config(
                     ac.api_key.clone(),
                     ac.model.clone(),
+                    ac.max_tokens,
                     ws,
                 )?),
                 m.clone(),

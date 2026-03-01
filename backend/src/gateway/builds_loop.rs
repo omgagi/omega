@@ -28,6 +28,9 @@ impl Gateway {
     ) -> Result<(), String> {
         let project_dir_str = state.project_dir_str.as_deref().unwrap_or("");
         // TODO(phase-2): add loop_style field to RetryConfig instead of name-based dispatch
+        // NOTE: Tracked as P2-26 — phase-2 i18n not yet implemented, English-only fallback used.
+        //       Currently dispatches QA vs review by checking phase.name == "qa"; should use
+        //       an explicit loop_style enum on RetryConfig (e.g. LoopStyle::Qa / LoopStyle::Review).
         let is_qa = phase.name == "qa";
 
         let verify_prompt = if is_qa {

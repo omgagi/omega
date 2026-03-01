@@ -215,22 +215,22 @@ impl Gateway {
         // --- 4. TYPING INDICATOR ---
         let typing_channel = self.channels.get(&incoming.channel).cloned();
         let typing_target = incoming.reply_target.clone();
-        let mut typing_handle = if let (Some(ch), Some(ref target)) = (&typing_channel, &typing_target)
-        {
-            let ch = ch.clone();
-            let target = target.clone();
-            let _ = ch.send_typing(&target).await;
-            Some(tokio::spawn(async move {
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    if ch.send_typing(&target).await.is_err() {
-                        break;
+        let mut typing_handle =
+            if let (Some(ch), Some(ref target)) = (&typing_channel, &typing_target) {
+                let ch = ch.clone();
+                let target = target.clone();
+                let _ = ch.send_typing(&target).await;
+                Some(tokio::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        if ch.send_typing(&target).await.is_err() {
+                            break;
+                        }
                     }
-                }
-            }))
-        } else {
-            None
-        };
+                }))
+            } else {
+                None
+            };
 
         // --- 4. BUILD CONTEXT FROM MEMORY ---
 

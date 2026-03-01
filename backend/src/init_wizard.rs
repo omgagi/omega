@@ -59,11 +59,24 @@ pub(crate) fn create_incognito_script(
         "#!/bin/sh\nopen -na '{}' --args {} \"$1\"\n",
         browser.app, browser.flag
     );
-    std::fs::write(&script_path, script)?;
+    // Create with restricted permissions first (0o700), then write content.
+    // Prevents TOCTOU: no window where the file is world-readable.
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))?;
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o700)
+            .open(&script_path)?;
+        f.write_all(script.as_bytes())?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(&script_path, script)?;
     }
     Ok(script_path)
 }
@@ -446,7 +459,7 @@ mod tests {
             let perms = std::fs::metadata(&path)
                 .expect("should get metadata")
                 .permissions();
-            assert_eq!(perms.mode() & 0o755, 0o755, "script should be executable");
+            assert_eq!(perms.mode() & 0o700, 0o700, "script should be executable");
         }
 
         // Cleanup.

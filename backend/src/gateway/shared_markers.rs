@@ -103,10 +103,7 @@ pub(super) async fn process_task_and_learning_markers(
     // LESSON — process ALL markers (project-tagged).
     for lesson_line in extract_all_lessons(text) {
         if let Some((domain, rule)) = parse_lesson_line(&lesson_line) {
-            match store
-                .store_lesson(sender_id, &domain, &rule, project)
-                .await
-            {
+            match store.store_lesson(sender_id, &domain, &rule, project).await {
                 Ok(()) => info!("{source} lesson: {domain} | {rule}"),
                 Err(e) => error!("{source}: failed to store lesson: {e}"),
             }

@@ -161,6 +161,8 @@ async fn run_claude(prompt: &str, workspace: &Path, data_dir: &Path) -> Result<(
         .arg(prompt)
         .arg("--output-format")
         .arg("json")
+        // Required: CLI runs non-interactively (no user to approve permission prompts).
+        // Scope is limited: sandboxed via protected_command, only updates CLAUDE.md in workspace.
         .arg("--dangerously-skip-permissions");
 
     let output = tokio::time::timeout(CLAUDEMD_TIMEOUT, cmd.output())

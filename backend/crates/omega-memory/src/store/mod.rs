@@ -5,9 +5,11 @@
 //! - `messages` — message storage and full-text search
 //! - `facts` — user facts, aliases, and limitations
 //! - `tasks` — scheduled task CRUD and dedup
-//! - `context` — context building, system prompt composition, onboarding, language detection
+//! - `context` — context building and user profile formatting
+//! - `context_helpers` — onboarding stages, system prompt composition, language detection
 
 mod context;
+mod context_helpers;
 mod conversations;
 mod facts;
 mod messages;

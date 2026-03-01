@@ -248,6 +248,7 @@ fn build_router(state: ApiState) -> Router {
         .route("/api/pair", post(pair))
         .route("/api/pair/status", get(pair_status))
         .route("/api/webhook", post(webhook))
+        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024)) // 1 MB max request body
         .with_state(state)
 }
 

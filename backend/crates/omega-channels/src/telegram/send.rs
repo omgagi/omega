@@ -2,7 +2,7 @@
 
 use super::TelegramChannel;
 use omega_core::error::OmegaError;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 impl TelegramChannel {
     /// Send a text message to a specific chat.
@@ -29,12 +29,13 @@ impl TelegramChannel {
             if !status.is_success() {
                 let error_text = resp.text().await.unwrap_or_default();
                 if error_text.contains("can't parse entities") {
-                    debug!("Markdown parse failed, retrying as plain text");
+                    warn!("Markdown parse failed, retrying as plain text: {error_text}");
                     let plain_body = serde_json::json!({
                         "chat_id": chat_id,
                         "text": chunk,
                     });
-                    self.client
+                    let plain_resp = self
+                        .client
                         .post(format!("{}/sendMessage", self.base_url))
                         .json(&plain_body)
                         .send()
@@ -42,6 +43,12 @@ impl TelegramChannel {
                         .map_err(|e| {
                             OmegaError::Channel(format!("telegram send (plain) failed: {e}"))
                         })?;
+                    if !plain_resp.status().is_success() {
+                        let plain_err = plain_resp.text().await.unwrap_or_default();
+                        return Err(OmegaError::Channel(format!(
+                            "telegram send (plain fallback) failed: {plain_err}"
+                        )));
+                    }
                 } else {
                     warn!("telegram send got {status}: {error_text}");
                 }

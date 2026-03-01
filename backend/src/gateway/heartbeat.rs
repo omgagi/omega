@@ -48,7 +48,7 @@ fn secs_until_active_start(active_start: &str) -> u64 {
     use chrono::{Local, NaiveTime, Timelike};
     let now = Local::now();
     let start = NaiveTime::parse_from_str(active_start, "%H:%M")
-        .unwrap_or_else(|_| NaiveTime::from_hms_opt(8, 0, 0).unwrap());
+        .unwrap_or_else(|_| NaiveTime::from_hms_opt(8, 0, 0).expect("08:00 is always valid"));
 
     let now_secs =
         u64::from(now.hour()) * 3600 + u64::from(now.minute()) * 60 + u64::from(now.second());

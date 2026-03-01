@@ -183,7 +183,11 @@ pub async fn process_heartbeat_markers(
 
     // CANCEL_TASK + UPDATE_TASK + REWARD + LESSON (shared across pipelines).
     let _ = super::shared_markers::process_task_and_learning_markers(
-        &mut text, memory, sender_id, project, "heartbeat",
+        &mut text,
+        memory,
+        sender_id,
+        project,
+        "heartbeat",
     )
     .await;
 

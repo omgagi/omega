@@ -5,8 +5,8 @@
 pub mod anthropic;
 pub mod claude_code;
 pub mod gemini;
-pub mod mcp_client;
+pub(crate) mod mcp_client;
 pub mod ollama;
 pub mod openai;
 pub mod openrouter;
-pub mod tools;
+pub(crate) mod tools;

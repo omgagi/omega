@@ -19,7 +19,17 @@ pub fn language_set(lang: &str, new_lang: &str) -> String {
 /// Format language show with usage hint.
 pub fn language_show(lang: &str, current: &str) -> String {
     let label = t("language_label", lang);
-    format!("{label} {current}\nUsage: /language <language>")
+    let usage = match lang {
+        "Spanish" => "Uso: /language <idioma>",
+        "Portuguese" => "Uso: /language <idioma>",
+        "French" => "Utilisation: /language <langue>",
+        "German" => "Verwendung: /language <Sprache>",
+        "Italian" => "Uso: /language <lingua>",
+        "Dutch" => "Gebruik: /language <taal>",
+        "Russian" => "\u{0418}\u{0441}\u{043f}\u{043e}\u{043b}\u{044c}\u{0437}\u{043e}\u{0432}\u{0430}\u{043d}\u{0438}\u{0435}: /language <\u{044f}\u{0437}\u{044b}\u{043a}>",
+        _ => "Usage: /language <language>",
+    };
+    format!("{label} {current}\n{usage}")
 }
 
 /// Format personality updated confirmation.

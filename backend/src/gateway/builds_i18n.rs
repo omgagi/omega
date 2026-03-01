@@ -159,6 +159,8 @@ pub(super) fn qa_pass_message(lang: &str, attempt: u32) -> String {
 
 /// Localized QA retry message -- sent when verification finds issues and developer is re-invoked.
 // TODO(phase-2): parameterize retry count from topology instead of hardcoded /3
+// NOTE: Tracked as P2-23 — phase-2 i18n not yet implemented, English-only fallback used.
+//       Currently hardcodes "/3" in all languages; should read max_retries from RetryConfig.
 pub(super) fn qa_retry_message(lang: &str, attempt: u32, reason: &str) -> String {
     match lang {
         "Spanish" => {
@@ -182,6 +184,8 @@ pub(super) fn qa_retry_message(lang: &str, attempt: u32, reason: &str) -> String
 
 /// Localized QA exhausted message -- sent when all 3 QA iterations fail.
 // TODO(phase-2): parameterize retry count from topology instead of hardcoded 3
+// NOTE: Tracked as P2-24 — phase-2 i18n not yet implemented, English-only fallback used.
+//       Currently hardcodes "3" in all languages; should read max_retries from RetryConfig.
 pub(super) fn qa_exhausted_message(lang: &str, reason: &str, dir: &str) -> String {
     match lang {
         "Spanish" => format!("La verificación falló después de 3 intentos: {reason}\nResultados parciales en `{dir}`"),
@@ -235,6 +239,8 @@ pub(super) fn review_retry_message(lang: &str, reason: &str) -> String {
 
 /// Localized review exhausted message -- sent when both review iterations fail.
 // TODO(phase-2): parameterize retry count from topology instead of hardcoded 2
+// NOTE: Tracked as P2-25 — phase-2 i18n not yet implemented, English-only fallback used.
+//       Currently hardcodes "2" in all languages; should read max_retries from RetryConfig.
 pub(super) fn review_exhausted_message(lang: &str, reason: &str, dir: &str) -> String {
     match lang {
         "Spanish" => format!(

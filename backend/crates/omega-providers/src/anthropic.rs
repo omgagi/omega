@@ -23,6 +23,7 @@ pub struct AnthropicProvider {
     client: reqwest::Client,
     api_key: String,
     model: String,
+    max_tokens: u32,
     workspace_path: Option<PathBuf>,
 }
 
@@ -31,6 +32,7 @@ impl AnthropicProvider {
     pub fn from_config(
         api_key: String,
         model: String,
+        max_tokens: u32,
         workspace_path: Option<PathBuf>,
     ) -> Result<Self, OmegaError> {
         Ok(Self {
@@ -40,6 +42,7 @@ impl AnthropicProvider {
                 .map_err(|e| OmegaError::Provider(format!("failed to build HTTP client: {e}")))?,
             api_key,
             model,
+            max_tokens,
             workspace_path,
         })
     }
@@ -191,7 +194,7 @@ impl Provider for AnthropicProvider {
 
         let body = AnthropicRequest {
             model: effective_model.to_string(),
-            max_tokens: 8192,
+            max_tokens: self.max_tokens,
             system,
             messages,
             tools: None,
@@ -281,7 +284,7 @@ impl AnthropicProvider {
         for turn in 0..max_turns {
             let body = AnthropicRequest {
                 model: model.to_string(),
-                max_tokens: 8192,
+                max_tokens: self.max_tokens,
                 system: system.to_string(),
                 messages: messages.clone(),
                 tools: tools.clone(),
@@ -432,6 +435,7 @@ mod tests {
         let p = AnthropicProvider::from_config(
             "sk-ant-test".into(),
             "claude-sonnet-4-20250514".into(),
+            8192,
             None,
         )
         .unwrap();
