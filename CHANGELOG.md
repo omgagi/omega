@@ -5,6 +5,13 @@ All notable changes to Omega are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-03-01
+
+### Added
+- Autonomous build-intent detection via `BUILD_PROPOSAL` marker — OMEGA now recognizes when users want software built from natural language in any of the 8 supported languages, without relying solely on keyword matching
+
+[0.2.6]: https://github.com/omgagi/omega/compare/v0.2.5...v0.2.6
+
 ## [0.2.0] - 2026-03-01
 
 ### Added
