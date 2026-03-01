@@ -415,7 +415,7 @@ Omega uses a **topology-driven sequential agent pipeline with bounded corrective
 
 | Context | Where | Agents | Trigger |
 |---------|-------|--------|---------|
-| **Runtime builds** | `gateway/builds.rs` | 7 phases via Claude Code CLI `--agent` | User says "build me X" |
+| **Runtime builds** | `gateway/builds.rs` | 7 phases via Claude Code CLI `--agent` | Keyword match (`BUILDS_KW`) or AI emits `BUILD_PROPOSAL:` marker |
 | **Dev-time workflows** | `.claude/commands/workflow-*.md` | Up to 10 steps via Claude Code subagents | Developer runs `/workflow:feature`, etc. |
 
 Both use the same underlying pattern. The only difference is the execution environment: runtime builds run inside the OMEGA process (Rust orchestrator), dev-time workflows run inside Claude Code's agent system (markdown command files).

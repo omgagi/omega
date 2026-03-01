@@ -18,7 +18,7 @@ The gateway was modularized from a single `backend/src/gateway.rs` into `backend
 |------|----------------|
 | `mod.rs` | Gateway struct, `new()`, `run()`, `dispatch_message()`, `shutdown()`, `send_text()` |
 | `pipeline.rs` | `handle_message()` -- full message processing pipeline, `/setup` intercept, discovery sessions |
-| `pipeline_builds.rs` | Build-related pipeline stages: discovery continuation, build confirmation, build keyword handling |
+| `pipeline_builds.rs` | Build-related pipeline stages: discovery continuation, build confirmation, build keyword handling. Two entry paths: keyword fast-path (`BUILDS_KW`) and autonomous `BUILD_PROPOSAL:` marker — both converge at `pending_build_request` confirmation |
 | `prompt_builder.rs` | `build_system_prompt()` -- full prompt construction with conditional section injection |
 | `routing.rs` | `classify_and_route()`, `execute_steps()`, `handle_direct_response()` |
 | `process_markers.rs` | `process_markers()`, `send_task_confirmation()` |
