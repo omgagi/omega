@@ -108,6 +108,7 @@ pub(super) const PROJECTS_KW: &[&str] = &[
     "attivare",
     "disattivare",
     // nl
+    "projecten",
     "activeren",
     "deactiveren",
     // ru
