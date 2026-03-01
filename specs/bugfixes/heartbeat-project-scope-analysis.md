@@ -16,7 +16,7 @@ Three locations always read the global heartbeat, ignoring the active project:
 2. **`commands/settings.rs:191`** — `/heartbeat` command calls `read_heartbeat_file()` with no project awareness.
 3. **`pipeline.rs:191`** — `CommandContext` is constructed before `active_project` is fetched (line 235), so commands never have project context.
 
-The heartbeat **loop** (`gateway/heartbeat.rs:253-306`) is NOT affected — it already uses `read_project_heartbeat_file()`.
+**CORRECTION (2026-03-01):** The heartbeat loop WAS also affected — the global phase still included project-specific sections, causing duplicate execution. See `heartbeat-duplicate-project-analysis.md` for the fix (REQ-HBDUP-001).
 
 ## Requirements
 

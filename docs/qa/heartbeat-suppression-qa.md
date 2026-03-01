@@ -6,7 +6,7 @@
 - `backend/src/gateway/process_markers.rs` -- HEARTBEAT_SUPPRESS_SECTION/UNSUPPRESS_SECTION handling in conversation flow
 - `backend/src/gateway/heartbeat_helpers.rs` -- same marker handling in heartbeat response flow
 - `backend/src/markers/mod.rs` -- safety net marker list
-- `backend/src/markers/tests.rs` -- all suppression-related tests
+- `backend/src/markers/tests/heartbeat.rs` -- all suppression-related tests
 - `specs/bugfixes/heartbeat-trading-suppression-analysis.md` -- requirements spec
 - `prompts/SYSTEM_PROMPT.md` -- AI prompt instructions for new markers
 - `docs/heartbeat.md` -- user-facing heartbeat documentation

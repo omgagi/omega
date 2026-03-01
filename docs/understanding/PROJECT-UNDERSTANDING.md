@@ -81,7 +81,14 @@ omega/
 |   |   |   |-- heartbeat.rs           # HEARTBEAT_*: marker parsing
 |   |   |   |-- actions.rs             # ACTION_OUTCOME: marker parsing
 |   |   |   |-- helpers.rs             # Shared helpers for marker processing
-|   |   |   `-- tests.rs               # Extensive marker parsing tests (1,218 lines)
+|   |   |   `-- tests/                  # Marker tests (6 submodules, ~1,500 lines)
+|   |   |       |-- mod.rs             # Submodule declarations
+|   |   |       |-- schedule.rs        # SCHEDULE + SCHEDULE_ACTION tests
+|   |   |       |-- protocol.rs        # LANG_SWITCH, PROJECT, PERSONALITY, etc. tests
+|   |   |       |-- heartbeat.rs       # Heartbeat markers, suppression, dedup tests
+|   |   |       |-- helpers.rs         # Status, images, inbox, classification tests
+|   |   |       |-- actions.rs         # SKILL_IMPROVE, BUG_REPORT, ACTION_OUTCOME tests
+|   |   |       `-- mod_tests.rs       # Cross-cutting strip_all_remaining_markers
 |   |   |-- i18n/                       # Internationalization (8 languages)
 |   |   |   |-- mod.rs                 # Re-exports
 |   |   |   |-- labels.rs             # UI label translations
@@ -442,7 +449,7 @@ Tables:
 
 - **Logging**: `tracing` crate exclusively. `info!` for lifecycle events, `warn!` for recoverable failures, `error!` for channel send failures. No `println!` anywhere.
 
-- **Testing**: Tests live in `tests.rs` files alongside source (not in `mod.rs`). Heavy use of `#[cfg(test)] mod tests;` declarations. In-memory SQLite for store tests. Marker tests are exhaustive (1,218 lines). Total test coverage across 10 test files.
+- **Testing**: Tests live in `tests.rs` files or `tests/` directory modules alongside source. Heavy use of `#[cfg(test)] mod tests;` declarations. In-memory SQLite for store tests. Marker tests are split into 6 focused submodules (~1,500 lines total). Total test coverage across 10+ test files.
 
 - **Documentation**: Every public function has a doc comment. Module-level `//!` docs explain purpose and structure. Comments explain "why", not "what".
 

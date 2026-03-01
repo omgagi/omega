@@ -1,7 +1,17 @@
-# Specification: backend/src/markers.rs
+# Specification: backend/src/markers/
 
 ## Purpose
-Centralized marker extraction, parsing, and stripping for the gateway protocol. All system markers emitted by the AI (SCHEDULE:, LANG_SWITCH:, SKILL_IMPROVE:, etc.) are processed here. This module was originally extracted from the monolithic `gateway.rs`. The gateway itself has since been refactored into `backend/src/gateway/` (directory module with 9 files), but markers remain in `backend/src/markers.rs` as a standalone module used by both the gateway and other components.
+Centralized marker extraction, parsing, and stripping for the gateway protocol. All system markers emitted by the AI (SCHEDULE:, LANG_SWITCH:, SKILL_IMPROVE:, etc.) are processed here. This is a directory module (`backend/src/markers/`) with 5 source submodules + a test directory module:
+
+| File | Purpose |
+|------|---------|
+| `mod.rs` | Generic helpers (`extract_inline_marker_value`, `strip_all_remaining_markers`) |
+| `schedule.rs` | SCHEDULE and SCHEDULE_ACTION markers |
+| `protocol.rs` | Simple markers (LANG_SWITCH, PERSONALITY, FORGET, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, WHATSAPP_QR, PROJECT) |
+| `heartbeat.rs` | Heartbeat markers, file ops, section parsing/suppression, project dedup |
+| `actions.rs` | BUG_REPORT, SKILL_IMPROVE, ACTION_OUTCOME, REWARD, LESSON |
+| `helpers.rs` | Status messages, workspace images, inbox, classification |
+| `tests/` | 6 test submodules (~1,500 lines, ~145 tests) |
 
 ## Functions (40+)
 
@@ -23,7 +33,7 @@ Each marker type has extract/parse/strip/has functions:
 - **PROJECT_ACTIVATE/DEACTIVATE**: `extract_project_activate`, `has_project_deactivate`, `strip_project_markers`
 - **WHATSAPP_QR**: `has_whatsapp_qr_marker`, `strip_whatsapp_qr_marker`
 - **HEARTBEAT_ADD/REMOVE/INTERVAL**: `extract_heartbeat_markers`, `strip_heartbeat_markers`, `apply_heartbeat_changes(actions, project)`, `read_heartbeat_file()`, `read_project_heartbeat_file(project_name)`
-- **HEARTBEAT_SUPPRESS_SECTION/UNSUPPRESS_SECTION**: `extract_suppress_section_markers`, `strip_suppress_section_markers`, `apply_suppress_actions(actions, project)`, `add_suppression(section, project)`, `remove_suppression(section, project)`, `read_suppress_file(project)`, `filter_suppressed_sections(content, project)`, `parse_heartbeat_sections(content)`
+- **HEARTBEAT_SUPPRESS_SECTION/UNSUPPRESS_SECTION**: `extract_suppress_section_markers`, `strip_suppress_section_markers`, `apply_suppress_actions(actions, project)`, `add_suppression(section, project)`, `remove_suppression(section, project)`, `read_suppress_file(project)`, `filter_suppressed_sections(content, project)`, `parse_heartbeat_sections(content)`, `strip_project_sections(content, project_names)` (dedup global vs project heartbeats)
 - **SKILL_IMPROVE**: `extract_skill_improve`, `parse_skill_improve_line`, `strip_skill_improve`, `apply_skill_improve`
 - **BUG_REPORT**: `extract_bug_report`, `strip_bug_report`, `append_bug_report`
 - **ACTION_OUTCOME**: `extract_action_outcome`, `strip_action_outcome`
@@ -63,4 +73,13 @@ Each marker type has extract/parse/strip/has functions:
 - `apply_skill_improve(data_dir, skill_name, lesson)` — Extracted from `process_markers.rs`. Reads skill's `SKILL.md`, appends lesson under `## Lessons Learned` section (creates section if missing), writes back to disk.
 
 ## Tests
-~100 tests covering all marker types, edge cases, inline markers, heartbeat file operations, workspace snapshots, classification parsing, skill improvement, bug reporting, action outcome parsing, reward/lesson extraction and parsing, InboxGuard RAII cleanup, zero-byte attachment rejection.
+~145 tests in `backend/src/markers/tests/` (directory module with 6 submodules):
+
+| Submodule | Coverage |
+|-----------|----------|
+| `schedule.rs` | SCHEDULE + SCHEDULE_ACTION markers |
+| `protocol.rs` | LANG_SWITCH, PROJECT, PERSONALITY, FORGET, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, WHATSAPP_QR |
+| `heartbeat.rs` | Heartbeat markers, file ops, section suppression, strip_project_sections dedup |
+| `helpers.rs` | Status messages, workspace images, inbox lifecycle, classification parsing |
+| `actions.rs` | SKILL_IMPROVE, BUG_REPORT, ACTION_OUTCOME, reward/lesson extraction |
+| `mod_tests.rs` | Cross-cutting strip_all_remaining_markers |

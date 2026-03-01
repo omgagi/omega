@@ -152,9 +152,30 @@ impl Gateway {
             let sender_id = &config.reply_target;
             let channel_name = &config.channel;
 
+            // --- Collect active projects with their own HEARTBEAT.md ---
+            // Used to strip project sections from the global heartbeat,
+            // preventing duplicate execution (REQ-HBDUP-001).
+            let active_projects = memory
+                .get_all_facts_by_key("active_project")
+                .await
+                .unwrap_or_default();
+            let mut projects_with_heartbeat: Vec<String> = Vec::new();
+            {
+                let mut seen = std::collections::HashSet::new();
+                for (_sid, pname) in &active_projects {
+                    if !pname.is_empty()
+                        && seen.insert(pname.clone())
+                        && read_project_heartbeat_file(pname).is_some()
+                    {
+                        projects_with_heartbeat.push(pname.clone());
+                    }
+                }
+            }
+
             // --- Global heartbeat ---
-            if let Some(checklist) =
-                read_heartbeat_file().and_then(|c| filter_suppressed_sections(&c, None))
+            if let Some(checklist) = read_heartbeat_file()
+                .and_then(|c| strip_project_sections(&c, &projects_with_heartbeat))
+                .and_then(|c| filter_suppressed_sections(&c, None))
             {
                 let enrichment = build_enrichment(&memory, None).await;
                 let system = build_system_prompt(&prompts, None, None);
@@ -251,13 +272,7 @@ impl Gateway {
             }
 
             // --- Project heartbeats ---
-            // Find active projects (users who have an active_project fact).
-            let active_projects = memory
-                .get_all_facts_by_key("active_project")
-                .await
-                .unwrap_or_default();
-
-            // Deduplicate project names.
+            // Reuse active_projects already collected above.
             let mut seen_projects = std::collections::HashSet::new();
             for (_sender_id, project_name) in &active_projects {
                 if project_name.is_empty() || !seen_projects.insert(project_name.clone()) {

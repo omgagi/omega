@@ -385,3 +385,52 @@ pub fn apply_suppress_actions(actions: &[SuppressAction], project: Option<&str>)
         }
     }
 }
+
+/// Strip sections from global heartbeat content that belong to active projects
+/// with their own `HEARTBEAT.md`.
+///
+/// Prevents duplicate execution: if a project has its own heartbeat file, its
+/// section in the global checklist is redundant and should be removed before
+/// the global phase runs.
+///
+/// Matching is case-insensitive: section name is normalized (lowercased,
+/// hyphens/underscores → spaces) and checked for containment of the project
+/// name (also normalized).
+///
+/// Returns `None` if all sections are stripped (global phase should be skipped).
+pub fn strip_project_sections(content: &str, project_names: &[String]) -> Option<String> {
+    if project_names.is_empty() {
+        return Some(content.to_string());
+    }
+
+    let normalized_projects: Vec<String> = project_names
+        .iter()
+        .map(|p| p.to_lowercase().replace(['-', '_'], " "))
+        .collect();
+
+    let (preamble, sections) = parse_heartbeat_sections(content);
+    let mut result = preamble;
+    let mut any_active = false;
+
+    for (name, body) in &sections {
+        let norm_section = name.to_lowercase().replace(['-', '_'], " ");
+        let is_project_section = normalized_projects
+            .iter()
+            .any(|proj| norm_section.contains(proj.as_str()));
+        if is_project_section {
+            info!(
+                "heartbeat: stripping global section '{}' (covered by project heartbeat)",
+                name
+            );
+        } else {
+            result.push_str(body);
+            any_active = true;
+        }
+    }
+
+    if any_active {
+        Some(result)
+    } else {
+        None
+    }
+}

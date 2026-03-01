@@ -256,8 +256,9 @@ If user has `active_project = "omega-trader"` and `~/.omega/projects/omega-trade
 ```
 
 The heartbeat will:
-1. Run the global `~/.omega/prompts/HEARTBEAT.md` first (if it exists)
-2. Then run the `omega-trader` heartbeat with the trading project's `ROLE.md` context and project-scoped lessons/outcomes
+1. **Deduplicate:** Strip any sections from the global `HEARTBEAT.md` whose names match active projects with their own `HEARTBEAT.md` (case-insensitive, hyphens/underscores normalized to spaces). If all sections are stripped, the global phase is skipped entirely.
+2. Run the remaining global `~/.omega/prompts/HEARTBEAT.md` items (if any survive deduplication and suppression)
+3. Then run the `omega-trader` heartbeat with the trading project's `ROLE.md` context and project-scoped lessons/outcomes
 
 Project heartbeats follow the same HEARTBEAT_OK suppression, active hours, and audit logging rules as the global heartbeat.
 

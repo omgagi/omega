@@ -21,7 +21,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 ### Milestone 2: Binary (`backend/src/`)
 - [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing, root guard, provider/channel bootstrap
 - [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 19-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, builds, builds_loop, builds_parse, builds_agents, builds_topology, builds_i18n, setup, setup_response
-- [src-markers-rs.md](src-markers-rs.md) — Marker extraction, parsing, stripping (40+ functions extracted from gateway)
+- [src-markers-rs.md](src-markers-rs.md) — Marker module (`backend/src/markers/`) — 5 source submodules + test directory (40+ functions, ~145 tests)
 - [src-task-confirmation-rs.md](src-task-confirmation-rs.md) — Task scheduling confirmation (anti-hallucination, duplicate detection, localized confirmation messages)
 - [src-commands-rs.md](src-commands-rs.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, purge, help)
 - [src-init-rs.md](src-init-rs.md) — Setup wizard (interactive + non-interactive modes), config generation
@@ -107,6 +107,10 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [bugfixes/p0-audit-2026-02-23-analysis.md](bugfixes/p0-audit-2026-02-23-analysis.md) — P0 audit findings (UTF-8 panics, HTTP timeouts, etc.)
 - [bugfixes/heartbeat-clock-drift-analysis.md](bugfixes/heartbeat-clock-drift-analysis.md) — Heartbeat clock-alignment drift after quiet hours / system sleep
 - [bugfixes/builds-audit-2026-02-27-analysis.md](bugfixes/builds-audit-2026-02-27-analysis.md) — Builds module audit fixes (guard race, name validation, depth limit, path leaks)
+- [bugfixes/heartbeat-project-scope-analysis.md](bugfixes/heartbeat-project-scope-analysis.md) — Heartbeat returns global content when project is active (pipeline + settings paths)
+- [bugfixes/heartbeat-trading-suppression-analysis.md](bugfixes/heartbeat-trading-suppression-analysis.md) — Heartbeat trading section suppression
+- [bugfixes/heartbeat-verbose-suppression-analysis.md](bugfixes/heartbeat-verbose-suppression-analysis.md) — Heartbeat verbose/learned-rule suppression
+- [bugfixes/heartbeat-duplicate-project-analysis.md](bugfixes/heartbeat-duplicate-project-analysis.md) — Heartbeat loop sends duplicate reports when project section exists in both global and project files
 
 ## Architecture Diagram
 
