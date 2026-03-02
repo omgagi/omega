@@ -5,6 +5,13 @@ All notable changes to Omega are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-03-02
+
+### Fixed
+- Init wizard falsely claimed "Already authenticated (Recommended)" on fresh installs — now probes Claude CLI auth and only confirms when credentials are actually valid
+
+[0.2.7]: https://github.com/omgagi/omega/compare/v0.2.6...v0.2.7
+
 ## [0.2.6] - 2026-03-01
 
 ### Added
