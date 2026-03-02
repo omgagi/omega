@@ -173,6 +173,16 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             "Russian" => "/heartbeat \u{2014} \u{0421}\u{0442}\u{0430}\u{0442}\u{0443}\u{0441} \u{0438} \u{0441}\u{043f}\u{0438}\u{0441}\u{043e}\u{043a} \u{043c}\u{043e}\u{043d}\u{0438}\u{0442}\u{043e}\u{0440}\u{0438}\u{043d}\u{0433}\u{0430}",
             _ => "/heartbeat \u{2014} Heartbeat status and watchlist",
         },
+        "help_google" => match lang {
+            "Spanish" => "/google   \u{2014} Configurar credenciales de cuenta Google",
+            "Portuguese" => "/google   \u{2014} Configurar credenciais da conta Google",
+            "French" => "/google   \u{2014} Configurer les identifiants du compte Google",
+            "German" => "/google   \u{2014} Google-Kontodaten einrichten",
+            "Italian" => "/google   \u{2014} Configurare le credenziali dell'account Google",
+            "Dutch" => "/google   \u{2014} Google-accountgegevens instellen",
+            "Russian" => "/google   \u{2014} \u{041d}\u{0430}\u{0441}\u{0442}\u{0440}\u{043e}\u{0438}\u{0442}\u{044c} \u{0443}\u{0447}\u{0451}\u{0442}\u{043d}\u{044b}\u{0435} \u{0434}\u{0430}\u{043d}\u{043d}\u{044b}\u{0435} Google",
+            _ => "/google   \u{2014} Configure Google account credentials",
+        },
         "help_setup" => match lang {
             "Spanish" => "/setup    \u{2014} Configurar OMEGA \u{03a9} como experto en tu dominio",
             "Portuguese" => "/setup    \u{2014} Configurar OMEGA \u{03a9} como especialista no seu dom\u{00ed}nio",

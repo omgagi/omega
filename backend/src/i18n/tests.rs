@@ -62,6 +62,7 @@ fn test_all_keys_have_english_fallback() {
         "heartbeat_watchlist",
         "heartbeat_no_watchlist",
         "help_heartbeat",
+        "help_google",
         "help_setup",
     ];
     for key in keys {
@@ -167,6 +168,7 @@ fn test_help_commands_all_languages() {
         "help_project",
         "help_whatsapp",
         "help_heartbeat",
+        "help_google",
         "help_setup",
         "help_help",
     ];

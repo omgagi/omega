@@ -105,6 +105,10 @@ If the message has images, save them to `~/.omega/workspace/inbox/{uuid}.jpg` an
 
 If the message starts with `/` (e.g., `/help`, `/forget`, `/tasks`), handle it directly and **return early** — no AI provider needed. Commands are fully localized.
 
+Special gateway commands are intercepted before generic command handling:
+- **`/setup`** — Starts the Brain agent session (AI-backed multi-round wizard for project creation)
+- **`/google`** — Starts the Google credential capture wizard (pure gateway state machine, no AI provider)
+
 ### 3.6 Typing Indicator
 
 Send Telegram's "typing..." bubble. A background task re-sends it every 5 seconds to keep it visible during long provider calls.

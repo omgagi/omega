@@ -20,7 +20,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 
 ### Milestone 2: Binary (`backend/src/`)
 - [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Pair/Service), root guard, provider/channel bootstrap
-- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 24-file directory module: orchestrator, pipeline, routing, process_markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, keywords_data, builds, builds_loop, builds_parse, builds_agents, builds_topology, builds_i18n, prompt_builder, shared_markers, pipeline_builds, setup, setup_response, tests
+- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 26-file directory module: orchestrator, pipeline, routing, process_markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, keywords_data, builds, builds_loop, builds_parse, builds_agents, builds_topology, builds_i18n, prompt_builder, shared_markers, pipeline_builds, setup, setup_response, google_auth, google_auth_i18n, tests
 - [provider-builder.md](provider-builder.md) — Provider factory (`build_provider()`) — constructs providers from config, dual-model routing for Claude Code
 - [src-markers-rs.md](src-markers-rs.md) — Marker module (`backend/src/markers/`) — 5 source submodules + test directory (40+ functions, ~145 tests)
 - [src-task-confirmation-rs.md](src-task-confirmation-rs.md) — Task scheduling confirmation (anti-hallucination, duplicate detection, localized confirmation messages)
@@ -96,6 +96,8 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [omega-brain-architecture.md](omega-brain-architecture.md) — Architecture design for OMEGA Brain: setup.rs orchestrator, pipeline integration, session state machine, agent definition, write_single lifecycle, localized messages, failure modes, security model
 - [omega-init-visual-requirements.md](omega-init-visual-requirements.md) — OMEGA Init Wizard Visual Identity: branded chrome for init.rs + init_wizard.rs, init_style.rs helper module, dark/technical aesthetic using console::Style
 - [omega-init-visual-architecture.md](omega-init-visual-architecture.md) — Architecture design for Init Visual Identity: init_style.rs module layout, cyan color palette, gutter-bar visual language, 10 helper functions, integration pattern, visual coexistence with cliclack widgets
+- [google-auth-requirements.md](google-auth-requirements.md) — Google account credential setup via `/google` gateway command: 4-step chat wizard, fact-based state machine, credential isolation from AI provider, stores/google.json, 8-language i18n
+- [google-auth-architecture.md](google-auth-architecture.md) — Architecture design for Google auth: google_auth.rs state machine + google_auth_i18n.rs localized messages, pipeline integration (command intercept + pending session check), fact-based step transitions, credential file format, security model (provider isolation), failure modes
 
 ### Release
 - [release-process.md](../docs/release-process.md) — Version bump, tagging, CI release pipeline, SHA256 checksums

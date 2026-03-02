@@ -389,3 +389,6 @@ pub(super) const DISCOVERY_TTL_SECS: i64 = 1800; // 30 minutes
 
 /// Maximum seconds a setup session stays valid.
 pub(super) const SETUP_TTL_SECS: i64 = 1800; // 30 minutes
+
+/// Maximum seconds a Google auth session stays valid.
+pub(super) const GOOGLE_AUTH_TTL_SECS: i64 = 600; // 10 minutes

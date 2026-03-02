@@ -31,6 +31,7 @@ pub enum Command {
     Heartbeat,
     Learning,
     Setup,
+    Google,
     Skills,
     WhatsApp,
     Help,

@@ -188,6 +188,12 @@ impl Gateway {
                 return;
             }
 
+            // --- /google intercept (REQ-GAUTH-002) ---
+            if matches!(cmd, commands::Command::Google) {
+                self.start_google_session(&incoming).await;
+                return;
+            }
+
             let ctx = commands::CommandContext {
                 store: &self.memory,
                 channel: &incoming.channel,
@@ -245,6 +251,21 @@ impl Gateway {
         if let Some(setup_value) = pending_setup {
             self.handle_setup_response(&incoming, &setup_value, typing_handle)
                 .await;
+            return;
+        }
+
+        // --- 4a-GOOGLE. PENDING GOOGLE AUTH SESSION CHECK (REQ-GAUTH-011) ---
+        // SECURITY: This check MUST remain BEFORE context building and provider calls.
+        // Credentials in pending google sessions must NEVER reach the AI provider.
+        let pending_google: Option<String> = self
+            .memory
+            .get_fact(&incoming.sender_id, "pending_google")
+            .await
+            .ok()
+            .flatten();
+
+        if let Some(google_value) = pending_google {
+            self.handle_google_response(&incoming, &google_value).await;
             return;
         }
 

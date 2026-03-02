@@ -1,78 +1,87 @@
-# Feature Evaluation: Integrate Role Creator Agent into Brain Setup Pipeline
+# Feature Evaluation: /google Gateway Command
 
 ## Feature Description
-Delegate ROLE.md creation during `/setup` from the Brain agent to a dedicated "Role Creator" agent, using a second sequential `run_build_phase()` call after Brain finishes. Brain would handle questioning, proposal, confirmation, HEARTBEAT.md, schedule markers, and PROJECT_ACTIVATE, but would NOT write ROLE.md. A new `omega-role-creator` agent (adapted from `.claude/agents/role-creator.md`) would then receive the accumulated context and write the ROLE.md using a "14-item anatomy checklist and domain expertise."
+Add a `/google` gateway command that allows users to configure their Google account credentials directly through the messaging channel (Telegram/WhatsApp), bypassing the AI provider entirely. This ensures confidential OAuth tokens never pass through Claude or any AI backend. Currently, Google setup exists ONLY in `omega init` (the CLI init wizard at `backend/src/init_wizard.rs`). The `/google` command would allow users to provide their email, run the OAuth flow via `gog auth add --manual`, and store the Google account email in config -- all within the chat interface, with credential data staying in the gateway.
 
 ## Evaluation Summary
 
 | Dimension | Score (1-5) | Assessment |
 |-----------|-------------|------------|
-| D1: Necessity | 2 | No evidence that current Brain ROLE.md quality is inadequate. The Brain agent already has detailed quality requirements, 2 examples, and 80-200 line targets at `topologies/development/agents/omega-brain.md` lines 90-177 |
-| D2: Impact | 2 | Marginal quality improvement at best. ROLE.md quality is subjective and already addressed in the Brain prompt. No user complaint or measured deficiency cited |
-| D3: Complexity Cost | 3 | Uses proven `write_single()` + `run_build_phase()` pattern, but adds a second Opus subprocess call (~30 turns), a new agent definition, a new `include_str!()` const, and context-passing plumbing between two sequential phases |
-| D4: Alternatives | 2 | The simplest alternative -- improving the Brain agent's ROLE.md instructions directly -- delivers the same outcome with zero code changes. Just edit `omega-brain.md` |
-| D5: Alignment | 3 | The project's first principle is "less is more." Adding a second agent invocation for a task the Brain already handles contradicts this. However, the pattern itself (multi-agent pipeline) is aligned with the build system architecture |
-| D6: Risk | 3 | Context loss between Brain and Role Creator is the primary risk. Brain accumulates multi-round context; passing it faithfully to a second agent is non-trivial. Also doubles the Opus API cost per setup and doubles latency for the user |
-| D7: Timing | 4 | No conflicting in-progress work. The Brain feature is recently shipped and stable. Prerequisites (write_single, run_build_phase) exist |
+| D1: Necessity | 4 | Real gap: running users cannot configure Google without SSH access to re-run `omega init`. Google Workspace skills are blocked without this runtime path. |
+| D2: Impact | 3 | Unblocks Google Workspace skills for chat-only users, but scope is narrow -- single integration onboarding, not a multiplier feature. |
+| D3: Complexity Cost | 4 | Follows established `/setup` command pattern in `backend/src/gateway/setup.rs`. Reuses `gog` CLI. Estimated ~1 new file + minor additions to 2-3 existing files. |
+| D4: Alternatives | 3 | `gog auth add --manual` can be done via SSH or re-running init, but both require server access that chat-only users lack. No simpler in-chat alternative exists. |
+| D5: Alignment | 5 | Direct fit: Omega's mission is personal AI agent infrastructure accessible via chat. Self-configuration from within the messaging channel is a core architectural principle, proven by `/setup` and `/whatsapp`. |
+| D6: Risk | 3 | OAuth flow over chat is security-sensitive (user pastes credentials in message history). Multi-step flow needs timeout/state management. No database migration or cross-cutting changes required. |
+| D7: Timing | 4 | Google Workspace skills already exist. The `gog` CLI is already a dependency. `/setup` pattern is proven and stable. No conflicting in-progress work detected. |
 
-**Feature Viability Score: 2.6 / 5.0**
+**Feature Viability Score: 3.8 / 5.0**
 
-Calculation: ((2 + 2 + 3) x 2 + (3 + 2 + 3 + 4)) / 10 = (14 + 12) / 10 = 2.6
+```
+FVS = (D1 + D2 + D5) x 2 + (D3 + D4 + D6 + D7)
+    = (4 + 3 + 5) x 2 + (4 + 3 + 3 + 4)
+    = 24 + 14
+    = 38 / 10
+    = 3.8
+```
 
 ## Verdict: CONDITIONAL
 
-The feature has a working technical approach but solves a problem that has not been demonstrated to exist. The existing Role Creator agent (`.claude/agents/role-creator.md`) is designed to create **agent definitions** (`.claude/agents/*.md` files with YAML frontmatter, personality sections, process phases, anti-patterns, etc.), not **project ROLE.md files** (`~/.omega/projects/<name>/ROLE.md` with domain expertise, operational rules, knowledge areas). These are fundamentally different artifacts. The "14-item anatomy checklist" (identity, personality, prerequisite gate, directory safety, source of truth, context management, process, output format, rules, anti-patterns, failure handling, integration, scope handling, context limits) is designed for AI agent behavior specifications, not for domain expertise documents. Adapting it would require substantial rewriting, at which point you are essentially writing a new agent from scratch, not reusing the existing role-creator.
+The feature has clear value and fits naturally into the existing architecture. The `/setup` command pattern in `backend/src/gateway/setup.rs` provides a proven blueprint for multi-step chat-based configuration. However, three conditions must be addressed before proceeding: (1) the OAuth credential flow over chat channels creates a security surface that needs explicit design decisions, (2) the `gog auth credentials` step (one-time client_secret.json setup) should be separated from the per-account `gog auth add` step, and (3) the config.toml update strategy for the `[google]` section must be defined.
 
 ## Detailed Analysis
 
 ### What Problem Does This Solve?
-The proposal implies that Brain-generated ROLE.md files are not high enough quality and that a dedicated specialist agent would produce better results. However, no specific quality deficiency is cited. The Brain agent at `topologies/development/agents/omega-brain.md` already contains:
-- Detailed ROLE.md quality requirements (lines 90-98): domain-specific, structured, actionable, parseable, 80-200 lines
-- Two complete example ROLE.md files (lines 100-177): a trading agent and a Lisbon real estate agent
-- Structured sections to include: Identity, Core Responsibilities, Operational Rules, Knowledge Areas, Communication Style, Safety/Constraints (line 95)
+Users running OMEGA as a service (on a VPS or always-on machine) who want to add or change their Google Workspace credentials have no way to do so from within the chat interface. They must SSH into the server and re-run `omega init` or manually execute `gog` commands. This blocks non-technical users from accessing Google Workspace skills (Gmail, Calendar, Drive, Sheets) entirely. The problem is real and current: the `gog` CLI tool is already integrated at `backend/src/init_wizard.rs` lines 248-438, skills reference Google services (e.g., `google-workspace` skill referenced in tests at `backend/src/markers/tests/actions.rs` line 8), and the only missing piece is runtime configuration from chat.
 
-The architecture spec at `specs/omega-brain-architecture.md` already acknowledges that "Brain produces shallow ROLE.md" is a known risk but notes "No automated detection (quality is subjective)" and provides the mitigation "User can edit ROLE.md manually."
+The `gog` CLI supports a `--manual` flag for headless OAuth (prints a URL, user opens in their own browser, pastes back an authorization code). This is the key enabler that makes a chat-based flow viable without requiring a browser on the server.
 
 ### What Already Exists?
-1. **Brain agent** (`topologies/development/agents/omega-brain.md`) -- already writes ROLE.md with quality guidelines and examples
-2. **Role Creator** (`.claude/agents/role-creator.md`) -- creates AI **agent definitions**, NOT project ROLE.md files. Its 14-item checklist is for agent behavior specs (prerequisite gates, anti-patterns, failure handling), not domain expertise documents
-3. **OMEGA Topology Architect** (`.claude/agents/omega-topology-architect.md`) -- a dev-time agent that designs OMEGA configurations including ROLE.md, but is not integrated into the runtime binary
-4. **`AgentFilesGuard::write_single()`** (line 133 of `builds_agents.rs`) -- proven pattern for single-agent lifecycle
-5. **`run_build_phase()`** (line 432 of `builds.rs`) -- proven subprocess invocation with retry
+1. **`backend/src/init_wizard.rs` lines 248-438**: Full Google setup flow using `gog` CLI -- `gog auth credentials <path>`, `gog auth add <email> --services gmail,calendar,drive,contacts,docs,sheets`, `gog auth list` for verification. This is the reference implementation.
+2. **`backend/src/gateway/setup.rs`**: The `/setup` command provides the exact architectural pattern -- multi-round session with state machine, pending fact tracking via `store_fact`, TTL-based expiry, context file, audit logging. This is the template.
+3. **`backend/src/commands/mod.rs` lines 30-80**: Command enum and parser with 18 existing commands. Adding `/google` requires one new variant and one match arm.
+4. **`backend/src/gateway/pipeline.rs` lines 146-189**: The `/setup` intercept pattern shows exactly how to intercept a command in the pipeline before it reaches the provider.
+5. **`[google]` section in config.toml**: Generated by `backend/src/init.rs` lines 392-398. Contains only `account = "<email>"`. Not parsed into a Rust config struct -- just a TOML key written directly to the config file.
+6. **No existing `/google` command**: Grep confirms zero references to `/google` in the codebase.
 
 ### Complexity Assessment
-**What needs to change:**
-- New file: `topologies/development/agents/omega-role-creator.md` -- a new agent definition adapted from either `role-creator.md` or `omega-topology-architect.md` (not a simple copy; requires substantial rewriting for the ROLE.md domain)
-- Modified: `builds_agents.rs` -- add `ROLE_CREATOR_AGENT` const via `include_str!()`
-- Modified: `setup.rs` `execute_setup()` -- add second `write_single()` + `run_build_phase()` call after Brain finishes
-- Modified: `setup_response.rs` `handle_setup_confirmation()` -- adjust execution flow to split Brain output from Role Creator output
-- Modified: `omega-brain.md` -- remove ROLE.md writing responsibility, adjust execution mode instructions
+**Estimated changes:**
+- **New file**: `backend/src/gateway/google.rs` (~150-250 lines) -- state machine for the multi-step flow (email prompt, OAuth URL delivery, auth code receipt, verification, config update)
+- **Modified**: `backend/src/commands/mod.rs` -- add `Google` variant to `Command` enum, `/google` to parser match arm (~5 lines)
+- **Modified**: `backend/src/gateway/pipeline.rs` -- add `/google` intercept similar to `/setup` intercept at line 146 (~20 lines)
+- **Modified**: `backend/src/gateway/mod.rs` -- add `mod google;` (~1 line)
+- **Modified**: `backend/src/gateway/keywords.rs` or `keywords_data.rs` -- add localized messages for all 8 languages (~40-60 lines)
+- **No database migrations** -- uses existing `store_fact`/`get_fact` for session state (same pattern as `/setup`)
+- **No new Rust dependencies** -- reuses `std::process::Command` for `gog` subprocess, existing patterns throughout
+- **No AI provider involvement** -- purely gateway-level command, no `run_build_phase` or provider call needed
 
-**Maintenance cost:** Low-medium. One additional agent to maintain in `topologies/development/agents/`. One additional `include_str!()` const. The sequential two-phase pattern in `execute_setup()` adds complexity to an already multi-round session state machine. When the Brain prompt changes, the Role Creator context expectations may also need updating.
+**Maintenance burden**: Low. The feature is self-contained in `google.rs`. The `gog` CLI is the only external dependency; if its interface changes, only this one file needs updating. The session state pattern is identical to `/setup` and would benefit from any improvements made there. No ongoing token cost since no AI provider is invoked.
 
-**Runtime cost:** Each `/setup` completion currently makes 1 Opus subprocess call for execution. This would double to 2 Opus calls. At ~30 max_turns each, this roughly doubles the token cost and latency of setup execution. For a personal AI agent used by one person, this may be acceptable; for scale, it would not be.
+**Total estimated scope**: ~250-350 lines of new/changed Rust code (excluding tests), plus ~100-150 lines of tests. Simpler than `/setup` (no AI provider calls, no Brain agent, no multi-agent pipeline).
 
 ### Risk Assessment
-1. **Context loss between phases** -- Brain accumulates multi-round context (user description, Q&A, proposal, confirmation). Passing this faithfully to a second agent requires careful prompt construction. Information that Brain understood implicitly may not transfer
-2. **Coordination complexity** -- Brain currently writes ROLE.md, HEARTBEAT.md, and emits markers atomically. Splitting ROLE.md to a second agent means Brain must still create the project directory but not write ROLE.md. If the Role Creator fails, you have a project with HEARTBEAT.md and schedules but no ROLE.md -- a broken state
-3. **Doubled latency** -- User waits for two sequential Opus subprocess calls instead of one. The `/setup` flow already involves multiple rounds of Brain invocations
-4. **Agent mismatch** -- The existing `role-creator.md` creates agent definitions, not ROLE.md files. A new agent must be written from scratch for this purpose
+1. **Security -- credential transit**: The `client_secret.json` content and OAuth authorization codes will appear in Telegram/WhatsApp message history. Telegram messages are stored in Telegram's cloud (not end-to-end encrypted by default in non-secret chats). WhatsApp messages are end-to-end encrypted. Mitigation needed: warn users to delete credential messages; consider whether `client_secret.json` ingestion should remain init-only.
+2. **OAuth flow timeout**: The `gog auth add --manual` flow requires the user to open a URL in their browser, sign in to Google, and paste the auth code back. This is inherently slow and needs a generous timeout (5-10 minutes). The `/setup` TTL pattern (30 minutes, `SETUP_TTL_SECS` in `keywords.rs`) provides the template.
+3. **Config.toml modification**: Writing the `[google]` section to config.toml requires either TOML parsing/update or simple string manipulation. The current `generate_config` in `backend/src/init.rs` uses string formatting. For runtime updates, appending is simple but updating an existing `[google]` section requires reading, modifying, and rewriting the file -- slightly more complex.
+4. **gog CLI availability**: The init wizard silently skips Google setup if `gog` is not installed (line 260). The `/google` command should do the same -- check `gog --version` first and return a clear error if missing.
+5. **No existing functionality breaks**: Purely additive -- new command, new module, no changes to existing command behavior or data flow.
 
 ## Conditions
-- [ ] **Demonstrate the quality gap**: Provide 3+ concrete examples of Brain-generated ROLE.md files that are inadequate, with specific deficiencies identified. Without evidence of a problem, this is a solution in search of one
-- [ ] **Write a purpose-built agent, not adapt role-creator.md**: The existing role-creator's 14-item checklist is irrelevant to project ROLE.md files. A new `omega-role-creator.md` must be designed specifically for domain expertise documents
-- [ ] **Handle partial failure**: Define what happens when Brain succeeds but Role Creator fails. The project directory will exist with HEARTBEAT.md, schedules, and PROJECT_ACTIVATE but no ROLE.md
-- [ ] **Evaluate simpler alternative first**: Try improving the Brain agent's ROLE.md instructions (add more examples, add a structural checklist specific to domain expertise documents) and measure whether quality improves before committing to a second agent
+- [ ] **Separate credential setup from account setup**: The `gog auth credentials <path>` step (registering the OAuth client_secret.json) is a one-time operation that should remain in `omega init`. The `/google` command should handle only `gog auth add <email> --manual` (per-account authorization). If credentials are not yet registered, `/google` should detect this (via `gog auth credentials --check` or attempting auth and catching the error) and instruct the user to run `omega init` or provide credentials via another mechanism.
+- [ ] **Use `gog auth add --manual` mode exclusively**: The implementation MUST use the `--manual` flag for headless OAuth. Do NOT attempt browser-based OAuth from the server. The flow is: (1) `/google me@gmail.com`, (2) OMEGA runs `gog auth add me@gmail.com --services ... --manual`, captures the printed URL, (3) sends URL to user, (4) user opens URL, authorizes, pastes auth code back, (5) OMEGA feeds code to gog, (6) verifies with `gog auth list`.
+- [ ] **Define config.toml update strategy**: Decide whether `/google` modifies config.toml at runtime (adding/updating `[google]` section) or stores the account email elsewhere (e.g., as a fact in memory.db). Modifying config.toml at runtime is consistent with how init works but requires careful file handling. Storing in memory as a fact is simpler but diverges from the init pattern.
 
 ## Alternatives Considered
-- **Improve Brain's ROLE.md instructions directly** (RECOMMENDED): Edit `topologies/development/agents/omega-brain.md` to include better structural guidance, more examples, and a domain-expertise-specific quality checklist. Zero code changes. Zero runtime cost increase. Delivers 80%+ of the value. If ROLE.md quality is genuinely the concern, this should be tried first
-- **Use the Topology Architect as inspiration**: The `omega-topology-architect.md` agent already has strong ROLE.md guidance ("ROLE.md is the centerpiece -- spend the most effort on writing a high-quality ROLE.md that genuinely captures domain expertise, not a generic placeholder"). Its ROLE.md writing approach could be ported into the Brain agent's prompt
-- **Post-setup ROLE.md refinement**: Instead of splitting the pipeline, add a separate `/refine` command that runs the topology architect or a dedicated agent to improve an existing ROLE.md after initial setup. This decouples the concern and lets users opt into quality improvement without adding latency to every setup
+- **Re-run `omega init`**: Requires SSH access to the server. Not viable for chat-only users or non-technical users. Does not solve the stated problem.
+- **Manual SSH + `gog` commands**: Same SSH access requirement. Additionally requires knowledge of `gog` CLI syntax. Not user-friendly. Viable only for technical users who already have server access.
+- **Document the manual process**: Zero development cost but defeats Omega's mission of being accessible via chat. The same argument would have prevented `/setup` from being built.
+- **Add Google setup to `/setup` Brain session**: The Brain is an AI-powered multi-round agent -- overkill for a deterministic credential flow. The `/google` command should be a direct gateway command like `/whatsapp`, not an AI-mediated session. This is simpler, faster, and avoids sending credentials to the AI provider.
+- **Reduce to `/google` as a simple command that just prints instructions**: Lowest effort but lowest value. Users still need SSH access to execute the commands. Does not solve the core problem.
 
 ## Recommendation
-Do NOT build this feature in its current form. The proposal conflates two different artifact types (agent definitions vs. project ROLE.md files) and introduces runtime complexity (second Opus call, context passing, partial failure handling) without evidence that the current approach is insufficient.
+Proceed with implementation after resolving the three conditions above. The feature is a natural extension of Omega's self-configuration capabilities, follows a proven pattern (`/setup` state machine, `/whatsapp` as a direct gateway command), and fills a real gap for users who manage Google services through the agent. The complexity is moderate and well-bounded.
 
-**Instead, try this first**: Edit `topologies/development/agents/omega-brain.md` to strengthen the ROLE.md generation section. Borrow the ROLE.md writing guidance from `omega-topology-architect.md`. Add a 6-item domain expertise checklist (identity, responsibilities, operational rules, knowledge areas, communication style, constraints) directly to the Brain prompt. Test with 5 different `/setup` domains. If ROLE.md quality is still inadequate after prompt improvements, revisit the two-agent approach with concrete evidence.
+The recommended implementation approach: a multi-step chat flow where (1) user sends `/google me@gmail.com`, (2) OMEGA checks `gog` availability and existing credentials, (3) runs `gog auth add <email> --services gmail,calendar,drive,contacts,docs,sheets --manual`, (4) sends the OAuth URL to the user, (5) waits for the user to paste the authorization code, (6) feeds the code back to complete auth, (7) verifies with `gog auth list`, (8) updates config.toml with `[google] account = "<email>"`. The `client_secret.json` registration should remain an init-time concern, not handled via chat.
 
 ## User Decision
 [Awaiting user response: PROCEED / ABORT / MODIFY]

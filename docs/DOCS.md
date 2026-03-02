@@ -13,8 +13,8 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 
 ### Binary (`backend/src/`)
 - [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Pair/Service), root guard, provider/channel bootstrap
-- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 24-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, heartbeat, summarizer, keywords, builds (orchestrator + loop + parse + agents + topology + i18n), setup + setup_response (Brain orchestrator)
-- [src-commands-rs.md](src-commands-rs.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, purge, help)
+- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 26-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, heartbeat, summarizer, keywords, builds (orchestrator + loop + parse + agents + topology + i18n), setup + setup_response (Brain orchestrator), google_auth + google_auth_i18n (Google credential setup)
+- [src-commands-rs.md](src-commands-rs.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, google, purge, help)
 - [src-selfcheck-rs.md](src-selfcheck-rs.md) — Startup health checks
 - [src-service-rs.md](src-service-rs.md) — OS-aware service management (macOS LaunchAgent / Linux systemd)
 - [src-init-rs.md](src-init-rs.md) — Setup wizard (interactive + non-interactive modes), config generation

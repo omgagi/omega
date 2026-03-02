@@ -10,6 +10,8 @@ mod builds_i18n;
 mod builds_loop;
 mod builds_parse;
 mod builds_topology;
+mod google_auth;
+mod google_auth_i18n;
 mod heartbeat;
 mod heartbeat_helpers;
 mod keywords;

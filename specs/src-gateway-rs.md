@@ -1,7 +1,7 @@
 # Specification: backend/src/gateway/ (Directory Module)
 
 ## File Path
-`backend/src/gateway/` (directory module with 24 files)
+`backend/src/gateway/` (directory module with 26 files)
 
 ## Refactoring History
 - **2026-02-20:** Marker extraction/parsing/stripping functions (40+) extracted into `backend/src/markers.rs`. See `specs/src-markers-rs.md`.
@@ -17,7 +17,7 @@
 | File | Responsibility |
 |------|----------------|
 | `mod.rs` | Struct Gateway, `new()`, `run()`, `dispatch_message()`, `shutdown()`, `send_text()`, tests |
-| `pipeline.rs` | `handle_message()`, resolves `active_project`, routes builds, `/setup` intercept, discovery session, delegates to `handle_direct_response()` |
+| `pipeline.rs` | `handle_message()`, resolves `active_project`, routes builds, `/setup` intercept, `/google` intercept, `pending_google` session check, discovery session, delegates to `handle_direct_response()` |
 | `pipeline_builds.rs` | Build-related pipeline stages: discovery continuation, build confirmation, build keyword handling |
 | `prompt_builder.rs` | `build_system_prompt()` -- full prompt construction with conditional section injection |
 | `routing.rs` | `classify_and_route()` (dead code), `execute_steps()` (dead code), `handle_direct_response()`, passes `active_project` to `process_markers()` |
@@ -39,6 +39,8 @@
 | `builds_topology.rs` | TOML topology schema, `load_topology()`, `deploy_bundled_topology()`, `validate_topology_name()` |
 | `setup.rs` | Brain setup session orchestrator: `start_setup_session()`, `execute_setup()`, `cleanup_setup_session()`, `audit_setup()` |
 | `setup_response.rs` | Setup response handling: `handle_setup_response()`, `handle_setup_confirmation()`, `handle_setup_questioning()` |
+| `google_auth.rs` | Google credential setup state machine: `start_google_session()`, `handle_google_response()`, `write_google_credentials()`, `cleanup_google_session()`, `is_valid_email()`, audit |
+| `google_auth_i18n.rs` | Localized messages for `/google` flow (15 functions, 8 languages) |
 | `tests.rs` | Gateway integration tests |
 
 All submodules access `Gateway` fields via `pub(super)` visibility (module-internal, not public API).

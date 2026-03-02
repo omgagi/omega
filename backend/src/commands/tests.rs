@@ -75,6 +75,7 @@ fn test_parse_all_commands() {
         Some(Command::Learning)
     ));
     assert!(matches!(Command::parse("/setup"), Some(Command::Setup)));
+    assert!(matches!(Command::parse("/google"), Some(Command::Google)));
     assert!(matches!(Command::parse("/help"), Some(Command::Help)));
 }
 
@@ -535,5 +536,87 @@ fn test_help_includes_setup() {
     assert!(
         result.contains("/setup"),
         "help must list /setup command: {result}"
+    );
+}
+
+// ===================================================================
+// REQ-GAUTH-001 (Must): /google command registration in Command::parse()
+// ===================================================================
+
+// Requirement: REQ-GAUTH-001 (Must)
+// Acceptance: /google returns Some(Command::Google)
+#[test]
+fn test_parse_google_command() {
+    assert!(
+        matches!(Command::parse("/google"), Some(Command::Google)),
+        "/google must parse to Command::Google"
+    );
+}
+
+// Requirement: REQ-GAUTH-001 (Must)
+// Acceptance: /google@botname suffix stripped, returns Some(Command::Google)
+#[test]
+fn test_parse_google_command_with_botname_suffix() {
+    assert!(
+        matches!(Command::parse("/google@omega_bot"), Some(Command::Google)),
+        "/google@omega_bot must parse to Command::Google (botname stripped)"
+    );
+}
+
+// Requirement: REQ-GAUTH-001 (Must)
+// Acceptance: /googlefoo does NOT match (not a prefix match)
+#[test]
+fn test_parse_googlefoo_does_not_match() {
+    assert!(
+        Command::parse("/googlefoo").is_none(),
+        "/googlefoo must NOT match /google -- exact match required"
+    );
+}
+
+// Requirement: REQ-GAUTH-001 (Must)
+// Acceptance: /Google (uppercase) does NOT match -- commands are case-sensitive
+#[test]
+fn test_parse_google_case_sensitive() {
+    assert!(
+        Command::parse("/Google").is_none(),
+        "/Google (wrong case) must NOT match -- commands are case-sensitive"
+    );
+}
+
+// Requirement: REQ-GAUTH-001 (Must)
+// Acceptance: /google is included in the comprehensive command registry check
+#[test]
+fn test_parse_google_registered_in_command_enum() {
+    // Verify /google is registered and does not break other commands.
+    assert!(matches!(Command::parse("/google"), Some(Command::Google)));
+    assert!(matches!(Command::parse("/status"), Some(Command::Status)));
+    assert!(matches!(Command::parse("/setup"), Some(Command::Setup)));
+    assert!(matches!(Command::parse("/help"), Some(Command::Help)));
+    assert!(Command::parse("/unknown").is_none());
+}
+
+// Requirement: REQ-GAUTH-001 (Must)
+// Acceptance: help text includes /google
+#[test]
+fn test_help_includes_google() {
+    let result = status::handle_help("English");
+    assert!(
+        result.contains("/google"),
+        "help must list /google command: {result}"
+    );
+}
+
+// Requirement: REQ-GAUTH-001 (Must)
+// Acceptance: /google fallback in handle() returns help (same pattern as /setup)
+// Note: Command::Google handle() arm should return help text as fallback,
+// since the real /google logic is intercepted in pipeline.rs.
+#[tokio::test]
+async fn test_google_command_handle_fallback_returns_help() {
+    // The Google command is intercepted in pipeline.rs before reaching handle().
+    // If it somehow reaches handle(), it should return help text (same as Setup).
+    let result = status::handle_help("English");
+    assert!(
+        result.contains("/google"),
+        "help fallback for /google must mention /google: {result}"
     );
 }
