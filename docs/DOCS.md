@@ -12,12 +12,12 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [architecture.md](architecture.md) — End-to-end message flow (Telegram -> Gateway -> Claude Code -> response), concurrency model, session persistence, multi-agent pipeline architecture (topology-driven sequential chain, TOPOLOGY.toml format, file-mediated handoffs, bounded corrective loops, pre/post validation, self-healing audit), background loops, efficiency summary
 
 ### Binary (`backend/src/`)
-- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Pair/Service), root guard, provider/channel bootstrap
+- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Setup/Pair/Service), root guard, provider/channel bootstrap
 - [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 26-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, heartbeat, summarizer, keywords, builds (orchestrator + loop + parse + agents + topology + i18n), setup + setup_response (Brain orchestrator), google_auth + google_auth_i18n (Google credential setup)
 - [src-commands-rs.md](src-commands-rs.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, google, purge, help)
 - [src-selfcheck-rs.md](src-selfcheck-rs.md) — Startup health checks
 - [src-service-rs.md](src-service-rs.md) — OS-aware service management (macOS LaunchAgent / Linux systemd)
-- [src-init-rs.md](src-init-rs.md) — Setup wizard (interactive + non-interactive modes), config generation
+- [src-init-rs.md](src-init-rs.md) — Setup wizard (interactive + non-interactive modes), config generation, `omega setup` reconfiguration menu
 - [src-init-style-rs.md](src-init-style-rs.md) — Branded CLI output helpers for init wizard (console::Style, gutter-bar visual language)
 - [src-init-wizard-rs.md](src-init-wizard-rs.md) — Interactive-only init helpers (browser detection, Anthropic auth, WhatsApp QR, Google OAuth)
 - [src-i18n-rs.md](src-i18n-rs.md) — Internationalization module (8 languages, static lookups, format helpers)

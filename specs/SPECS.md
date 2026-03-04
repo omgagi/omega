@@ -19,13 +19,13 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [gitignore.md](gitignore.md) — .gitignore rules
 
 ### Milestone 2: Binary (`backend/src/`)
-- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Pair/Service), root guard, provider/channel bootstrap
+- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Setup/Pair/Service), root guard, provider/channel bootstrap
 - [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 26-file directory module: orchestrator, pipeline, routing, process_markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, keywords_data, builds, builds_loop, builds_parse, builds_agents, builds_topology, builds_i18n, prompt_builder, shared_markers, pipeline_builds, setup, setup_response, google_auth, google_auth_i18n, tests
 - [provider-builder.md](provider-builder.md) — Provider factory (`build_provider()`) — constructs providers from config, dual-model routing for Claude Code
 - [src-markers-rs.md](src-markers-rs.md) — Marker module (`backend/src/markers/`) — 5 source submodules + test directory (40+ functions, ~145 tests)
 - [src-task-confirmation-rs.md](src-task-confirmation-rs.md) — Task scheduling confirmation (anti-hallucination, duplicate detection, localized confirmation messages)
 - [src-commands-rs.md](src-commands-rs.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, purge, help)
-- [src-init-rs.md](src-init-rs.md) — Setup wizard (interactive + non-interactive modes), config generation
+- [src-init-rs.md](src-init-rs.md) — Setup wizard (interactive + non-interactive modes), config generation, `omega setup` reconfiguration menu
 - [src-init-style-rs.md](src-init-style-rs.md) — Branded CLI output helpers for init wizard (console::Style, gutter-bar visual language)
 - [src-init-wizard-rs.md](src-init-wizard-rs.md) — Interactive-only init helpers (browser detection, Anthropic auth, WhatsApp QR, Google OAuth)
 - [src-selfcheck-rs.md](src-selfcheck-rs.md) — Startup health checks

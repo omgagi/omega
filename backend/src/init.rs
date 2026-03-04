@@ -17,7 +17,20 @@ const LOGO: &str = r#"
 "#;
 
 /// Run the interactive init wizard.
+///
+/// Refuses to run if `~/.omega/config.toml` already exists — use `omega setup`
+/// to reconfigure individual components on an existing installation.
 pub async fn run() -> anyhow::Result<()> {
+    let config_path = shellexpand("~/.omega/config.toml");
+    if Path::new(&config_path).exists() {
+        init_style::omega_intro(LOGO, "omega init")?;
+        init_style::omega_warning(
+            "OMEGA is already installed. Use `omega setup` to reconfigure.",
+        )?;
+        init_style::omega_outro("Nothing changed")?;
+        return Ok(());
+    }
+
     init_style::omega_intro(LOGO, "omega init")?;
 
     // 1. Create data directory.
@@ -197,6 +210,203 @@ pub async fn run() -> anyhow::Result<()> {
 
     init_style::omega_outro("Setup complete")?;
     init_style::typewrite("\n  enjoy OMEGA Ω!\n\n", 30);
+    Ok(())
+}
+
+/// Menu-driven reconfiguration for an existing OMEGA installation.
+///
+/// Lets the user pick individual components to re-setup and updates
+/// `~/.omega/config.toml` in-place without regenerating the whole file.
+pub async fn run_setup() -> anyhow::Result<()> {
+    let config_path = shellexpand("~/.omega/config.toml");
+    if !Path::new(&config_path).exists() {
+        init_style::omega_intro(LOGO, "omega setup")?;
+        init_style::omega_warning("OMEGA is not installed. Run `omega init` first.")?;
+        init_style::omega_outro_cancel("Nothing to configure")?;
+        return Ok(());
+    }
+
+    init_style::omega_intro(LOGO, "omega setup")?;
+
+    let selected: Vec<&str> = cliclack::multiselect("Select components to reconfigure")
+        .item("claude", "Claude Auth", "OAuth token for Claude Code")
+        .item("telegram", "Telegram", "Bot token and allowed users")
+        .item("whisper", "Voice Transcription", "OpenAI Whisper API key")
+        .item("whatsapp", "WhatsApp", "Pair via QR code")
+        .item("google", "Google Workspace", "Gmail, Calendar, Drive...")
+        .item("service", "System Service", "Install or reinstall the service")
+        .required(false)
+        .interact()?;
+
+    if selected.is_empty() {
+        init_style::omega_info("Nothing selected.")?;
+        init_style::omega_outro("No changes made")?;
+        return Ok(());
+    }
+
+    let mut updates: Vec<(&str, &str, String)> = Vec::new();
+    let mut changed: Vec<&str> = Vec::new();
+
+    // ── Claude Auth ──────────────────────────────────────────────────────
+    if selected.contains(&"claude") {
+        if let Some(token) = init_wizard::run_anthropic_auth()? {
+            updates.push(("provider", "claude-code.oauth_token", token));
+            changed.push("Claude Auth");
+        }
+    }
+
+    // ── Telegram ─────────────────────────────────────────────────────────
+    if selected.contains(&"telegram") {
+        let bot_token: String = cliclack::input("Telegram bot token")
+            .placeholder("Paste token from @BotFather (or Enter to skip)")
+            .required(false)
+            .default_input("")
+            .interact()?;
+        let bot_token = bot_token.trim().to_string();
+
+        if !bot_token.is_empty() {
+            updates.push(("channel", "telegram.bot_token", bot_token));
+            updates.push(("channel", "telegram.enabled", "true".to_string()));
+
+            let id_str: String = cliclack::input("Your Telegram user ID")
+                .placeholder("Send /start to @userinfobot (blank = allow all)")
+                .required(false)
+                .default_input("")
+                .interact()?;
+            if let Ok(id) = id_str.parse::<i64>() {
+                updates.push(("channel", "telegram.allowed_users", format!("[{id}]")));
+            }
+            changed.push("Telegram");
+        } else {
+            init_style::omega_info("Skipping Telegram — no changes")?;
+        }
+    }
+
+    // ── Whisper ──────────────────────────────────────────────────────────
+    if selected.contains(&"whisper") {
+        let key: String = cliclack::input("OpenAI API key (for Whisper)")
+            .placeholder("sk-... (Enter to skip)")
+            .required(false)
+            .default_input("")
+            .interact()?;
+        let key = key.trim().to_string();
+        if !key.is_empty() {
+            updates.push(("channel", "telegram.whisper_api_key", key));
+            changed.push("Voice Transcription");
+        }
+    }
+
+    // ── WhatsApp ─────────────────────────────────────────────────────────
+    if selected.contains(&"whatsapp") {
+        let paired = init_wizard::run_whatsapp_setup().await?;
+        if paired {
+            updates.push(("channel", "whatsapp.enabled", "true".to_string()));
+            changed.push("WhatsApp");
+        }
+    }
+
+    // ── Google Workspace ─────────────────────────────────────────────────
+    if selected.contains(&"google") {
+        let omg_gog_installed = crate::init_google::is_omg_gog_installed();
+        let ready = if omg_gog_installed {
+            true
+        } else {
+            crate::init_google::install_omg_gog()?
+        };
+        if ready {
+            if let Some(email) = crate::init_google::run_google_wizard()? {
+                updates.push(("google", "account", email));
+                changed.push("Google Workspace");
+            }
+        }
+    }
+
+    // ── Apply config updates ─────────────────────────────────────────────
+    if !updates.is_empty() {
+        update_config(&config_path, &updates)?;
+        init_style::omega_success(&format!(
+            "Updated ~/.omega/config.toml — {}",
+            changed.join(", ")
+        ))?;
+    }
+
+    // ── System Service ───────────────────────────────────────────────────
+    if selected.contains(&"service") {
+        match service::install("~/.omega/config.toml") {
+            Ok(()) => {
+                init_style::omega_success("System service installed")?;
+                changed.push("System Service");
+            }
+            Err(e) => {
+                init_style::omega_warning(&format!("Service install failed: {e}"))?;
+            }
+        }
+    }
+
+    if changed.is_empty() {
+        init_style::omega_outro("No changes made")?;
+    } else {
+        init_style::omega_outro("Setup complete")?;
+    }
+
+    Ok(())
+}
+
+/// Update `config.toml` in-place by setting keys in nested tables.
+///
+/// Each entry in `updates` is `(section, dotted_key, value)`:
+/// - `("provider", "claude-code.oauth_token", "sk-...")` sets
+///   `[provider.claude-code] oauth_token = "sk-..."`
+/// - `("channel", "telegram.bot_token", "123:ABC")` sets
+///   `[channel.telegram] bot_token = "123:ABC"`
+/// - `("google", "account", "me@gmail.com")` sets
+///   `[google] account = "me@gmail.com"`
+pub fn update_config(path: &str, updates: &[(&str, &str, String)]) -> anyhow::Result<()> {
+    let content = std::fs::read_to_string(path)?;
+    let mut doc: toml::Table = content
+        .parse()
+        .map_err(|e| anyhow::anyhow!("failed to parse config.toml: {e}"))?;
+
+    for (section, dotted_key, value) in updates {
+        // Split dotted_key: "telegram.bot_token" → ["telegram", "bot_token"]
+        let parts: Vec<&str> = dotted_key.split('.').collect();
+
+        // Navigate/create the table path: section → sub-tables
+        let mut table = doc
+            .entry(section.to_string())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+            .as_table_mut()
+            .ok_or_else(|| anyhow::anyhow!("[{section}] is not a table"))?;
+
+        for &part in &parts[..parts.len().saturating_sub(1)] {
+            table = table
+                .entry(part)
+                .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+                .as_table_mut()
+                .ok_or_else(|| anyhow::anyhow!("[{section}.{part}] is not a table"))?;
+        }
+
+        let leaf = parts.last().ok_or_else(|| anyhow::anyhow!("empty key"))?;
+
+        // Parse value: try bool, then integer array, then string.
+        let toml_value = if value == "true" || value == "false" {
+            toml::Value::Boolean(value == "true")
+        } else if value.starts_with('[') && value.ends_with(']') {
+            // Parse as TOML array value.
+            let parsed: toml::Value = format!("v = {value}")
+                .parse::<toml::Table>()
+                .map(|t| t["v"].clone())
+                .unwrap_or_else(|_| toml::Value::String(value.clone()));
+            parsed
+        } else {
+            toml::Value::String(value.clone())
+        };
+
+        table.insert(leaf.to_string(), toml_value);
+    }
+
+    let output = toml::to_string_pretty(&doc)?;
+    std::fs::write(path, output)?;
     Ok(())
 }
 
@@ -536,5 +746,103 @@ mod tests {
         let result = parse_allowed_users("abc");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("invalid user ID"));
+    }
+
+    #[test]
+    fn test_update_config_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let initial = generate_config("old:TOKEN", &[42], None, false, None, None);
+        std::fs::write(&path, &initial).unwrap();
+
+        let path_str = path.to_str().unwrap();
+        update_config(
+            path_str,
+            &[
+                ("channel", "telegram.bot_token", "new:TOKEN".to_string()),
+                ("channel", "telegram.enabled", "true".to_string()),
+                ("channel", "whatsapp.enabled", "true".to_string()),
+                (
+                    "provider",
+                    "claude-code.oauth_token",
+                    "sk-ant-new".to_string(),
+                ),
+                ("google", "account", "me@gmail.com".to_string()),
+            ],
+        )
+        .unwrap();
+
+        let result = std::fs::read_to_string(&path).unwrap();
+        let doc: toml::Table = result.parse().unwrap();
+
+        // Verify telegram updates.
+        let tg = doc["channel"]["telegram"].as_table().unwrap();
+        assert_eq!(tg["bot_token"].as_str().unwrap(), "new:TOKEN");
+        assert!(tg["enabled"].as_bool().unwrap());
+
+        // Verify whatsapp update.
+        let wa = doc["channel"]["whatsapp"].as_table().unwrap();
+        assert!(wa["enabled"].as_bool().unwrap());
+
+        // Verify provider update.
+        let cc = doc["provider"]["claude-code"].as_table().unwrap();
+        assert_eq!(cc["oauth_token"].as_str().unwrap(), "sk-ant-new");
+
+        // Verify google section was created.
+        assert_eq!(doc["google"]["account"].as_str().unwrap(), "me@gmail.com");
+
+        // Verify existing fields were preserved.
+        assert_eq!(doc["omega"]["name"].as_str().unwrap(), "OMEGA Ω");
+        assert_eq!(doc["memory"]["backend"].as_str().unwrap(), "sqlite");
+    }
+
+    #[test]
+    fn test_update_config_creates_missing_section() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "[omega]\nname = \"test\"\n").unwrap();
+
+        let path_str = path.to_str().unwrap();
+        update_config(
+            path_str,
+            &[("google", "account", "a@b.com".to_string())],
+        )
+        .unwrap();
+
+        let result = std::fs::read_to_string(&path).unwrap();
+        let doc: toml::Table = result.parse().unwrap();
+        assert_eq!(doc["google"]["account"].as_str().unwrap(), "a@b.com");
+        assert_eq!(doc["omega"]["name"].as_str().unwrap(), "test");
+    }
+
+    #[test]
+    fn test_update_config_array_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[channel.telegram]\nallowed_users = []\n",
+        )
+        .unwrap();
+
+        let path_str = path.to_str().unwrap();
+        update_config(
+            path_str,
+            &[(
+                "channel",
+                "telegram.allowed_users",
+                "[123, 456]".to_string(),
+            )],
+        )
+        .unwrap();
+
+        let result = std::fs::read_to_string(&path).unwrap();
+        let doc: toml::Table = result.parse().unwrap();
+        let users = doc["channel"]["telegram"]["allowed_users"]
+            .as_array()
+            .unwrap();
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].as_integer().unwrap(), 123);
+        assert_eq!(users[1].as_integer().unwrap(), 456);
     }
 }

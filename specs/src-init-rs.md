@@ -8,8 +8,10 @@ Interactive setup wizard and non-interactive deployment for new Omega users. Pro
 
 ## Module Overview
 The `init.rs` module contains:
-- `run()` — Main interactive wizard orchestration function
+- `run()` — Main interactive wizard orchestration function. Guards against re-installation: if `~/.omega/config.toml` already exists, warns and suggests `omega setup` instead
+- `run_setup()` — Menu-driven reconfiguration for existing installations. Presents a multiselect menu of components (Claude Auth, Telegram, Whisper, WhatsApp, Google, Service) and updates `config.toml` in-place
 - `run_noninteractive(args) -> Result<()>` — Non-interactive deployment path, triggered when `--telegram-token` or `--allowed-users` CLI args are provided
+- `update_config(path, updates) -> Result<()>` — In-place config.toml updater using `toml::Table` round-trip. Supports dotted keys for nested tables (e.g., `"telegram.bot_token"`)
 - `generate_config(bot_token, user_ids, whisper_key, whatsapp_enabled, google_email) -> String` — Public pure function that builds `config.toml` content (extracted for testability). Note: `user_id: Option<i64>` was changed to `user_ids: &[i64]` to support multiple allowed users.
 - `parse_allowed_users(input) -> Result<Vec<i64>>` — Public function that parses a comma-separated string of user IDs into a Vec, with validation (rejects non-numeric, empty segments)
 - Uses `omega_core::shellexpand()` for home directory expansion (imported, not local)
@@ -54,6 +56,18 @@ User interaction uses `cliclack` for interactive widgets and `init_style` for br
 ---
 
 ## Init Wizard Flow
+
+### Phase 0: Installation Guard
+**Action:** Check if `~/.omega/config.toml` already exists
+
+**Logic:**
+1. Expand `~/.omega/config.toml` via `shellexpand()`
+2. If file exists: show intro, warn "OMEGA is already installed. Use `omega setup` to reconfigure.", outro "Nothing changed", return `Ok(())`
+3. If file does not exist: continue to Phase 1
+
+**Purpose:** Prevents accidental re-initialization of an existing installation. Users who want to reconfigure should use `omega setup` instead.
+
+---
 
 ### Phase 1: ASCII Logo and Welcome Banner (unchanged)
 **Action:** Display the OMEGA ASCII art logo followed by cliclack intro
@@ -404,6 +418,72 @@ Walk user through Google Cloud Console setup via `wizard_step()` (note + confirm
 
 ---
 
+## Setup Wizard (`run_setup`)
+
+### Signature
+```rust
+pub async fn run_setup() -> anyhow::Result<()>
+```
+
+### Purpose
+Menu-driven reconfiguration for an existing OMEGA installation. Invoked by `omega setup`. Requires `~/.omega/config.toml` to exist — if not, tells the user to run `omega init` first.
+
+### Flow
+1. Check `~/.omega/config.toml` exists — if not, warn and bail
+2. Show OMEGA intro with "omega setup" subtitle
+3. Present `cliclack::multiselect` with 6 items:
+   - Claude Auth — re-run OAuth token flow (`init_wizard::run_anthropic_auth`)
+   - Telegram — collect bot token and user ID
+   - Voice Transcription — collect OpenAI Whisper API key
+   - WhatsApp — run QR pairing (`init_wizard::run_whatsapp_setup`)
+   - Google Workspace — run Google setup (`init_google::run_google_wizard`)
+   - System Service — install/reinstall (`service::install`)
+4. For each selected item, run the relevant wizard section and collect config updates
+5. Apply all config updates via `update_config()` (round-trip TOML serialization)
+6. Service installation runs after config updates (no config key — just runs `service::install`)
+7. Show summary of changes
+
+### Config Updates Per Component
+| Component | Config keys updated |
+|-----------|-------------------|
+| Claude Auth | `provider.claude-code.oauth_token` |
+| Telegram | `channel.telegram.enabled`, `.bot_token`, `.allowed_users` |
+| Whisper | `channel.telegram.whisper_api_key` |
+| WhatsApp | `channel.whatsapp.enabled` |
+| Google | `google.account` |
+| Service | No config change — runs `service::install()` |
+
+### Error Handling
+- Missing config.toml: non-error early return with warning
+- Empty selection: non-error early return
+- Individual component failures: handled by the underlying wizard functions (non-fatal)
+
+---
+
+## Config Update Helper (`update_config`)
+
+### Signature
+```rust
+pub fn update_config(path: &str, updates: &[(&str, &str, String)]) -> Result<()>
+```
+
+### Purpose
+Updates `config.toml` in-place using `toml::Table` round-trip serialization. Each entry is `(section, dotted_key, value)`.
+
+### Logic
+1. Read file as string
+2. Parse into `toml::Table`
+3. For each update, navigate/create nested tables and set the leaf value
+4. Value parsing: `"true"`/`"false"` → bool, `"[...]"` → array, otherwise → string
+5. Write back with `toml::to_string_pretty()`
+
+### Examples
+- `("provider", "claude-code.oauth_token", "sk-ant-...")` → `[provider.claude-code] oauth_token = "sk-ant-..."`
+- `("channel", "telegram.enabled", "true")` → `[channel.telegram] enabled = true`
+- `("google", "account", "me@gmail.com")` → `[google] account = "me@gmail.com"`
+
+---
+
 ## Non-Interactive Deployment (`run_noninteractive`)
 
 ### Signature
@@ -533,7 +613,7 @@ account = "{email}"
 
 ## Unit Tests
 
-### Test Suite: `tests` (18 tests)
+### Test Suite: `tests` (21 tests)
 
 Tests exercise `generate_config()` and `parse_allowed_users()` in `init.rs`. Browser-related tests (`detect_private_browsers`, `create_incognito_script`, `PRIVATE_BROWSERS`) have moved to `init_wizard.rs`. No I/O mocking required.
 
@@ -555,6 +635,10 @@ Tests exercise `generate_config()` and `parse_allowed_users()` in `init.rs`. Bro
 | `test_private_browsers_constant_has_entries` | — | *(Moved to init_wizard.rs)* |
 | `test_detect_private_browsers_returns_valid_indices` | — | *(Moved to init_wizard.rs)* |
 | `test_create_incognito_script` | — | *(Moved to init_wizard.rs)* |
+
+| `test_update_config_round_trip` | Full config, multiple updates | Verifies bot_token, enabled flags, oauth_token, google section updated; existing fields preserved |
+| `test_update_config_creates_missing_section` | Minimal config, add google | New `[google]` section created; existing `[omega]` preserved |
+| `test_update_config_array_value` | Update allowed_users with `[123, 456]` | Array parsed correctly with 2 integer elements |
 
 **Note:** Browser-related tests (`test_private_browsers_constant_has_entries`, `test_detect_private_browsers_returns_valid_indices`, `test_create_incognito_script`) are now in `backend/src/init_wizard.rs` alongside the functions they test.
 

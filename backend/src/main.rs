@@ -81,6 +81,8 @@ enum Commands {
         #[arg(long, env = "OMEGA_GOOGLE_EMAIL")]
         google_email: Option<String>,
     },
+    /// Reconfigure individual components on an existing installation.
+    Setup,
     /// Pair WhatsApp by scanning a QR code.
     Pair,
     /// Manage the system service (install, uninstall, status).
@@ -137,6 +139,10 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 init::run().await?;
             }
+        }
+        Commands::Setup => {
+            init_stdout_tracing("error");
+            init::run_setup().await?;
         }
         Commands::Pair => {
             init_stdout_tracing("error");
