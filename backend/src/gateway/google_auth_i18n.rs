@@ -24,14 +24,14 @@ pub(super) fn google_step_project_id_message(lang: &str, existing: bool) -> Stri
     };
 
     let base = match lang {
-        "Spanish" => "Configuracion de cuenta Google\n\n1. Ve a https://console.cloud.google.com\n2. Crea un nuevo proyecto (o usa uno existente)\n3. Envia tu *Project ID*\n\nPuedes escribir *cancel* en cualquier momento para cancelar.",
-        "Portuguese" => "Configuracao de conta Google\n\n1. Va a https://console.cloud.google.com\n2. Crie um novo projeto (ou use um existente)\n3. Envie seu *Project ID*\n\nVoce pode escrever *cancel* a qualquer momento para cancelar.",
-        "French" => "Configuration du compte Google\n\n1. Allez a https://console.cloud.google.com\n2. Creez un nouveau projet (ou utilisez un existant)\n3. Envoyez votre *Project ID*\n\nVous pouvez ecrire *cancel* a tout moment pour annuler.",
-        "German" => "Google-Konto einrichten\n\n1. Gehe zu https://console.cloud.google.com\n2. Erstelle ein neues Projekt (oder verwende ein vorhandenes)\n3. Sende deine *Project ID*\n\nDu kannst jederzeit *cancel* schreiben, um abzubrechen.",
-        "Italian" => "Configurazione account Google\n\n1. Vai a https://console.cloud.google.com\n2. Crea un nuovo progetto (o usa uno esistente)\n3. Invia il tuo *Project ID*\n\nPuoi scrivere *cancel* in qualsiasi momento per annullare.",
-        "Dutch" => "Google-account instellen\n\n1. Ga naar https://console.cloud.google.com\n2. Maak een nieuw project (of gebruik een bestaand)\n3. Stuur je *Project ID*\n\nJe kunt op elk moment *cancel* typen om te annuleren.",
-        "Russian" => "Настройка аккаунта Google\n\n1. Перейдите на https://console.cloud.google.com\n2. Создайте новый проект (или используйте существующий)\n3. Отправьте ваш *Project ID*\n\nВы можете написать *cancel* в любой момент для отмены.",
-        _ => "Google Account Setup\n\n1. Go to https://console.cloud.google.com\n2. Create a new project (or use an existing one)\n3. Send your *Project ID*\n\nYou can type *cancel* at any time to abort.",
+        "Spanish" => "Configuracion de cuenta Google\n\nEste proceso es 100% privado entre tu y Omega. Tus credenciales de Google se guardan localmente en tu dispositivo y *nunca* se envian al proveedor de IA.\n\n1. Ve a https://console.cloud.google.com\n2. Crea un nuevo proyecto (o usa uno existente)\n3. Envia tu *Project ID*\n\nPuedes escribir *cancel* en cualquier momento para cancelar.",
+        "Portuguese" => "Configuracao de conta Google\n\nEste processo e 100% privado entre voce e o Omega. Suas credenciais do Google sao salvas localmente no seu dispositivo e *nunca* sao enviadas ao provedor de IA.\n\n1. Va a https://console.cloud.google.com\n2. Crie um novo projeto (ou use um existente)\n3. Envie seu *Project ID*\n\nVoce pode escrever *cancel* a qualquer momento para cancelar.",
+        "French" => "Configuration du compte Google\n\nCe processus est 100% prive entre vous et Omega. Vos identifiants Google sont stockes localement sur votre appareil et ne sont *jamais* envoyes au fournisseur d'IA.\n\n1. Allez a https://console.cloud.google.com\n2. Creez un nouveau projet (ou utilisez un existant)\n3. Envoyez votre *Project ID*\n\nVous pouvez ecrire *cancel* a tout moment pour annuler.",
+        "German" => "Google-Konto einrichten\n\nDieser Vorgang ist 100% privat zwischen dir und Omega. Deine Google-Zugangsdaten werden lokal auf deinem Gerat gespeichert und *niemals* an den KI-Anbieter gesendet.\n\n1. Gehe zu https://console.cloud.google.com\n2. Erstelle ein neues Projekt (oder verwende ein vorhandenes)\n3. Sende deine *Project ID*\n\nDu kannst jederzeit *cancel* schreiben, um abzubrechen.",
+        "Italian" => "Configurazione account Google\n\nQuesto processo e 100% privato tra te e Omega. Le tue credenziali Google vengono salvate localmente sul tuo dispositivo e non vengono *mai* inviate al fornitore di IA.\n\n1. Vai a https://console.cloud.google.com\n2. Crea un nuovo progetto (o usa uno esistente)\n3. Invia il tuo *Project ID*\n\nPuoi scrivere *cancel* in qualsiasi momento per annullare.",
+        "Dutch" => "Google-account instellen\n\nDit proces is 100% prive tussen jou en Omega. Je Google-inloggegevens worden lokaal op je apparaat opgeslagen en worden *nooit* naar de AI-provider gestuurd.\n\n1. Ga naar https://console.cloud.google.com\n2. Maak een nieuw project (of gebruik een bestaand)\n3. Stuur je *Project ID*\n\nJe kunt op elk moment *cancel* typen om te annuleren.",
+        "Russian" => "Настройка аккаунта Google\n\nЭтот процесс на 100% приватен между вами и Omega. Ваши учетные данные Google хранятся локально на вашем устройстве и *никогда* не отправляются провайдеру ИИ.\n\n1. Перейдите на https://console.cloud.google.com\n2. Создайте новый проект (или используйте существующий)\n3. Отправьте ваш *Project ID*\n\nВы можете написать *cancel* в любой момент для отмены.",
+        _ => "Google Account Setup\n\nThis process is 100% private between you and Omega. Your Google credentials are stored locally on your device and are *never* sent to the AI provider.\n\n1. Go to https://console.cloud.google.com\n2. Create a new project (or use an existing one)\n3. Send your *Project ID*\n\nYou can type *cancel* at any time to abort.",
     };
 
     format!("{base}{warning}")
@@ -66,7 +66,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              {cred_url}\n\
              - Tipo: Web application\n\
              - URI de redireccion: https://omgagi.ai/oauth/callback/\n\
-             - Crea y copia el Client ID\n\n\
+             - Crea y copia el Client ID y el Client Secret\n\n\
              *4. Publicar la app*\n\
              {consent_url}\n\
              - Ve a \"Audience\" y haz clic en \"Publish App\"\n\n\
@@ -90,7 +90,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              {cred_url}\n\
              - Tipo: Web application\n\
              - URI de redirecionamento: https://omgagi.ai/oauth/callback/\n\
-             - Crie e copie o Client ID\n\n\
+             - Crie e copie o Client ID e o Client Secret\n\n\
              *4. Publicar o app*\n\
              {consent_url}\n\
              - Va a \"Audience\" e clique em \"Publish App\"\n\n\
@@ -114,7 +114,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              {cred_url}\n\
              - Type : Web application\n\
              - URI de redirection : https://omgagi.ai/oauth/callback/\n\
-             - Creez et copiez le Client ID\n\n\
+             - Creez et copiez le Client ID et le Client Secret\n\n\
              *4. Publier l'app*\n\
              {consent_url}\n\
              - Allez a \"Audience\" et cliquez sur \"Publish App\"\n\n\
@@ -138,7 +138,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              {cred_url}\n\
              - Typ: Web application\n\
              - Weiterleitungs-URI: https://omgagi.ai/oauth/callback/\n\
-             - Erstelle und kopiere die Client ID\n\n\
+             - Erstelle und kopiere die Client ID und das Client Secret\n\n\
              *4. App veroffentlichen*\n\
              {consent_url}\n\
              - Gehe zu \"Audience\" und klicke auf \"Publish App\"\n\n\
@@ -162,7 +162,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              {cred_url}\n\
              - Tipo: Web application\n\
              - URI di reindirizzamento: https://omgagi.ai/oauth/callback/\n\
-             - Crea e copia il Client ID\n\n\
+             - Crea e copia il Client ID e il Client Secret\n\n\
              *4. Pubblicare l'app*\n\
              {consent_url}\n\
              - Vai a \"Audience\" e clicca su \"Publish App\"\n\n\
@@ -186,7 +186,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              {cred_url}\n\
              - Type: Web application\n\
              - Omleidings-URI: https://omgagi.ai/oauth/callback/\n\
-             - Maak en kopieer het Client ID\n\n\
+             - Maak en kopieer het Client ID en het Client Secret\n\n\
              *4. App publiceren*\n\
              {consent_url}\n\
              - Ga naar \"Audience\" en klik op \"Publish App\"\n\n\
@@ -210,7 +210,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              {cred_url}\n\
              - Тип: Web application\n\
              - URI перенаправления: https://omgagi.ai/oauth/callback/\n\
-             - Создайте и скопируйте Client ID\n\n\
+             - Создайте и скопируйте Client ID и Client Secret\n\n\
              *4. Опубликовать приложение*\n\
              {consent_url}\n\
              - Перейдите в \"Audience\" и нажмите \"Publish App\"\n\n\
@@ -234,7 +234,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              {cred_url}\n\
              - Type: Web application\n\
              - Redirect URI: https://omgagi.ai/oauth/callback/\n\
-             - Create and copy the Client ID\n\n\
+             - Create and copy the Client ID and Client Secret\n\n\
              *4. Publish the app*\n\
              {consent_url}\n\
              - Go to \"Audience\" and click \"Publish App\"\n\n\
