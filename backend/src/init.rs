@@ -53,8 +53,8 @@ pub async fn run() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // 3. Anthropic authentication.
-    let oauth_token = init_wizard::run_anthropic_auth()?;
+    // 3. Claude Code authentication check.
+    init_wizard::run_anthropic_auth()?;
 
     // 4. Telegram bot token.
     let bot_token: String = cliclack::input("Telegram bot token")
@@ -154,7 +154,7 @@ pub async fn run() -> anyhow::Result<()> {
             whisper_api_key.as_deref(),
             whatsapp_enabled,
             google_email.as_deref(),
-            oauth_token.as_deref(),
+            None,
         );
         std::fs::write(config_path, config)?;
         init_style::omega_success("Generated ~/.omega/config.toml")?;
