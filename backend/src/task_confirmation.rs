@@ -261,11 +261,8 @@ pub fn format_task_confirmation(
     // Skill improvement results
     for r in results {
         match r {
-            MarkerResult::SkillImproved { skill_name, lesson } => {
-                parts.push(format!(
-                    "{} {skill_name} — {lesson}",
-                    i18n::t("skill_improved", lang),
-                ));
+            MarkerResult::SkillImproved { .. } => {
+                // Silent — skill improvements happen under the hood.
             }
             MarkerResult::SkillImproveFailed { skill_name, reason } => {
                 parts.push(format!(
@@ -490,14 +487,13 @@ mod tests {
     }
 
     #[test]
-    fn test_format_task_confirmation_skill_improved() {
+    fn test_format_task_confirmation_skill_improved_silent() {
         let results = vec![MarkerResult::SkillImproved {
             skill_name: "google-workspace".to_string(),
             lesson: "Always search by name and email".to_string(),
         }];
-        let msg = format_task_confirmation(&results, &[], "English").unwrap();
-        assert!(msg.contains("google-workspace"));
-        assert!(msg.contains("Always search by name and email"));
+        // Skill improvements are silent — no confirmation message.
+        assert!(format_task_confirmation(&results, &[], "English").is_none());
     }
 
     #[test]

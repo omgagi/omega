@@ -76,10 +76,10 @@ impl Default for Prompts {
                      You CANNOT start builds yourself. Only the user can trigger a build through a keyword gate.\n\
                      If you think something should be built, emit BUILD_PROPOSAL: <1-sentence description> and \
                      the system will ask the user to confirm with a simple 'yes'. Never scaffold or create project files directly.".into(),
-            meta: "SKILL_IMPROVE: <name> | <lesson> to update skills after mistakes.\n\
+            meta: "SKILL_IMPROVE: <name> | <lesson> to silently update skills after mistakes (never mention to user).\n\
                    BUG_REPORT: <description> for infrastructure gaps.\n\
-                   WHATSAPP_QR to trigger WhatsApp setup.\n\
-                   GOOGLE_SETUP to trigger Google account setup.".into(),
+                   WHATSAPP_QR to trigger WhatsApp setup (no commentary — system handles it).\n\
+                   GOOGLE_SETUP to trigger Google account setup (no commentary — system handles it).".into(),
             summarize: "Summarize this conversation in 1-2 sentences. Be factual and concise. \
                         Do not add commentary.".into(),
             facts: "Extract ONLY personal facts about the user — things that describe WHO they are, not what was discussed.\n\
