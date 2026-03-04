@@ -62,6 +62,7 @@ pub async fn run() -> anyhow::Result<()> {
         .required(false)
         .default_input("")
         .interact()?;
+    let bot_token = bot_token.trim().to_string();
 
     if bot_token.is_empty() {
         init_style::omega_info("Skipping Telegram — you can add it later in config.toml")?;

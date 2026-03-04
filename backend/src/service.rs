@@ -171,21 +171,25 @@ pub fn install(config_path: &str) -> anyhow::Result<()> {
         stop_service(&svc_path);
     }
 
-    // 7. Generate content.
+    // 7. Ensure logs directory exists (service unit references it).
+    let log_dir = PathBuf::from(&data_dir).join("logs");
+    std::fs::create_dir_all(&log_dir)?;
+
+    // 8. Generate content.
     let content = if cfg!(target_os = "macos") {
         generate_plist(&binary_str, &config_str, &working_dir, &data_dir)
     } else {
         generate_systemd_unit(&binary_str, &config_str, &working_dir, &data_dir)
     };
 
-    // 8. Write file (create parent dirs if needed).
+    // 9. Write file (create parent dirs if needed).
     if let Some(parent) = svc_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&svc_path, &content)?;
     cliclack::log::success(format!("Wrote {}", svc_path.display()))?;
 
-    // 9. Activate.
+    // 10. Activate.
     let spinner = cliclack::spinner();
     spinner.start("Activating service...");
     let activated = activate_service(&svc_path);
@@ -344,20 +348,24 @@ pub fn install_quiet(config_path: &str) -> anyhow::Result<()> {
         stop_service(&svc_path);
     }
 
-    // 7. Generate content.
+    // 7. Ensure logs directory exists (service unit references it).
+    let log_dir = PathBuf::from(&data_dir).join("logs");
+    std::fs::create_dir_all(&log_dir)?;
+
+    // 8. Generate content.
     let content = if cfg!(target_os = "macos") {
         generate_plist(&binary_str, &config_str, &working_dir, &data_dir)
     } else {
         generate_systemd_unit(&binary_str, &config_str, &working_dir, &data_dir)
     };
 
-    // 8. Write file.
+    // 9. Write file.
     if let Some(parent) = svc_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&svc_path, &content)?;
 
-    // 9. Activate.
+    // 10. Activate.
     let activated = activate_service(&svc_path);
     if !activated {
         anyhow::bail!("service activation failed — check logs");
