@@ -105,32 +105,46 @@ pub(crate) fn run_anthropic_auth() -> anyhow::Result<Option<String>> {
          Authorize in the browser, then paste the generated token below.",
     )?;
 
-    let token: String = cliclack::input("Paste OAuth token")
-        .placeholder("sk-ant-oat01-...")
-        .validate(|input: &String| {
-            if input.trim().is_empty() {
-                return Err("Token is required");
-            }
-            Ok(())
-        })
-        .interact()?;
+    const MAX_ATTEMPTS: u8 = 3;
+    let mut last_token = String::new();
 
-    let token = token.trim().to_string();
+    for attempt in 1..=MAX_ATTEMPTS {
+        let token: String = cliclack::input("Paste OAuth token")
+            .placeholder("sk-ant-oat01-...")
+            .validate(|input: &String| {
+                if input.trim().is_empty() {
+                    return Err("Token is required");
+                }
+                Ok(())
+            })
+            .interact()?;
 
-    let spinner = cliclack::spinner();
-    spinner.start("Validating OAuth token...");
+        let token = token.trim().to_string();
 
-    if validate_oauth_token(&token) {
-        spinner.stop("Anthropic authentication — configured");
-        Ok(Some(token))
-    } else {
-        spinner.error("Token validation failed — claude could not authenticate");
-        init_style::omega_warning(
-            "The token will still be saved to config.toml.\n\
-             You can re-authenticate later with: claude login or claude setup-token",
-        )?;
-        Ok(Some(token))
+        let spinner = cliclack::spinner();
+        spinner.start("Validating OAuth token...");
+
+        if validate_oauth_token(&token) {
+            spinner.stop("Anthropic authentication — configured");
+            return Ok(Some(token));
+        }
+
+        last_token = token;
+
+        if attempt < MAX_ATTEMPTS {
+            spinner.error(format!(
+                "Token validation failed — attempt {attempt}/{MAX_ATTEMPTS}. Try again."
+            ));
+        } else {
+            spinner.error("Token validation failed — claude could not authenticate");
+            init_style::omega_warning(
+                "The token will still be saved to config.toml.\n\
+                 You can re-authenticate later with: claude login or claude setup-token",
+            )?;
+        }
     }
+
+    Ok(Some(last_token))
 }
 
 /// Check if a WhatsApp session already exists.

@@ -110,8 +110,33 @@ pub async fn run() -> anyhow::Result<()> {
     // 7. WhatsApp setup.
     let whatsapp_enabled = init_wizard::run_whatsapp_setup().await?;
 
-    // 8. Google Workspace setup.
-    let google_email = crate::init_google::run_google_setup()?;
+    // 8. Optional tools.
+    let omg_gog_installed = crate::init_google::is_omg_gog_installed();
+    let google_hint = if omg_gog_installed {
+        "Ask OMEGA to manage Gmail, Calendar, Drive, Docs... (installed)"
+    } else {
+        "Ask OMEGA to manage Gmail, Calendar, Drive, Docs..."
+    };
+
+    let selected_tools: Vec<&str> = cliclack::multiselect("Optional tools — select to set up")
+        .item("google", "Google Workspace", google_hint)
+        .required(false)
+        .interact()?;
+
+    let google_email = if selected_tools.contains(&"google") {
+        let ready = if omg_gog_installed {
+            true
+        } else {
+            crate::init_google::install_omg_gog()?
+        };
+        if ready {
+            crate::init_google::run_google_wizard()?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     // 9. Generate config.toml at ~/.omega/config.toml.
     let config_path_expanded = shellexpand("~/.omega/config.toml");

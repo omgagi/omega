@@ -13,7 +13,7 @@ use omega_core::shellexpand;
 // ---------------------------------------------------------------------------
 
 /// Check if `omg-gog` CLI is available on `PATH`.
-fn is_omg_gog_installed() -> bool {
+pub(crate) fn is_omg_gog_installed() -> bool {
     std::process::Command::new("omg-gog")
         .arg("--help")
         .stdout(std::process::Stdio::null())
@@ -30,6 +30,8 @@ fn install_via_script() -> bool {
             "-c",
             "curl -fsSL https://omgagi.ai/tools/omg-gog/install.sh | sh",
         ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -56,6 +58,8 @@ fn install_from_source() -> bool {
     if !std::path::Path::new(&src_dir).exists() {
         let ok = std::process::Command::new("git")
             .args(["clone", "https://github.com/omgagi/omg-gog.git", &build_dir])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
@@ -65,6 +69,8 @@ fn install_from_source() -> bool {
     } else {
         let _ = std::process::Command::new("git")
             .args(["-C", &src_dir, "pull"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status();
     }
 
@@ -72,6 +78,8 @@ fn install_from_source() -> bool {
     let ok = std::process::Command::new("cargo")
         .args(["build", "--release"])
         .current_dir(&src_dir)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
@@ -99,38 +107,22 @@ fn install_from_source() -> bool {
         .unwrap_or(false)
 }
 
-/// Ensure `omg-gog` is installed, offering to install if missing.
+/// Install `omg-gog` non-interactively with suppressed output.
 ///
-/// Returns `true` when the binary is available after this call.
-fn ensure_omg_gog() -> anyhow::Result<bool> {
-    if is_omg_gog_installed() {
-        init_style::omega_success("omg-gog — found")?;
-        return Ok(true);
-    }
-
-    init_style::omega_warning("omg-gog is not installed")?;
-
-    let install: bool = cliclack::confirm("Install omg-gog? (Google Workspace CLI tool)")
-        .initial_value(true)
-        .interact()?;
-
-    if !install {
-        return Ok(false);
-    }
-
-    // Try the quick installer first.
+/// Returns `true` when the binary is available after installation.
+pub(crate) fn install_omg_gog() -> anyhow::Result<bool> {
     let spinner = cliclack::spinner();
-    spinner.start("Installing omg-gog ...");
+    spinner.start("Installing omg-gog...");
 
     if install_via_script() && is_omg_gog_installed() {
         spinner.stop("omg-gog — installed");
         return Ok(true);
     }
 
-    spinner.stop("Installer failed — trying build from source...");
+    spinner.stop("Script install failed — building from source...");
 
     let spinner = cliclack::spinner();
-    spinner.start("Building omg-gog from source (this may take a few minutes) ...");
+    spinner.start("Building omg-gog from source (this may take a few minutes)...");
 
     if install_from_source() && is_omg_gog_installed() {
         spinner.stop("omg-gog — built and installed");
@@ -341,25 +333,11 @@ fn extract_error_message(stderr: &str) -> String {
 // Main wizard entry point
 // ---------------------------------------------------------------------------
 
-/// Run the step-by-step Google Workspace setup wizard.
+/// Run the Google Workspace setup wizard (assumes omg-gog is installed).
 ///
 /// Returns `Some(email)` if Google was successfully connected, `None` if
-/// the user skipped or an error occurred.
-pub(crate) fn run_google_setup() -> anyhow::Result<Option<String>> {
-    // ── 0. Ensure omg-gog is available ──────────────────────────────────
-    if !ensure_omg_gog()? {
-        return Ok(None);
-    }
-
-    let setup: bool =
-        cliclack::confirm("Set up Google Workspace? (Gmail, Calendar, Drive, Docs ...)")
-            .initial_value(false)
-            .interact()?;
-
-    if !setup {
-        return Ok(None);
-    }
-
+/// the user cancelled or an error occurred.
+pub(crate) fn run_google_wizard() -> anyhow::Result<Option<String>> {
     init_style::omega_info(
         "This process gives YOU permission to access YOUR OWN Google data through OMEGA.\n\
          No data is shared with third parties — you control the credentials.",
