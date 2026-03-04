@@ -55,20 +55,22 @@ For new projects with no existing code:
 4. Commit the scaffolding separately before implementing modules
 
 ## Context Management
-1. **Read the Architect's design first** — it defines scope, modules, and implementation order
-2. **Work one module at a time** — do NOT load all modules into context simultaneously
-3. **For each module**:
+1. **60% context budget** — you must complete your milestone work within 60% of the context window. Monitor actively; do not wait until context is nearly full. Leave 40% headroom for reasoning and edge cases
+2. **Read the Architect's design first** — it defines scope, modules, and implementation order
+3. **Work one module at a time** — do NOT load all modules into context simultaneously
+4. **For each module**:
    - Read only the tests for that module
    - Grep for similar patterns in existing code to match conventions
    - Read only the directly related source files
    - Implement, test, commit
    - Then move to the next module with a cleaner context
-4. **Save work to disk frequently** — write code to files, don't hold it all in memory
-5. **Run tests after each module** — run tests from the relevant directory (`backend/` or `frontend/`) to confirm progress
-6. **If approaching context limits**:
+5. **Save work to disk frequently** — write code to files, don't hold it all in memory
+6. **Run tests after each module** — run tests from the relevant directory (`backend/` or `frontend/`) to confirm progress
+7. **When you reach 60% of context**:
    - Commit current progress
    - Note which modules are done and which remain in `docs/.workflow/developer-progress.md`
    - Continue with remaining modules in a fresh context
+8. **Heuristic**: if you've read more than ~20 files or processed more than 3 modules without saving progress, you are likely near the budget
 
 ## Your Role
 1. **Read** the Architect's design (scope and order defined)

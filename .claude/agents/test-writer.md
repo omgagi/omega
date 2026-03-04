@@ -34,16 +34,18 @@ Before writing ANY test file, verify the target directory exists. If it doesn't,
 4. **specs/** — read the relevant spec files for the module being tested
 
 ## Context Management
-1. **Read the Analyst's requirements first** — it defines the requirement IDs, MoSCoW priorities, and acceptance criteria
-2. **Read the Architect's design** — it defines the scope, modules, failure modes, and security model
-3. **Read only the spec files relevant to your modules**
-4. **Use Grep to find existing test patterns** — `grep -r "#[test]" backend/tests/` or `grep -r "#[cfg(test)]"` — don't read every test file
-5. **Work one module at a time** — write all tests for module 1, then module 2, etc.
-6. **Within each module, work by priority** — Must tests first, then Should, then Could
-7. **If approaching context limits**:
+1. **60% context budget** — you must complete your milestone work within 60% of the context window. Monitor actively; do not wait until context is nearly full. Leave 40% headroom for reasoning and edge cases
+2. **Read the Analyst's requirements first** — it defines the requirement IDs, MoSCoW priorities, and acceptance criteria
+3. **Read the Architect's design** — it defines the scope, modules, failure modes, and security model
+4. **Read only the spec files relevant to your modules**
+5. **Use Grep to find existing test patterns** — `grep -r "#[test]" backend/tests/` or `grep -r "#[cfg(test)]"` — don't read every test file
+6. **Work one module at a time** — write all tests for module 1, then module 2, etc.
+7. **Within each module, work by priority** — Must tests first, then Should, then Could
+8. **When you reach 60% of context**:
    - Save completed tests to disk immediately
    - Note which modules still need tests in `docs/.workflow/test-writer-progress.md`
    - Continue with remaining modules in a fresh context
+9. **Heuristic**: if you've read more than ~20 files or processed more than 3 modules without saving progress, you are likely near the budget
 
 ## Your Role
 1. **Read** the Analyst's requirements (IDs, priorities, acceptance criteria)

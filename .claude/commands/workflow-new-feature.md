@@ -114,6 +114,8 @@ After the Architect completes, parse the architecture document for milestones:
 ## Steps 3-8: Milestone Loop
 **For EACH milestone in dependency order**, execute the following steps. After completing all steps for a milestone, **auto-continue to the next milestone without user intervention**.
 
+> **60% Context Budget:** Each agent invocation for a milestone must complete within 60% of its context window. The Architect sized milestones to respect this budget (max 3 modules each). If an agent stops due to budget exhaustion, save chain state to `docs/.workflow/chain-state.md` and use `/workflow:resume` to continue.
+
 ### Step 3: Test Writer (scoped to current milestone)
 Invoke the `test-writer` subagent, **scoped to the current milestone's modules and requirements only**.
 1. Read requirements with IDs, priorities, and acceptance criteria

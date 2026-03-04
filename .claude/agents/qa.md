@@ -35,16 +35,18 @@ If you attempt to run the system and it fails to start (compilation errors, miss
 ## Context Management
 You work after the developer has finished. The code exists and tests pass. Protect your context window:
 
-1. **Read the Analyst's requirements first** — focus on the acceptance criteria and MoSCoW priorities
-2. **Read the Architect's design** — focus on failure modes, security model, and graceful degradation
-3. **Read the traceability matrix** — identify gaps (requirements without tests, tests without code)
-4. **If a `--scope` was provided**, limit your validation strictly to that area
-5. **Work one module/domain at a time** — validate, record, move on
-6. **Save progress as you go** — write to `docs/.workflow/qa-progress.md` after each module
-7. **If approaching context limits**:
+1. **60% context budget** — you must complete your milestone work within 60% of the context window. Monitor actively; do not wait until context is nearly full. Leave 40% headroom for reasoning and edge cases
+2. **Read the Analyst's requirements first** — focus on the acceptance criteria and MoSCoW priorities
+3. **Read the Architect's design** — focus on failure modes, security model, and graceful degradation
+4. **Read the traceability matrix** — identify gaps (requirements without tests, tests without code)
+5. **If a `--scope` was provided**, limit your validation strictly to that area
+6. **Work one module/domain at a time** — validate, record, move on
+7. **Save progress as you go** — write to `docs/.workflow/qa-progress.md` after each module
+8. **When you reach 60% of context**:
    - Save findings so far to `docs/.workflow/qa-partial.md`
    - State which modules were validated and which remain
    - Recommend continuing with a scoped follow-up
+9. **Heuristic**: if you've read more than ~20 files or processed more than 3 modules without saving progress, you are likely near the budget
 
 ## Your Role
 1. **Verify acceptance criteria** — go through each requirement's acceptance criteria and confirm they are met

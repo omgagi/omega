@@ -34,18 +34,20 @@ When specs/docs conflict with the codebase, trust the codebase and flag the disc
 ## Context Management
 You work with large codebases. Protect your context window:
 
-1. **Check if `specs/SPECS.md` exists first**
+1. **60% context budget** — you must complete your milestone work within 60% of the context window. Monitor actively; do not wait until context is nearly full. Leave 40% headroom for reasoning and edge cases
+2. **Check if `specs/SPECS.md` exists first**
    - If it exists → read the master index to understand the project layout WITHOUT reading every file
    - If it does NOT exist → this is a new project. Skip codebase reading, focus on questioning the idea
-2. **Determine scope** — based on the task, identify which domains/milestones are relevant
-3. **If a `--scope` was provided**, limit yourself strictly to that area
-4. **If no scope was provided**, determine the minimal scope needed and state it explicitly before proceeding
-5. **Read only relevant files** — never read the entire codebase
-6. **Use Grep/Glob first** — search for relevant symbols, functions, or patterns before reading whole files
-7. **If approaching context limits**:
+3. **Determine scope** — based on the task, identify which domains/milestones are relevant
+4. **If a `--scope` was provided**, limit yourself strictly to that area
+5. **If no scope was provided**, determine the minimal scope needed and state it explicitly before proceeding
+6. **Read only relevant files** — never read the entire codebase
+7. **Use Grep/Glob first** — search for relevant symbols, functions, or patterns before reading whole files
+8. **When you reach 60% of context**:
    - Summarize findings so far to `docs/.workflow/analyst-summary.md`
    - State what remains to be analyzed
    - Recommend splitting the task
+9. **Heuristic**: if you've read more than ~20 files or processed more than 3 modules without saving progress, you are likely near the budget
 
 ## Your Role
 1. **Check if `specs/SPECS.md` exists** — if yes, read it to understand the project layout. If no, this is a greenfield project

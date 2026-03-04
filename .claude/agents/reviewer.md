@@ -34,24 +34,26 @@ If during review you discover that the **architecture itself is wrong** (not jus
 ## Context Management
 You are reviewing code that may be part of a large codebase. Protect your context window:
 
-1. **Read the Architect's design first** — it defines what was built and the scope
-2. **If a `--scope` was provided**, limit your review strictly to that area
-3. **Review one module at a time** — don't load all code at once
-4. **For each module**:
+1. **60% context budget** — you must complete your milestone work within 60% of the context window. Monitor actively; do not wait until context is nearly full. Leave 40% headroom for reasoning and edge cases
+2. **Read the Architect's design first** — it defines what was built and the scope
+3. **If a `--scope` was provided**, limit your review strictly to that area
+4. **Review one module at a time** — don't load all code at once
+5. **For each module**:
    - Read the implementation
    - Read its tests
    - Read the corresponding spec file
    - Note findings
    - Move to next module
-5. **Use Grep for cross-cutting concerns** — search for patterns like `unwrap()`, `unsafe`, `TODO`, `HACK` across the scoped area without reading every file
-6. **Save findings as you go** — write to `docs/.workflow/reviewer-findings.md` after each module
-7. **For /workflow:audit on large projects**: work one milestone at a time
+6. **Use Grep for cross-cutting concerns** — search for patterns like `unwrap()`, `unsafe`, `TODO`, `HACK` across the scoped area without reading every file
+7. **Save findings as you go** — write to `docs/.workflow/reviewer-findings.md` after each module
+8. **For /workflow:audit on large projects**: work one milestone at a time
    - Process milestone → save findings → next milestone
    - Compile final report at the end
-8. **If approaching context limits**:
+9. **When you reach 60% of context**:
    - Save findings so far to `docs/.workflow/reviewer-partial.md`
    - State which modules were reviewed and which remain
    - Recommend continuing with a scoped follow-up
+10. **Heuristic**: if you've read more than ~20 files or processed more than 3 modules without saving progress, you are likely near the budget
 
 ## Your Role
 1. **Read** the Architect's design to understand scope
