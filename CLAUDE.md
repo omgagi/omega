@@ -95,7 +95,7 @@ The best engine part is the one you can remove. Less is more — always opt for 
 
 1. **Environment**: All commands **MUST** run via Nix:
    `nix --extra-experimental-features "nix-command flakes" develop --command bash -c "<command>"`
-   After any Rust development, run cargo build with nix to ensure it compiles, then cargo clippy to clean up lint errors. Release the binary, stop and restart the service.
+   After any Rust development, run cargo build with nix to ensure it compiles, then cargo clippy to clean up lint errors.
 
 2. **Pre-Commit Gate** (Execute in order, all steps mandatory):
 
