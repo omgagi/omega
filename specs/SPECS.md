@@ -19,7 +19,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [gitignore.md](gitignore.md) — .gitignore rules
 
 ### Milestone 2: Binary (`backend/src/`)
-- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Setup/Pair/Service), root guard, provider/channel bootstrap
+- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Setup/Pair/Service/Uninstall), root guard, provider/channel bootstrap
 - [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 26-file directory module: orchestrator, pipeline, routing, process_markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, keywords_data, builds, builds_loop, builds_parse, builds_agents, builds_topology, builds_i18n, prompt_builder, shared_markers, pipeline_builds, setup, setup_response, google_auth, google_auth_i18n, tests
 - [provider-builder.md](provider-builder.md) — Provider factory (`build_provider()`) — constructs providers from config, dual-model routing for Claude Code
 - [src-markers-rs.md](src-markers-rs.md) — Marker module (`backend/src/markers/`) — 5 source submodules + test directory (40+ functions, ~145 tests)
@@ -98,6 +98,8 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [omega-init-visual-architecture.md](omega-init-visual-architecture.md) — Architecture design for Init Visual Identity: init_style.rs module layout, cyan color palette, gutter-bar visual language, 10 helper functions, integration pattern, visual coexistence with cliclack widgets
 - [google-auth-requirements.md](google-auth-requirements.md) — Google account credential setup via `/google` gateway command: 5-step chat wizard with server-side OAuth token exchange, guided GCP setup with project-specific links, credential message deletion, fact-based state machine, credential isolation from AI provider, stores/google.json, 8-language i18n
 - [google-auth-architecture.md](google-auth-architecture.md) — Architecture design for Google auth: google_auth.rs state machine + google_auth_i18n.rs localized messages + google_auth_oauth.rs (OAuth URL, token exchange, email fetch), message deletion infrastructure (platform_message_id, Channel::delete_message), pipeline integration, credential file format, security model
+- [uninstall-requirements.md](uninstall-requirements.md) — omega uninstall CLI command: two-mode system removal (complete vs keep-config), service stop, data directory cleanup, symlink removal, branded interactive UX
+- [uninstall-architecture.md](uninstall-architecture.md) — Architecture design for uninstall command: uninstall.rs module, mode selection flow, artifact scanning, independent deletion steps with partial-failure tolerance, service.rs visibility changes, main.rs integration, security model
 
 ### Release
 - [release-process.md](../docs/release-process.md) — Version bump, tagging, CI release pipeline, SHA256 checksums

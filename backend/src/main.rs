@@ -13,6 +13,7 @@ mod provider_builder;
 mod selfcheck;
 mod service;
 mod task_confirmation;
+mod uninstall;
 
 use clap::{Parser, Subcommand};
 use omega_channels::telegram::TelegramChannel;
@@ -85,6 +86,8 @@ enum Commands {
     Setup,
     /// Pair WhatsApp by scanning a QR code.
     Pair,
+    /// Completely remove OMEGA from this system.
+    Uninstall,
     /// Manage the system service (install, uninstall, status).
     Service {
         #[command(subcommand)]
@@ -147,6 +150,10 @@ async fn main() -> anyhow::Result<()> {
         Commands::Pair => {
             init_stdout_tracing("error");
             pair::pair_whatsapp().await?;
+        }
+        Commands::Uninstall => {
+            init_stdout_tracing("error");
+            uninstall::run()?;
         }
         Commands::Service { action } => {
             init_stdout_tracing("error");

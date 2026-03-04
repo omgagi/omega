@@ -1,87 +1,101 @@
-# Feature Evaluation: /google Gateway Command
+# Feature Evaluation: `omega uninstall` CLI Command
 
 ## Feature Description
-Add a `/google` gateway command that allows users to configure their Google account credentials directly through the messaging channel (Telegram/WhatsApp), bypassing the AI provider entirely. This ensures confidential OAuth tokens never pass through Claude or any AI backend. Currently, Google setup exists ONLY in `omega init` (the CLI init wizard at `backend/src/init_wizard.rs`). The `/google` command would allow users to provide their email, run the OAuth flow via `gog auth add --manual`, and store the Google account email in config -- all within the chat interface, with credential data staying in the gateway.
+
+Add a top-level `omega uninstall` CLI command that offers two modes:
+1. **Complete removal** -- delete everything related to Omega without leaving a single trace (config files, data directory `~/.omega`, system service, binary, logs, stores, workspace, prompts, skills, projects, etc.)
+2. **Keep configuration** -- remove everything except configuration files so the user can reinstall later without reconfiguring
 
 ## Evaluation Summary
 
 | Dimension | Score (1-5) | Assessment |
 |-----------|-------------|------------|
-| D1: Necessity | 4 | Real gap: running users cannot configure Google without SSH access to re-run `omega init`. Google Workspace skills are blocked without this runtime path. |
-| D2: Impact | 3 | Unblocks Google Workspace skills for chat-only users, but scope is narrow -- single integration onboarding, not a multiplier feature. |
-| D3: Complexity Cost | 4 | Follows established `/setup` command pattern in `backend/src/gateway/setup.rs`. Reuses `gog` CLI. Estimated ~1 new file + minor additions to 2-3 existing files. |
-| D4: Alternatives | 3 | `gog auth add --manual` can be done via SSH or re-running init, but both require server access that chat-only users lack. No simpler in-chat alternative exists. |
-| D5: Alignment | 5 | Direct fit: Omega's mission is personal AI agent infrastructure accessible via chat. Self-configuration from within the messaging channel is a core architectural principle, proven by `/setup` and `/whatsapp`. |
-| D6: Risk | 3 | OAuth flow over chat is security-sensitive (user pastes credentials in message history). Multi-step flow needs timeout/state management. No database migration or cross-cutting changes required. |
-| D7: Timing | 4 | Google Workspace skills already exist. The `gog` CLI is already a dependency. `/setup` pattern is proven and stable. No conflicting in-progress work detected. |
+| D1: Necessity | 4 | Real gap: Omega scatters files across `~/.omega/`, service files, and `/usr/local/bin/omega`. No clean way to undo an installation today. |
+| D2: Impact | 3 | Useful for the install/uninstall lifecycle, but used rarely (once per user per uninstall). Does not affect daily usage. |
+| D3: Complexity Cost | 5 | Isolated addition: one new subcommand variant in `main.rs`, one new module (~100-150 lines). Reuses existing `service::uninstall()` and `cliclack` patterns. No cross-cutting changes. |
+| D4: Alternatives | 4 | Manual removal (`rm -rf ~/.omega && omega service uninstall && rm /usr/local/bin/omega`) works but requires knowing all paths. No external tool handles this. The "keep config" mode has no manual equivalent without careful path selection. |
+| D5: Alignment | 5 | Perfect fit. Omega already has `init`, `setup`, `service install`, and `service uninstall`. An `uninstall` command completes the lifecycle. Aligns with "less is more" -- one command replaces needing to know 5+ paths. |
+| D6: Risk | 4 | Destructive operation, but mitigated by interactive confirmation via `cliclack`. Isolated module, cannot break existing functionality. Only risk: accidentally deleting user data without adequate warning, which is addressed by the two-mode design and confirmation prompts. |
+| D7: Timing | 5 | No prerequisites missing. No conflicts with in-progress work. Project is stable (clean main branch). The service module (`backend/src/service.rs`) already provides the `stop_service()` and `service_file_path()` helpers this feature needs. |
 
-**Feature Viability Score: 3.8 / 5.0**
+**Feature Viability Score: 4.2 / 5.0**
 
 ```
-FVS = (D1 + D2 + D5) x 2 + (D3 + D4 + D6 + D7)
-    = (4 + 3 + 5) x 2 + (4 + 3 + 3 + 4)
-    = 24 + 14
-    = 38 / 10
-    = 3.8
+FVS = (D1:4 + D2:3 + D5:5) x 2 + (D3:5 + D4:4 + D6:4 + D7:5)
+    = (12) x 2 + (18)
+    = 24 + 18
+    = 42 / 10
+    = 4.2
 ```
 
-## Verdict: CONDITIONAL
+## Verdict: GO
 
-The feature has clear value and fits naturally into the existing architecture. The `/setup` command pattern in `backend/src/gateway/setup.rs` provides a proven blueprint for multi-step chat-based configuration. However, three conditions must be addressed before proceeding: (1) the OAuth credential flow over chat channels creates a security surface that needs explicit design decisions, (2) the `gog auth credentials` step (one-time client_secret.json setup) should be separated from the per-account `gog auth add` step, and (3) the config.toml update strategy for the `[google]` section must be defined.
+This feature fills a genuine lifecycle gap in the CLI. Omega creates files in at least 5 distinct locations (`~/.omega/`, service files, symlink binary, logs, stores), and today a user must know all of them to cleanly uninstall. The implementation is small and isolated -- a single new module that reuses existing patterns. The two-mode design (complete vs. keep-config) is well-thought-out and covers the two most common uninstall scenarios.
 
 ## Detailed Analysis
 
 ### What Problem Does This Solve?
-Users running OMEGA as a service (on a VPS or always-on machine) who want to add or change their Google Workspace credentials have no way to do so from within the chat interface. They must SSH into the server and re-run `omega init` or manually execute `gog` commands. This blocks non-technical users from accessing Google Workspace skills (Gmail, Calendar, Drive, Sheets) entirely. The problem is real and current: the `gog` CLI tool is already integrated at `backend/src/init_wizard.rs` lines 248-438, skills reference Google services (e.g., `google-workspace` skill referenced in tests at `backend/src/markers/tests/actions.rs` line 8), and the only missing piece is runtime configuration from chat.
 
-The `gog` CLI supports a `--manual` flag for headless OAuth (prints a URL, user opens in their own browser, pastes back an authorization code). This is the key enabler that makes a chat-based flow viable without requiring a browser on the server.
+Omega's `init` and `service install` commands scatter state across multiple filesystem locations:
+
+- **Data directory**: `~/.omega/` (config.toml, data/memory.db, logs/, workspace/, stores/, prompts/, skills/, projects/)
+- **Service file**: `~/Library/LaunchAgents/com.omega-cortex.omega.plist` (macOS) or `~/.config/systemd/user/omega.service` (Linux)
+- **Binary symlink**: `/usr/local/bin/omega` -> `~/.cargo/target-global/release/omega`
+- **WhatsApp session**: `{data_dir}/whatsapp_session/` (per `backend/crates/omega-core/src/config/channels.rs:26`)
+
+A user who wants to cleanly remove Omega currently must: (1) run `omega service uninstall`, (2) manually delete `~/.omega/`, (3) remove `/usr/local/bin/omega`, and (4) know to check for any other scattered artifacts. This is error-prone and undocumented. The feature solves this by providing a single command that handles complete cleanup.
 
 ### What Already Exists?
-1. **`backend/src/init_wizard.rs` lines 248-438**: Full Google setup flow using `gog` CLI -- `gog auth credentials <path>`, `gog auth add <email> --services gmail,calendar,drive,contacts,docs,sheets`, `gog auth list` for verification. This is the reference implementation.
-2. **`backend/src/gateway/setup.rs`**: The `/setup` command provides the exact architectural pattern -- multi-round session with state machine, pending fact tracking via `store_fact`, TTL-based expiry, context file, audit logging. This is the template.
-3. **`backend/src/commands/mod.rs` lines 30-80**: Command enum and parser with 18 existing commands. Adding `/google` requires one new variant and one match arm.
-4. **`backend/src/gateway/pipeline.rs` lines 146-189**: The `/setup` intercept pattern shows exactly how to intercept a command in the pipeline before it reaches the provider.
-5. **`[google]` section in config.toml**: Generated by `backend/src/init.rs` lines 392-398. Contains only `account = "<email>"`. Not parsed into a Rust config struct -- just a TOML key written directly to the config file.
-6. **No existing `/google` command**: Grep confirms zero references to `/google` in the codebase.
+
+1. **`omega service uninstall`** (`backend/src/service.rs:207-229`): Removes only the service file (LaunchAgent/systemd unit) and stops the running service. Does NOT touch `~/.omega/`, the binary, or any data.
+2. **`service::stop_service()`** (`backend/src/service.rs:263-276`): Helper to stop/unload the service. Can be reused directly.
+3. **`service::service_file_path()`** (`backend/src/service.rs:107-126`): Returns the OS-appropriate service file path. Can be reused directly.
+4. **`cliclack` UX patterns**: Used throughout `init.rs`, `service.rs`, `pair.rs`. The uninstall command should follow the same interactive confirmation style.
+5. **No existing uninstall, cleanup, or self-removal logic exists** anywhere in the codebase (confirmed via grep for `uninstall|cleanup|remove|purge|clean` across `backend/src/`).
 
 ### Complexity Assessment
-**Estimated changes:**
-- **New file**: `backend/src/gateway/google.rs` (~150-250 lines) -- state machine for the multi-step flow (email prompt, OAuth URL delivery, auth code receipt, verification, config update)
-- **Modified**: `backend/src/commands/mod.rs` -- add `Google` variant to `Command` enum, `/google` to parser match arm (~5 lines)
-- **Modified**: `backend/src/gateway/pipeline.rs` -- add `/google` intercept similar to `/setup` intercept at line 146 (~20 lines)
-- **Modified**: `backend/src/gateway/mod.rs` -- add `mod google;` (~1 line)
-- **Modified**: `backend/src/gateway/keywords.rs` or `keywords_data.rs` -- add localized messages for all 8 languages (~40-60 lines)
-- **No database migrations** -- uses existing `store_fact`/`get_fact` for session state (same pattern as `/setup`)
-- **No new Rust dependencies** -- reuses `std::process::Command` for `gog` subprocess, existing patterns throughout
-- **No AI provider involvement** -- purely gateway-level command, no `run_build_phase` or provider call needed
 
-**Maintenance burden**: Low. The feature is self-contained in `google.rs`. The `gog` CLI is the only external dependency; if its interface changes, only this one file needs updating. The session state pattern is identical to `/setup` and would benefit from any improvements made there. No ongoing token cost since no AI provider is invoked.
+**Estimated scope**: 1 new file (`backend/src/uninstall.rs`, ~100-150 lines), plus ~15 lines of changes in `main.rs` (new `Commands::Uninstall` variant and match arm).
 
-**Total estimated scope**: ~250-350 lines of new/changed Rust code (excluding tests), plus ~100-150 lines of tests. Simpler than `/setup` (no AI provider calls, no Brain agent, no multi-agent pipeline).
+**What needs to change**:
+1. `backend/src/main.rs` -- add `Uninstall` variant to `Commands` enum, add `mod uninstall`, add match arm (~15 lines)
+2. `backend/src/uninstall.rs` -- new module implementing the two-mode uninstall logic (~100-150 lines)
+
+**Reusable infrastructure**:
+- `service::stop_service()` and `service::service_file_path()` for service cleanup
+- `cliclack::confirm()`, `cliclack::select()`, `cliclack::spinner()` for interactive UX
+- `omega_core::shellexpand()` for path expansion
+- `config::load()` to read `data_dir` from config before deleting it
+
+**Maintenance burden**: Near-zero. The module is purely additive and isolated. The only maintenance trigger would be if new artifact locations are added to Omega in the future (e.g., a new cache directory), which would require updating the uninstall path list. This is a low-frequency concern.
 
 ### Risk Assessment
-1. **Security -- credential transit**: The `client_secret.json` content and OAuth authorization codes will appear in Telegram/WhatsApp message history. Telegram messages are stored in Telegram's cloud (not end-to-end encrypted by default in non-secret chats). WhatsApp messages are end-to-end encrypted. Mitigation needed: warn users to delete credential messages; consider whether `client_secret.json` ingestion should remain init-only.
-2. **OAuth flow timeout**: The `gog auth add --manual` flow requires the user to open a URL in their browser, sign in to Google, and paste the auth code back. This is inherently slow and needs a generous timeout (5-10 minutes). The `/setup` TTL pattern (30 minutes, `SETUP_TTL_SECS` in `keywords.rs`) provides the template.
-3. **Config.toml modification**: Writing the `[google]` section to config.toml requires either TOML parsing/update or simple string manipulation. The current `generate_config` in `backend/src/init.rs` uses string formatting. For runtime updates, appending is simple but updating an existing `[google]` section requires reading, modifying, and rewriting the file -- slightly more complex.
-4. **gog CLI availability**: The init wizard silently skips Google setup if `gog` is not installed (line 260). The `/google` command should do the same -- check `gog --version` first and return a clear error if missing.
-5. **No existing functionality breaks**: Purely additive -- new command, new module, no changes to existing command behavior or data flow.
+
+- **Data loss risk**: The feature is inherently destructive, but this is by design. Mitigated by: (a) requiring explicit user confirmation via `cliclack::confirm()`, (b) offering the "keep configuration" mode as a safety net, (c) displaying exactly what will be deleted before proceeding.
+- **Binary self-deletion**: The running binary cannot delete itself on some platforms. The standard pattern is to delete the symlink (`/usr/local/bin/omega`) rather than the actual binary in `~/.cargo/target-global/`, which sidesteps this issue. The actual compiled binary under the cargo target directory is not Omega's responsibility to manage.
+- **No existing tests break**: This is purely additive -- no existing code paths change.
+- **Security**: No new attack surface. The command runs as the current user and only deletes files the user owns.
 
 ## Conditions
-- [ ] **Separate credential setup from account setup**: The `gog auth credentials <path>` step (registering the OAuth client_secret.json) is a one-time operation that should remain in `omega init`. The `/google` command should handle only `gog auth add <email> --manual` (per-account authorization). If credentials are not yet registered, `/google` should detect this (via `gog auth credentials --check` or attempting auth and catching the error) and instruct the user to run `omega init` or provide credentials via another mechanism.
-- [ ] **Use `gog auth add --manual` mode exclusively**: The implementation MUST use the `--manual` flag for headless OAuth. Do NOT attempt browser-based OAuth from the server. The flow is: (1) `/google me@gmail.com`, (2) OMEGA runs `gog auth add me@gmail.com --services ... --manual`, captures the printed URL, (3) sends URL to user, (4) user opens URL, authorizes, pastes auth code back, (5) OMEGA feeds code to gog, (6) verifies with `gog auth list`.
-- [ ] **Define config.toml update strategy**: Decide whether `/google` modifies config.toml at runtime (adding/updating `[google]` section) or stores the account email elsewhere (e.g., as a fact in memory.db). Modifying config.toml at runtime is consistent with how init works but requires careful file handling. Storing in memory as a fact is simpler but diverges from the init pattern.
+
+None -- feature approved for pipeline entry.
 
 ## Alternatives Considered
-- **Re-run `omega init`**: Requires SSH access to the server. Not viable for chat-only users or non-technical users. Does not solve the stated problem.
-- **Manual SSH + `gog` commands**: Same SSH access requirement. Additionally requires knowledge of `gog` CLI syntax. Not user-friendly. Viable only for technical users who already have server access.
-- **Document the manual process**: Zero development cost but defeats Omega's mission of being accessible via chat. The same argument would have prevented `/setup` from being built.
-- **Add Google setup to `/setup` Brain session**: The Brain is an AI-powered multi-round agent -- overkill for a deterministic credential flow. The `/google` command should be a direct gateway command like `/whatsapp`, not an AI-mediated session. This is simpler, faster, and avoids sending credentials to the AI provider.
-- **Reduce to `/google` as a simple command that just prints instructions**: Lowest effort but lowest value. Users still need SSH access to execute the commands. Does not solve the core problem.
+
+- **Manual removal via documentation**: Could document the 4-5 paths users need to delete. Pros: zero code. Cons: error-prone, users must find and follow docs, the "keep config" mode is hard to document clearly, and the path list will drift as the project evolves.
+- **Shell script (`scripts/uninstall.sh`)**: Pros: simpler than compiled code. Cons: not discoverable via `omega --help`, not cross-platform (would need separate macOS/Linux versions), cannot reuse Rust helpers like `service_file_path()`, and breaks the project's convention of using `cliclack` for all CLI interactions.
+- **Extend `omega service uninstall` with `--all` flag**: Pros: reuses existing subcommand. Cons: semantically wrong -- "service uninstall" is about the service, not about removing Omega entirely. Conflating these concepts would be confusing.
 
 ## Recommendation
-Proceed with implementation after resolving the three conditions above. The feature is a natural extension of Omega's self-configuration capabilities, follows a proven pattern (`/setup` state machine, `/whatsapp` as a direct gateway command), and fills a real gap for users who manage Google services through the agent. The complexity is moderate and well-bounded.
 
-The recommended implementation approach: a multi-step chat flow where (1) user sends `/google me@gmail.com`, (2) OMEGA checks `gog` availability and existing credentials, (3) runs `gog auth add <email> --services gmail,calendar,drive,contacts,docs,sheets --manual`, (4) sends the OAuth URL to the user, (5) waits for the user to paste the authorization code, (6) feeds the code back to complete auth, (7) verifies with `gog auth list`, (8) updates config.toml with `[google] account = "<email>"`. The `client_secret.json` registration should remain an init-time concern, not handled via chat.
+Proceed with implementation. This is a clean, well-scoped feature that completes Omega's CLI lifecycle (init -> setup -> start -> uninstall). The implementation is small (~150 lines), isolated (one new module + minor `main.rs` changes), and reuses existing infrastructure. No architectural concerns.
+
+The analyst should pay attention to:
+- Ensuring the confirmation UX is unambiguous (users must understand that "complete removal" is irreversible)
+- Deciding whether to delete the binary symlink at `/usr/local/bin/omega` or just the `~/.omega/` directory (the symlink deletion may require elevated permissions depending on how it was created)
+- Handling the edge case where config.toml is not at the default path (the `--config` flag should be respected)
+- Whether the `omg-gog` binary at `/usr/local/bin/omg-gog` (installed by `init_google.rs:93-104`) should also be cleaned up
 
 ## User Decision
-[Awaiting user response: PROCEED / ABORT / MODIFY]
+
+[Awaiting user response]

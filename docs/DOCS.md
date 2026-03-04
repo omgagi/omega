@@ -12,7 +12,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `docs/` direct
 - [architecture.md](architecture.md) — End-to-end message flow (Telegram -> Gateway -> Claude Code -> response), concurrency model, session persistence, multi-agent pipeline architecture (topology-driven sequential chain, TOPOLOGY.toml format, file-mediated handoffs, bounded corrective loops, pre/post validation, self-healing audit), background loops, efficiency summary
 
 ### Binary (`backend/src/`)
-- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Setup/Pair/Service), root guard, provider/channel bootstrap
+- [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Setup/Pair/Service/Uninstall), root guard, provider/channel bootstrap
 - [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 27-file directory module: orchestrator, pipeline, routing, markers, auth, scheduler, heartbeat, summarizer, keywords, builds (orchestrator + loop + parse + agents + topology + i18n), setup + setup_response (Brain orchestrator), google_auth + google_auth_i18n + google_auth_oauth (Google credential setup with OAuth token exchange + message deletion)
 - [src-commands-rs.md](src-commands-rs.md) — Built-in bot commands (status, memory, history, facts, forget, tasks, cancel, skills, google, purge, help)
 - [src-selfcheck-rs.md](src-selfcheck-rs.md) — Startup health checks

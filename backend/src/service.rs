@@ -104,7 +104,7 @@ WantedBy=default.target
 // ---------------------------------------------------------------------------
 
 /// Return the path where the service file should live.
-fn service_file_path() -> anyhow::Result<PathBuf> {
+pub(crate) fn service_file_path() -> anyhow::Result<PathBuf> {
     let home_str = std::env::var("HOME")
         .map_err(|_| anyhow::anyhow!("cannot determine home directory (HOME not set)"))?;
     let home = PathBuf::from(home_str);
@@ -260,7 +260,7 @@ pub fn status() -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Stop / unload the service.
-fn stop_service(svc_path: &Path) {
+pub(crate) fn stop_service(svc_path: &Path) {
     if cfg!(target_os = "macos") {
         let _ = std::process::Command::new("launchctl")
             .args(["unload", &svc_path.display().to_string()])
@@ -297,7 +297,7 @@ fn activate_service(svc_path: &Path) -> bool {
 }
 
 /// Check whether the service is currently running.
-fn is_running() -> bool {
+pub(crate) fn is_running() -> bool {
     if cfg!(target_os = "macos") {
         std::process::Command::new("launchctl")
             .args(["list"])
