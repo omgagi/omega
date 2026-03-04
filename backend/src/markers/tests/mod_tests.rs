@@ -92,6 +92,7 @@ fn test_strip_all_remaining_markers_all_types_at_once() {
                 REWARD: +1|trading|Good trade\n\
                 LESSON: trading|Set stop-loss\n\
                 BUILD_PROPOSAL: Dashboard for BTC\n\
+                GOOGLE_SETUP\n\
                 End.";
     let result = strip_all_remaining_markers(text);
     assert!(result.contains("Response."));
@@ -132,6 +133,10 @@ fn test_strip_all_remaining_markers_all_types_at_once() {
     assert!(
         !result.contains("BUILD_PROPOSAL:"),
         "BUILD_PROPOSAL not stripped"
+    );
+    assert!(
+        !result.contains("GOOGLE_SETUP"),
+        "GOOGLE_SETUP not stripped"
     );
 }
 

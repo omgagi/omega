@@ -103,6 +103,7 @@ pub fn strip_all_remaining_markers(text: &str) -> String {
         "FORGET_CONVERSATION",
         "PURGE_FACTS",
         "WHATSAPP_QR",
+        "GOOGLE_SETUP",
         "ACTION_OUTCOME:",
         "REWARD:",
         "LESSON:",

@@ -15,6 +15,7 @@ The marker system is a protocol between AI responses and the gateway. The AI emb
 | 5 | PROJECT_ACTIVATE marker | Marker | `backend/src/gateway/process_markers.rs:147` | Activates a project: removes .disabled marker, stores active_project fact, emits MarkerResult::ProjectActivated | Store::store_fact |
 | 6 | BUILD_PROPOSAL marker | Marker | `backend/src/gateway/process_markers.rs:172` | Stores a build proposal as pending_build_request fact for user confirmation | Store::store_fact |
 | 7 | WHATSAPP_QR marker | Marker | `backend/src/gateway/process_markers.rs:190` | Triggers WhatsApp QR pairing flow | handle_whatsapp_qr |
+| 7b | GOOGLE_SETUP marker | Marker | `backend/src/gateway/process_markers.rs:196` | Triggers Google OAuth setup wizard | start_google_session |
 | 8 | LANG_SWITCH marker | Marker | `backend/src/gateway/process_markers.rs:196` | Updates user's preferred_language fact | Store::store_fact |
 | 9 | PERSONALITY marker | Marker | `backend/src/gateway/process_markers.rs:210` | Sets or resets user personality preference | Store::store_fact / delete_fact |
 | 10 | FORGET_CONVERSATION marker | Marker | `backend/src/gateway/process_markers.rs:234` | Closes current conversation and clears CLI session | Store::close_current_conversation, clear_session |

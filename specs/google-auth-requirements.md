@@ -61,6 +61,10 @@ Add a `/google` gateway command that guides users through a 5-step chat-based wi
 | REQ-GAUTH-023 | `delete_message()` on Channel trait | Must | Default no-op; Telegram implements via Bot API deleteMessage |
 | REQ-GAUTH-024 | `/google` registered in Telegram bot commands | Should | Appears in autocomplete menu |
 
+| REQ-GAUTH-025 | `GOOGLE_SETUP` marker triggers setup wizard autonomously | Must | AI emits `GOOGLE_SETUP` on its own line; gateway calls `start_google_session()` |
+| REQ-GAUTH-026 | `GOOGLE_SETUP` in safety net `strip_all_remaining_markers()` | Must | Marker stripped even if primary processing misses it |
+| REQ-GAUTH-027 | Google keywords in `META_KW` for conditional prompt injection | Must | `google`, `gmail`, `calendar`, `drive` trigger meta section |
+
 ## Impact Analysis
 
 ### Existing Code Affected

@@ -291,6 +291,30 @@ fn test_strip_whatsapp_qr_marker() {
     assert_eq!(strip_whatsapp_qr_marker(text), "Setting up.\nAll done.");
 }
 
+// --- GOOGLE_SETUP ---
+
+#[test]
+fn test_has_google_setup_marker() {
+    let text = "Let me set that up.\nGOOGLE_SETUP\nDone.";
+    assert!(has_google_setup_marker(text));
+}
+
+#[test]
+fn test_has_google_setup_marker_false() {
+    assert!(!has_google_setup_marker("No marker here."));
+}
+
+#[test]
+fn test_has_google_setup_marker_partial_no_match() {
+    assert!(!has_google_setup_marker("GOOGLE_SETUP_EXTRA"));
+}
+
+#[test]
+fn test_strip_google_setup_marker() {
+    let text = "Setting up.\nGOOGLE_SETUP\nAll done.";
+    assert_eq!(strip_google_setup_marker(text), "Setting up.\nAll done.");
+}
+
 // --- BUILD_PROPOSAL ---
 
 #[test]

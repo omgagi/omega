@@ -1,5 +1,5 @@
 //! Simple protocol markers: LANG_SWITCH, PERSONALITY, FORGET_CONVERSATION,
-//! CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, PROJECT, WHATSAPP_QR.
+//! CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, PROJECT, WHATSAPP_QR, GOOGLE_SETUP.
 
 use super::{extract_inline_marker_value, strip_inline_marker};
 
@@ -222,6 +222,25 @@ pub fn has_whatsapp_qr_marker(text: &str) -> bool {
 pub fn strip_whatsapp_qr_marker(text: &str) -> String {
     text.lines()
         .filter(|line| line.trim() != "WHATSAPP_QR")
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+// ---------------------------------------------------------------------------
+// GOOGLE_SETUP
+// ---------------------------------------------------------------------------
+
+/// Check if response text contains a `GOOGLE_SETUP` marker line.
+pub fn has_google_setup_marker(text: &str) -> bool {
+    text.lines().any(|line| line.trim() == "GOOGLE_SETUP")
+}
+
+/// Strip all `GOOGLE_SETUP` lines from response text.
+pub fn strip_google_setup_marker(text: &str) -> String {
+    text.lines()
+        .filter(|line| line.trim() != "GOOGLE_SETUP")
         .collect::<Vec<_>>()
         .join("\n")
         .trim()

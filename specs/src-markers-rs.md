@@ -7,7 +7,7 @@ Centralized marker extraction, parsing, and stripping for the gateway protocol. 
 |------|---------|
 | `mod.rs` | Generic helpers (`extract_inline_marker_value`, `strip_all_remaining_markers`) |
 | `schedule.rs` | SCHEDULE and SCHEDULE_ACTION markers |
-| `protocol.rs` | Simple markers (LANG_SWITCH, PERSONALITY, FORGET, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, WHATSAPP_QR, PROJECT) |
+| `protocol.rs` | Simple markers (LANG_SWITCH, PERSONALITY, FORGET, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, WHATSAPP_QR, GOOGLE_SETUP, PROJECT) |
 | `heartbeat.rs` | Heartbeat markers, file ops, section parsing/suppression, project dedup |
 | `actions.rs` | BUG_REPORT, SKILL_IMPROVE, ACTION_OUTCOME, REWARD, LESSON |
 | `helpers.rs` | Status messages, workspace images, inbox, classification |
@@ -32,6 +32,7 @@ Each marker type has extract/parse/strip/has functions:
 - **PURGE_FACTS**: `has_purge_marker`, `strip_purge_marker`
 - **PROJECT_ACTIVATE/DEACTIVATE**: `extract_project_activate`, `has_project_deactivate`, `strip_project_markers`
 - **WHATSAPP_QR**: `has_whatsapp_qr_marker`, `strip_whatsapp_qr_marker`
+- **GOOGLE_SETUP**: `has_google_setup_marker`, `strip_google_setup_marker`
 - **HEARTBEAT_ADD/REMOVE/INTERVAL**: `extract_heartbeat_markers`, `strip_heartbeat_markers`, `apply_heartbeat_changes(actions, project)`, `read_heartbeat_file()`, `read_project_heartbeat_file(project_name)`
 - **HEARTBEAT_SUPPRESS_SECTION/UNSUPPRESS_SECTION**: `extract_suppress_section_markers`, `strip_suppress_section_markers`, `apply_suppress_actions(actions, project)`, `add_suppression(section, project)`, `remove_suppression(section, project)`, `read_suppress_file(project)`, `filter_suppressed_sections(content, project)`, `parse_heartbeat_sections(content)`, `strip_project_sections(content, project_names)` (dedup global vs project heartbeats)
 - **SKILL_IMPROVE**: `extract_skill_improve`, `parse_skill_improve_line`, `strip_skill_improve`, `apply_skill_improve`
@@ -78,7 +79,7 @@ Each marker type has extract/parse/strip/has functions:
 | Submodule | Coverage |
 |-----------|----------|
 | `schedule.rs` | SCHEDULE + SCHEDULE_ACTION markers |
-| `protocol.rs` | LANG_SWITCH, PROJECT, PERSONALITY, FORGET, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, WHATSAPP_QR |
+| `protocol.rs` | LANG_SWITCH, PROJECT, PERSONALITY, FORGET, CANCEL_TASK, UPDATE_TASK, PURGE_FACTS, WHATSAPP_QR, GOOGLE_SETUP |
 | `heartbeat.rs` | Heartbeat markers, file ops, section suppression, strip_project_sections dedup |
 | `helpers.rs` | Status messages, workspace images, inbox lifecycle, classification parsing |
 | `actions.rs` | SKILL_IMPROVE, BUG_REPORT, ACTION_OUTCOME, reward/lesson extraction |

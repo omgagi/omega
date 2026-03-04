@@ -12,7 +12,7 @@ impl Gateway {
     /// Extract and process all markers from a provider response text.
     ///
     /// Handles: SCHEDULE, SCHEDULE_ACTION, PROJECT_ACTIVATE/DEACTIVATE,
-    /// BUILD_PROPOSAL, WHATSAPP_QR, LANG_SWITCH, HEARTBEAT_ADD/REMOVE, SKILL_IMPROVE, BUG_REPORT.
+    /// BUILD_PROPOSAL, WHATSAPP_QR, GOOGLE_SETUP, LANG_SWITCH, HEARTBEAT_ADD/REMOVE, SKILL_IMPROVE, BUG_REPORT.
     /// Strips processed markers from the text.
     pub(super) async fn process_markers(
         &self,
@@ -190,6 +190,12 @@ impl Gateway {
         if has_whatsapp_qr_marker(text) {
             *text = strip_whatsapp_qr_marker(text);
             self.handle_whatsapp_qr(incoming).await;
+        }
+
+        // GOOGLE_SETUP
+        if has_google_setup_marker(text) {
+            *text = strip_google_setup_marker(text);
+            self.start_google_session(incoming).await;
         }
 
         // LANG_SWITCH

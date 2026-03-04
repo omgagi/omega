@@ -10,7 +10,7 @@ The markers module handles extraction, parsing, and stripping of protocol marker
 |------|---------|
 | `mod.rs` | Generic helpers: `extract_inline_marker_value()`, `strip_inline_marker()`, `strip_all_remaining_markers()` |
 | `schedule.rs` | `SCHEDULE:` and `SCHEDULE_ACTION:` markers -- parsing, extraction, stripping |
-| `protocol.rs` | Simple markers: `LANG_SWITCH:`, `PERSONALITY:`, `FORGET:`, `CANCEL_TASK:`, `UPDATE_TASK:`, `PURGE_FACTS:`, `WHATSAPP_QR:`, `PROJECT_ACTIVATE:`, `PROJECT_DEACTIVATE:` |
+| `protocol.rs` | Simple markers: `LANG_SWITCH:`, `PERSONALITY:`, `FORGET:`, `CANCEL_TASK:`, `UPDATE_TASK:`, `PURGE_FACTS:`, `WHATSAPP_QR`, `GOOGLE_SETUP`, `PROJECT_ACTIVATE:`, `PROJECT_DEACTIVATE:` |
 | `heartbeat.rs` | Heartbeat markers: `HEARTBEAT_OK`, `HEARTBEAT_INTERVAL:`, `HEARTBEAT_ADD:`, `HEARTBEAT_REMOVE:`, plus heartbeat file operations and section parsing/suppression |
 | `actions.rs` | Action markers: `BUG_REPORT:`, `SKILL_IMPROVE:`, `ACTION_OUTCOME:`, `REWARD:`, `LESSON:` |
 | `helpers.rs` | Status messages, workspace images, inbox classification |
@@ -33,7 +33,8 @@ The markers module handles extraction, parsing, and stripping of protocol marker
 | `CANCEL_TASK:` | `id_prefix` | Cancel a scheduled task by ID prefix |
 | `UPDATE_TASK:` | `id_prefix \| field \| value` | Update a scheduled task |
 | `PURGE_FACTS:` | (no value) | Clear all facts for user |
-| `WHATSAPP_QR:` | (no value) | Trigger WhatsApp QR pairing |
+| `WHATSAPP_QR` | (no value) | Trigger WhatsApp QR pairing |
+| `GOOGLE_SETUP` | (no value) | Trigger Google OAuth setup wizard |
 | `PROJECT_ACTIVATE:` | `project_name` | Activate a project context |
 | `PROJECT_DEACTIVATE:` | (no value) | Deactivate current project |
 
