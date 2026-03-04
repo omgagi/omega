@@ -287,7 +287,9 @@ impl Gateway {
                     .store_fact(&incoming.sender_id, "pending_google", &new_value)
                     .await;
                 let msg = google_step_auth_code_message(&user_lang, &auth_url);
-                self.send_text(incoming, &msg).await;
+                // Use plain text to prevent Telegram Markdown from stripping
+                // underscores in OAuth URL parameters (client_id, response_type, etc.).
+                self.send_text_plain(incoming, &msg).await;
             }
             "auth_code" => {
                 // Delete the auth code message for security.

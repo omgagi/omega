@@ -250,6 +250,7 @@ pub async fn send_heartbeat_result(
             text,
             metadata: MessageMetadata::default(),
             reply_target: Some(config.reply_target.clone()),
+            ..Default::default()
         };
         if let Err(e) = ch.send(msg).await {
             error!("heartbeat: failed to send alert: {e}");

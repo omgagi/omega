@@ -249,6 +249,7 @@ pub(super) async fn execute_action_task(
                                     ),
                                     metadata: MessageMetadata::default(),
                                     reply_target: Some(reply_target.to_string()),
+                                    ..Default::default()
                                 };
                                 let _ = ch.send(msg).await;
                             }
@@ -262,6 +263,7 @@ pub(super) async fn execute_action_task(
                                     ),
                                     metadata: MessageMetadata::default(),
                                     reply_target: Some(reply_target.to_string()),
+                                    ..Default::default()
                                 };
                                 let _ = ch.send(msg).await;
                             }
@@ -280,6 +282,7 @@ pub(super) async fn execute_action_task(
                         text: cleaned.to_string(),
                         metadata: MessageMetadata::default(),
                         reply_target: Some(reply_target.to_string()),
+                        ..Default::default()
                     };
                     if let Err(e) = ch.send(msg).await {
                         error!("action task {id}: failed to send response: {e}");
@@ -323,6 +326,7 @@ pub(super) async fn execute_action_task(
                             text: msg_text,
                             metadata: MessageMetadata::default(),
                             reply_target: Some(reply_target.to_string()),
+                            ..Default::default()
                         };
                         let _ = ch.send(msg).await;
                     }

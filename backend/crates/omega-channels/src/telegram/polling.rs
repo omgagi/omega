@@ -273,7 +273,11 @@ impl Channel for TelegramChannel {
             OmegaError::Channel(format!("invalid telegram chat_id '{chat_id_str}': {e}"))
         })?;
 
-        self.send_text(chat_id, &message.text).await
+        if message.plain_text {
+            self.send_text_plain(chat_id, &message.text).await
+        } else {
+            self.send_text(chat_id, &message.text).await
+        }
     }
 
     async fn stop(&self) -> Result<(), OmegaError> {

@@ -100,6 +100,7 @@ impl Gateway {
                             text: format!("Reminder: {}", task.description),
                             metadata: MessageMetadata::default(),
                             reply_target: Some(task.reply_target.clone()),
+                            ..Default::default()
                         };
 
                         if let Some(ch) = channels.get(&task.channel) {

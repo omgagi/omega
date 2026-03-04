@@ -54,6 +54,7 @@ impl Gateway {
                     text: nudge_msg.to_string(),
                     metadata: MessageMetadata::default(),
                     reply_target: Some(target.clone()),
+                    ..Default::default()
                 };
                 let _ = ch.send(msg).await;
             }
@@ -64,6 +65,7 @@ impl Gateway {
                         text: still_msg.to_string(),
                         metadata: MessageMetadata::default(),
                         reply_target: Some(target.clone()),
+                        ..Default::default()
                     };
                     let _ = ch.send(msg).await;
                 }

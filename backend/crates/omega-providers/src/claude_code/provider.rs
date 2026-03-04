@@ -120,6 +120,7 @@ impl Provider for ClaudeCodeProvider {
                 session_id: returned_session_id,
             },
             reply_target: None,
+            ..Default::default()
         })
     }
 

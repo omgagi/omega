@@ -42,6 +42,10 @@ pub struct OutgoingMessage {
     /// Platform-specific target for routing (e.g. Telegram chat_id).
     #[serde(default)]
     pub reply_target: Option<String>,
+    /// Send as plain text (no Markdown parsing). Useful for messages
+    /// containing URLs with underscores that Telegram's Markdown would mangle.
+    #[serde(default)]
+    pub plain_text: bool,
 }
 
 /// Metadata about how a message was generated.
@@ -125,6 +129,7 @@ mod tests {
                 session_id: None,
             },
             reply_target: Some("chat_123".to_string()),
+            ..Default::default()
         };
         assert_eq!(msg.text, "response");
         assert_eq!(msg.metadata.provider_used, "claude-code");

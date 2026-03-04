@@ -2034,6 +2034,7 @@ async fn test_search_messages_with_fts5_operators() {
             session_id: None,
         },
         reply_target: None,
+        ..Default::default()
     };
     store
         .store_exchange(&incoming, &response, "default")

@@ -416,6 +416,7 @@ async fn webhook(
                 text: request.message.clone(),
                 metadata: MessageMetadata::default(),
                 reply_target: Some(resolved_target.clone()),
+                ..Default::default()
             };
 
             channel.send(msg).await.map_err(|e| {

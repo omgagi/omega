@@ -61,6 +61,40 @@ impl TelegramChannel {
         Ok(())
     }
 
+    /// Send a plain-text message (no Markdown parsing).
+    ///
+    /// Use this for messages containing URLs with underscores, which
+    /// Telegram's Markdown parser would strip (treating them as italic markers).
+    pub(crate) async fn send_text_plain(&self, chat_id: i64, text: &str) -> Result<(), OmegaError> {
+        let chunks = split_message(text, 4096);
+
+        for chunk in chunks {
+            let url = format!("{}/sendMessage", self.base_url);
+            let body = serde_json::json!({
+                "chat_id": chat_id,
+                "text": chunk,
+            });
+
+            let resp = self
+                .client
+                .post(&url)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| OmegaError::Channel(format!("telegram send failed: {e}")))?;
+
+            let status = resp.status();
+            if !status.is_success() {
+                let error_text = resp.text().await.unwrap_or_default();
+                return Err(OmegaError::Channel(format!(
+                    "telegram send (plain) failed ({status}): {error_text}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Send a photo (PNG bytes) with a caption to a chat.
     pub(crate) async fn send_photo_bytes(
         &self,

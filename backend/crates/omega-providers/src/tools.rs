@@ -521,6 +521,7 @@ pub(crate) fn build_response(
             session_id: None,
         },
         reply_target: None,
+        ..Default::default()
     }
 }
 

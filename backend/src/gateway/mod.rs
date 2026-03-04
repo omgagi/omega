@@ -472,6 +472,26 @@ impl Gateway {
             text: text.to_string(),
             metadata: MessageMetadata::default(),
             reply_target: incoming.reply_target.clone(),
+            ..Default::default()
+        };
+
+        if let Some(channel) = self.channels.get(&incoming.channel) {
+            if let Err(e) = channel.send(msg).await {
+                error!("failed to send message: {e}");
+            }
+        }
+    }
+
+    /// Send a message without Markdown formatting.
+    ///
+    /// Used for messages containing URLs with underscores (e.g. OAuth URLs)
+    /// that Telegram's Markdown parser would mangle.
+    async fn send_text_plain(&self, incoming: &IncomingMessage, text: &str) {
+        let msg = OutgoingMessage {
+            text: text.to_string(),
+            metadata: MessageMetadata::default(),
+            reply_target: incoming.reply_target.clone(),
+            plain_text: true,
         };
 
         if let Some(channel) = self.channels.get(&incoming.channel) {
