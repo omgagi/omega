@@ -354,8 +354,12 @@ impl Gateway {
                     "buffered message from {} (active call in progress)",
                     sender_key
                 );
-                self.send_text(&incoming, "Got it, I'll get to this next.")
-                    .await;
+                // Skip acknowledgment for WhatsApp self-chat: the ack echoes back
+                // as a new incoming message, creating an infinite loop.
+                if incoming.channel != "whatsapp" {
+                    self.send_text(&incoming, "Got it, I'll get to this next.")
+                        .await;
+                }
                 return;
             }
             // Mark sender as active (empty buffer).
