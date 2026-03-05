@@ -92,6 +92,31 @@ async fn write_google_credentials(
 }
 
 /// Clean up all temporary google auth facts for a sender.
+/// Try to read OAuth client credentials from `omg-gog`'s config directory.
+/// Returns `(client_id, client_secret)` if found.
+fn read_omg_gog_credentials() -> Option<(String, String)> {
+    // omg-gog stores credentials at <config_dir>/omega-google/credentials.json
+    // macOS: ~/Library/Application Support/omega-google/
+    // Linux: ~/.config/omega-google/
+    let candidates = [
+        shellexpand("~/Library/Application Support/omega-google/credentials.json"),
+        shellexpand("~/.config/omega-google/credentials.json"),
+    ];
+
+    for path in &candidates {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                let cid = val.get("client_id").and_then(|v| v.as_str());
+                let csec = val.get("client_secret").and_then(|v| v.as_str());
+                if let (Some(id), Some(secret)) = (cid, csec) {
+                    return Some((id.to_string(), secret.to_string()));
+                }
+            }
+        }
+    }
+    None
+}
+
 async fn cleanup_google_session(memory: &Store, sender_id: &str) {
     let facts = [
         "pending_google",
@@ -150,6 +175,27 @@ impl Gateway {
         }
 
         self.audit_google(incoming, "started").await;
+
+        // If omg-gog credentials exist, skip manual entry and jump to auth_code.
+        if let Some((cid, csec)) = read_omg_gog_credentials() {
+            let _ = self
+                .memory
+                .store_fact(&incoming.sender_id, "_google_client_id", &cid)
+                .await;
+            let _ = self
+                .memory
+                .store_fact(&incoming.sender_id, "_google_client_secret", &csec)
+                .await;
+            let auth_url = google_auth_oauth::build_authorization_url(&cid);
+            let fact_value = format!("{now}|auth_code");
+            let _ = self
+                .memory
+                .store_fact(&incoming.sender_id, "pending_google", &fact_value)
+                .await;
+            let msg = google_step_auth_code_message(&user_lang, &auth_url);
+            self.send_text_plain(incoming, &msg).await;
+            return;
+        }
 
         // Check if google.json already exists (overwrite warning).
         let stores_path = PathBuf::from(shellexpand(&self.data_dir))
