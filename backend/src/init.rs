@@ -132,13 +132,20 @@ pub async fn run() -> anyhow::Result<()> {
 
     let hint = console::Style::new()
         .bold()
-        .apply_to("Space to select, Enter to confirm, Enter to skip");
+        .apply_to("Space to select, Enter to confirm");
     init_style::omega_info(&hint.to_string())?;
 
     let selected_tools: Vec<&str> = cliclack::multiselect("Optional tools — select to set up")
+        .item("skip", "Skip", "Continue without setting up optional tools")
         .item("google", "Google Workspace", google_hint)
-        .required(false)
+        .required(true)
         .interact()?;
+
+    let selected_tools: Vec<&str> = if selected_tools.contains(&"skip") {
+        vec![]
+    } else {
+        selected_tools
+    };
 
     let google_email = if selected_tools.contains(&"google") {
         let ready = if omg_gog_installed {
