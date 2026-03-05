@@ -280,10 +280,7 @@ pub async fn run_setup() -> anyhow::Result<()> {
             ))
             .exists()
         } else {
-            Path::new(&shellexpand(
-                "~/.config/systemd/user/omega.service",
-            ))
-            .exists()
+            Path::new(&shellexpand("~/.config/systemd/user/omega.service")).exists()
         };
 
         let hint = console::Style::new()
