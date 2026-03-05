@@ -373,8 +373,12 @@ impl Gateway {
                         warn!("token exchange failed: {e}");
                         cleanup_google_session(&self.memory, &incoming.sender_id).await;
                         self.audit_google(incoming, "error").await;
-                        self.send_text(incoming, google_token_exchange_error_message(&user_lang))
-                            .await;
+                        // Show the actual Google error so the user can diagnose.
+                        let detail = format!(
+                            "{}\n\nDetail: {e}",
+                            google_token_exchange_error_message(&user_lang)
+                        );
+                        self.send_text(incoming, &detail).await;
                     }
                 }
             }
