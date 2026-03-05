@@ -248,37 +248,12 @@ pub async fn run_setup() -> anyhow::Result<()> {
                 "Install or reinstall the service",
             )
             .item("exit", "Exit", "Return to terminal")
-            .required(false)
             .interact()?;
 
-        // Exit if "exit" selected or nothing selected and user picks "done".
         if selected.contains(&"exit") {
             init_style::omega_outro("Done")?;
             return Ok(());
         }
-
-        let selected: Vec<&str> = if selected.is_empty() {
-            let choice: &str = cliclack::select("Pick one component to reconfigure")
-                .item("claude", "Claude Auth", "OAuth token for Claude Code")
-                .item("telegram", "Telegram", "Bot token and allowed users")
-                .item("whisper", "Voice Transcription", "OpenAI Whisper API key")
-                .item("whatsapp", "WhatsApp", "Pair via QR code")
-                .item("google", "Google Workspace", "Gmail, Calendar, Drive...")
-                .item(
-                    "service",
-                    "System Service",
-                    "Install or reinstall the service",
-                )
-                .item("done", "Exit", "Return to terminal")
-                .interact()?;
-            if choice == "done" {
-                init_style::omega_outro("Done")?;
-                return Ok(());
-            }
-            vec![choice]
-        } else {
-            selected
-        };
 
         let mut updates: Vec<(&str, &str, String)> = Vec::new();
         let mut changed: Vec<&str> = Vec::new();
