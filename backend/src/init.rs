@@ -130,18 +130,14 @@ pub async fn run() -> anyhow::Result<()> {
         "Ask OMEGA to manage Gmail, Calendar, Drive, Docs..."
     };
 
-    init_style::omega_note("Optional tools", "Set up integrations for OMEGA")?;
+    let hint = console::Style::new()
+        .bold()
+        .apply_to("Space to select, Enter to confirm");
+    init_style::omega_info(&hint.to_string())?;
 
-    let tool_choice: &str = cliclack::select("Optional tools")
+    let selected_tools: Vec<&str> = cliclack::multiselect("Optional tools — select to set up")
         .item("google", "Google Workspace", google_hint)
-        .item("skip", "Skip", "Continue without setting up tools")
         .interact()?;
-
-    let selected_tools: Vec<&str> = if tool_choice == "skip" {
-        Vec::new()
-    } else {
-        vec![tool_choice]
-    };
 
     let google_email = if selected_tools.contains(&"google") {
         let ready = if omg_gog_installed {
