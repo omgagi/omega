@@ -184,11 +184,6 @@ impl Gateway {
                 .await;
         }
 
-        // Stop typing indicator.
-        if let Some(h) = typing_handle {
-            h.abort();
-        }
-
         // --- PROCESS MARKERS ---
         let mut response = response;
         let marker_results = self
@@ -227,6 +222,12 @@ impl Gateway {
         );
 
         // --- SEND RESPONSE ---
+        // Stop typing indicator right before sending, so Telegram's sendMessage
+        // clears any residual typing state. Keeping typing active through
+        // marker processing / storage / audit is also better UX.
+        if let Some(h) = typing_handle {
+            h.abort();
+        }
         if let Some(channel) = self.channels.get(&incoming.channel) {
             if let Err(e) = channel.send(response).await {
                 error!("failed to send response via {}: {e}", incoming.channel);
