@@ -10,7 +10,7 @@
 - **Core types** (`omega-core/src/message.rs`) -- `platform_message_id` field on `IncomingMessage`
 - **Core traits** (`omega-core/src/traits.rs`) -- `delete_message()` default method on `Channel`
 - **Telegram channel** (`omega-channels/src/telegram/`) -- `delete_message` impl, `platform_message_id` set in polling, `/google` in bot commands
-- **NEW module** (`backend/src/gateway/google_auth.rs`) -- 5-step state machine with OAuth token exchange
+- **NEW module** (`backend/src/gateway/google_auth.rs`) -- 4-step state machine with OAuth token exchange
 - **NEW module** (`backend/src/gateway/google_auth_i18n.rs`) -- localized messages for 8 languages
 - **NEW module** (`backend/src/gateway/google_auth_oauth.rs`) -- OAuth URL building, token exchange, email fetch
 
@@ -19,7 +19,7 @@
 
 ## Summary (plain language)
 
-Add a `/google` gateway command that guides users through a 5-step chat-based wizard to configure their Google account credentials. The wizard collects a GCP Project ID, shows a comprehensive setup guide with project-specific links, collects Client ID and Client Secret, then handles the OAuth flow server-side: builds an authorization URL, exchanges the auth code for tokens, and auto-detects the user's email. Credential messages (client_secret, auth_code) are deleted from chat for security. The entire flow stays in the gateway layer -- credentials never reach the AI provider.
+Add a `/google` gateway command that guides users through a 4-step chat-based wizard to configure their Google account credentials. The wizard collects a GCP Project ID, shows a comprehensive setup guide with project-specific links, collects credentials via pasted JSON file content, then handles the OAuth flow server-side: builds an authorization URL, exchanges the auth code for tokens, and auto-detects the user's email. Credential messages (JSON credentials, auth_code) are deleted from chat for security. The entire flow stays in the gateway layer -- credentials never reach the AI provider.
 
 ## User Stories
 

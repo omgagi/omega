@@ -30,16 +30,12 @@ User sends Project ID
 google_auth::handle_google_response()
     |-- Store _google_project_id
     |-- Send setup guide with project-specific GCP links
-    |-- Ask for Client ID
+    |-- Ask user to paste downloaded JSON credentials file
     |
     v
-User sends Client ID
-    |-- Store _google_client_id
-    |-- Ask for Client Secret
-    |
-    v
-User sends Client Secret (message deleted for security)
-    |-- Store _google_client_secret
+User pastes JSON credentials (message deleted for security)
+    |-- Extract client_id + client_secret from JSON
+    |-- Store _google_client_id + _google_client_secret
     |-- Build OAuth URL with client_id
     |-- Send OAuth URL, ask for auth code
     |
@@ -110,7 +106,7 @@ pub(super) fn gcp_console_url(project: &str, path: &str) -> String;
 ```rust
 pub(super) fn google_step_project_id_message(lang: &str, existing: bool) -> String;
 pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> String;
-pub(super) fn google_step_client_secret_message(lang: &str) -> &'static str;
+pub(super) fn google_invalid_json_message(lang: &str) -> &'static str;
 pub(super) fn google_step_auth_code_message(lang: &str, auth_url: &str) -> String;
 pub(super) fn google_step_complete_message(lang: &str, email: &str) -> String;
 pub(super) fn google_token_exchange_error_message(lang: &str) -> &'static str;
@@ -136,18 +132,18 @@ pub(super) fn google_invalid_email_message(lang: &str) -> &'static str;
 <unix_timestamp>|<step>
 ```
 
-Steps: `project_id`, `setup_guide`, `client_secret`, `auth_code`, `email_fallback`.
+Steps: `project_id`, `setup_guide`, `auth_code`, `email_fallback`.
 
 **Temporary credential facts:**
 
 | Fact key | Stored after | Contains |
 |----------|-------------|----------|
 | `_google_project_id` | Project ID received | GCP project ID |
-| `_google_client_id` | Client ID received | OAuth client ID |
-| `_google_client_secret` | Client Secret received | OAuth client secret |
+| `_google_client_id` | JSON credentials parsed | OAuth client ID |
+| `_google_client_secret` | JSON credentials parsed | OAuth client secret |
 | `_google_refresh_token` | Email fallback only | Refresh token (from token exchange) |
 
-**Message deletion:** Client secret and auth code messages are deleted from chat after capture (best-effort via `delete_user_message()`).
+**Message deletion:** JSON credentials and auth code messages are deleted from chat after capture (best-effort via `delete_user_message()`).
 
 #### Credential File Format (JSON)
 
@@ -175,7 +171,7 @@ Steps: `project_id`, `setup_guide`, `client_secret`, `auth_code`, `email_fallbac
 
 ### Credential Message Deletion
 
-Sensitive messages (client_secret, auth_code) are deleted from chat after capture:
+Sensitive messages (JSON credentials, auth_code) are deleted from chat after capture:
 - Telegram: Bot API `deleteMessage` (works in private chats, messages < 48h old)
 - Best-effort: failures logged but don't block the flow
 - WhatsApp: Not implemented (no delete API available)

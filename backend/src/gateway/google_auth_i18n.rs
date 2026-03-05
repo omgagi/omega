@@ -70,8 +70,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              *4. Publicar la app*\n\
              {consent_url}\n\
              - Ve a \"Audience\" y haz clic en \"Publish App\"\n\n\
-             Envia tu *Client ID* cuando estes listo.\n\n\
-             Tambien puedes pegar el contenido completo del archivo JSON descargado."
+             Pega el contenido completo del archivo JSON descargado cuando estes listo."
         ),
         "Portuguese" => format!(
             "Projeto recebido: *{project_id}*\n\n\
@@ -95,8 +94,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              *4. Publicar o app*\n\
              {consent_url}\n\
              - Va a \"Audience\" e clique em \"Publish App\"\n\n\
-             Envie seu *Client ID* quando estiver pronto.\n\n\
-             Voce tambem pode colar o conteudo completo do arquivo JSON baixado."
+             Cole o conteudo completo do arquivo JSON baixado quando estiver pronto."
         ),
         "French" => format!(
             "Projet recu : *{project_id}*\n\n\
@@ -120,8 +118,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              *4. Publier l'app*\n\
              {consent_url}\n\
              - Allez a \"Audience\" et cliquez sur \"Publish App\"\n\n\
-             Envoyez votre *Client ID* quand vous etes pret.\n\n\
-             Vous pouvez aussi coller le contenu complet du fichier JSON telecharge."
+             Collez le contenu complet du fichier JSON telecharge quand vous etes pret."
         ),
         "German" => format!(
             "Projekt erhalten: *{project_id}*\n\n\
@@ -145,8 +142,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              *4. App veroffentlichen*\n\
              {consent_url}\n\
              - Gehe zu \"Audience\" und klicke auf \"Publish App\"\n\n\
-             Sende deine *Client ID* wenn du bereit bist.\n\n\
-             Du kannst auch den vollstandigen Inhalt der heruntergeladenen JSON-Datei einfugen."
+             Fuge den vollstandigen Inhalt der heruntergeladenen JSON-Datei ein, wenn du bereit bist."
         ),
         "Italian" => format!(
             "Progetto ricevuto: *{project_id}*\n\n\
@@ -170,8 +166,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              *4. Pubblicare l'app*\n\
              {consent_url}\n\
              - Vai a \"Audience\" e clicca su \"Publish App\"\n\n\
-             Invia il tuo *Client ID* quando sei pronto.\n\n\
-             Puoi anche incollare il contenuto completo del file JSON scaricato."
+             Incolla il contenuto completo del file JSON scaricato quando sei pronto."
         ),
         "Dutch" => format!(
             "Project ontvangen: *{project_id}*\n\n\
@@ -195,8 +190,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              *4. App publiceren*\n\
              {consent_url}\n\
              - Ga naar \"Audience\" en klik op \"Publish App\"\n\n\
-             Stuur je *Client ID* als je klaar bent.\n\n\
-             Je kunt ook de volledige inhoud van het gedownloade JSON-bestand plakken."
+             Plak de volledige inhoud van het gedownloade JSON-bestand wanneer je klaar bent."
         ),
         "Russian" => format!(
             "Проект получен: *{project_id}*\n\n\
@@ -220,8 +214,7 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              *4. Опубликовать приложение*\n\
              {consent_url}\n\
              - Перейдите в \"Audience\" и нажмите \"Publish App\"\n\n\
-             Отправьте ваш *Client ID* когда будете готовы.\n\n\
-             Вы также можете вставить полное содержимое скачанного JSON-файла."
+             Вставьте полное содержимое скачанного JSON-файла, когда будете готовы."
         ),
         _ => format!(
             "Project received: *{project_id}*\n\n\
@@ -245,82 +238,81 @@ pub(super) fn google_step_setup_guide_message(lang: &str, project_id: &str) -> S
              *4. Publish the app*\n\
              {consent_url}\n\
              - Go to \"Audience\" and click \"Publish App\"\n\n\
-             Send your *Client ID* when ready.\n\n\
-             You can also paste the full content of the downloaded JSON file."
+             Paste the full content of the downloaded JSON file when ready."
         ),
     };
 
     guide
 }
 
-/// Step 3: Client ID received, asking for Client Secret.
-pub(super) fn google_step_client_secret_message(lang: &str) -> &'static str {
+/// Error: input is not valid Google credentials JSON.
+pub(super) fn google_invalid_json_message(lang: &str) -> &'static str {
     match lang {
-        "Spanish" => "Client ID recibido. Ahora envia tu *Client Secret*.",
-        "Portuguese" => "Client ID recebido. Agora envie seu *Client Secret*.",
-        "French" => "Client ID recu. Maintenant envoyez votre *Client Secret*.",
-        "German" => "Client ID erhalten. Jetzt sende dein *Client Secret*.",
-        "Italian" => "Client ID ricevuto. Ora invia il tuo *Client Secret*.",
-        "Dutch" => "Client ID ontvangen. Stuur nu je *Client Secret*.",
-        "Russian" => "Client ID получен. Теперь отправьте ваш *Client Secret*.",
-        _ => "Client ID received. Now send your *Client Secret*.",
+        "Spanish" => "Por favor, pega el contenido completo del archivo JSON de credenciales descargado.",
+        "Portuguese" => "Por favor, cole o conteudo completo do arquivo JSON de credenciais baixado.",
+        "French" => "Veuillez coller le contenu complet du fichier JSON d'identifiants telecharge.",
+        "German" => "Bitte fuge den vollstandigen Inhalt der heruntergeladenen JSON-Anmeldedatei ein.",
+        "Italian" => "Per favore, incolla il contenuto completo del file JSON delle credenziali scaricato.",
+        "Dutch" => "Plak alsjeblieft de volledige inhoud van het gedownloade JSON-referentiebestand.",
+        "Russian" => "Пожалуйста, вставьте полное содержимое скачанного JSON-файла с учетными данными.",
+        _ => "Please paste the full JSON content from the downloaded credentials file.",
     }
 }
 
-/// Step 4: OAuth URL + ask for auth code.
+/// Step 3: OAuth URL + ask for auth code.
 pub(super) fn google_step_auth_code_message(lang: &str, auth_url: &str) -> String {
     match lang {
         "Spanish" => format!(
-            "Client Secret recibido.\n\n\
+            "Credenciales recibidas.\n\n\
              Abre este enlace para autorizar tu cuenta de Google:\n\
              {auth_url}\n\n\
              Haz clic en \"Advanced\" y \"Go to omega (unsafe)\" y luego \"Allow\".\n\n\
              Copia el codigo de autorizacion y envialo aqui."
         ),
         "Portuguese" => format!(
-            "Client Secret recebido.\n\n\
+            "Credenciais recebidas.\n\n\
              Abra este link para autorizar sua conta do Google:\n\
              {auth_url}\n\n\
              Clique em \"Advanced\" e \"Go to omega (unsafe)\" e depois \"Allow\".\n\n\
              Copie o codigo de autorizacao e envie aqui."
         ),
         "French" => format!(
-            "Client Secret recu.\n\n\
+            "Identifiants recus.\n\n\
              Ouvrez ce lien pour autoriser votre compte Google :\n\
              {auth_url}\n\n\
              Cliquez sur \"Advanced\" puis \"Go to omega (unsafe)\" puis \"Allow\".\n\n\
              Copiez le code d'autorisation et envoyez-le ici."
         ),
         "German" => format!(
-            "Client Secret erhalten.\n\n\
+            "Zugangsdaten erhalten.\n\n\
              Offne diesen Link, um dein Google-Konto zu autorisieren:\n\
              {auth_url}\n\n\
              Klicke auf \"Advanced\" und \"Go to omega (unsafe)\" und dann \"Allow\".\n\n\
              Kopiere den Autorisierungscode und sende ihn hier."
         ),
         "Italian" => format!(
-            "Client Secret ricevuto.\n\n\
+            "Credenziali ricevute.\n\n\
              Apri questo link per autorizzare il tuo account Google:\n\
              {auth_url}\n\n\
              Clicca su \"Advanced\" e \"Go to omega (unsafe)\" poi \"Allow\".\n\n\
              Copia il codice di autorizzazione e invialo qui."
         ),
         "Dutch" => format!(
-            "Client Secret ontvangen.\n\n\
+            "Inloggegevens ontvangen.\n\n\
              Open deze link om je Google-account te autoriseren:\n\
              {auth_url}\n\n\
              Klik op \"Advanced\" en \"Go to omega (unsafe)\" en dan \"Allow\".\n\n\
              Kopieer de autorisatiecode en stuur deze hier."
         ),
         "Russian" => format!(
-            "Client Secret получен.\n\n\
+            "Учетные данные получены.\n\n\
              Откройте эту ссылку для авторизации вашего аккаунта Google:\n\
              {auth_url}\n\n\
              Нажмите \"Advanced\" и \"Go to omega (unsafe)\" затем \"Allow\".\n\n\
              Скопируйте код авторизации и отправьте его сюда."
         ),
         _ => format!(
-            "Client Secret received.\n\n\
+            "Credentials received.\n\n\
              Open this link to authorize your Google account:\n\
              {auth_url}\n\n\
              Click \"Advanced\" then \"Go to omega (unsafe)\" then \"Allow\".\n\n\
@@ -575,10 +567,13 @@ mod tests {
     }
 
     #[test]
-    fn test_client_secret_message_all_languages() {
+    fn test_invalid_json_message_all_languages() {
         for lang in ALL_LANGUAGES {
-            let msg = google_step_client_secret_message(lang);
-            assert!(!msg.is_empty(), "client_secret({lang}) must not be empty");
+            let msg = google_invalid_json_message(lang);
+            assert!(
+                !msg.is_empty(),
+                "invalid_json({lang}) must not be empty"
+            );
         }
     }
 
@@ -677,8 +672,8 @@ mod tests {
             google_step_project_id_message("English", false),
         );
         assert_eq!(
-            google_step_client_secret_message(unknown_lang),
-            google_step_client_secret_message("English"),
+            google_invalid_json_message(unknown_lang),
+            google_invalid_json_message("English"),
         );
         assert_eq!(
             google_cancelled_message(unknown_lang),
@@ -729,8 +724,8 @@ mod tests {
     #[test]
     fn test_russian_differs_from_english() {
         assert_ne!(
-            google_step_client_secret_message("Russian"),
-            google_step_client_secret_message("English"),
+            google_invalid_json_message("Russian"),
+            google_invalid_json_message("English"),
         );
     }
 
@@ -753,8 +748,8 @@ mod tests {
     #[test]
     fn test_dutch_differs_from_english() {
         assert_ne!(
-            google_step_client_secret_message("Dutch"),
-            google_step_client_secret_message("English"),
+            google_invalid_json_message("Dutch"),
+            google_invalid_json_message("English"),
         );
     }
 

@@ -1,6 +1,6 @@
 //! Google account credential setup -- `/google` command state machine.
 //!
-//! Handles a 5-step wizard: project_id, setup_guide (client_id), client_secret,
+//! Handles a 4-step wizard: project_id, setup_guide (JSON credentials),
 //! auth_code, and completion (with email_fallback if needed).
 //! OAuth token exchange is handled server-side -- no raw refresh_token needed.
 //! Credentials are stored in `~/.omega/stores/google.json` with 0600 permissions.
@@ -289,120 +289,45 @@ impl Gateway {
                 self.send_text(incoming, &msg).await;
             }
             "setup_guide" => {
-                // If user pasted full Google credentials JSON, extract both values at once.
-                if input.starts_with('{') {
-                    if let Some((cid, csec)) = try_extract_json_credentials(input) {
-                        // Delete message containing credentials.
-                        self.delete_user_message(incoming).await;
+                // User must paste full Google credentials JSON.
+                if let Some((cid, csec)) = try_extract_json_credentials(input) {
+                    // Delete message containing credentials.
+                    self.delete_user_message(incoming).await;
 
-                        if let Err(e) = self
-                            .memory
-                            .store_fact(&incoming.sender_id, "_google_client_id", &cid)
-                            .await
-                        {
-                            warn!("failed to store _google_client_id: {e}");
-                            self.send_text(incoming, google_store_error_message(&user_lang))
-                                .await;
-                            return;
-                        }
-                        if let Err(e) = self
-                            .memory
-                            .store_fact(&incoming.sender_id, "_google_client_secret", &csec)
-                            .await
-                        {
-                            warn!("failed to store _google_client_secret: {e}");
-                            self.send_text(incoming, google_store_error_message(&user_lang))
-                                .await;
-                            return;
-                        }
-
-                        // Skip client_secret step — go straight to auth_code.
-                        let auth_url = google_auth_oauth::build_authorization_url(&cid);
-                        let new_value = format!("{ts_str}|auth_code");
-                        let _ = self
-                            .memory
-                            .store_fact(&incoming.sender_id, "pending_google", &new_value)
+                    if let Err(e) = self
+                        .memory
+                        .store_fact(&incoming.sender_id, "_google_client_id", &cid)
+                        .await
+                    {
+                        warn!("failed to store _google_client_id: {e}");
+                        self.send_text(incoming, google_store_error_message(&user_lang))
                             .await;
-                        let msg = google_step_auth_code_message(&user_lang, &auth_url);
-                        self.send_text_plain(incoming, &msg).await;
                         return;
                     }
-                    // JSON parse failed — fall through to treat as raw Client ID.
-                }
-
-                // User sends Client ID. Strip all whitespace (copy-paste artifacts).
-                let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
-                if let Err(e) = self
-                    .memory
-                    .store_fact(&incoming.sender_id, "_google_client_id", &clean)
-                    .await
-                {
-                    warn!("failed to store _google_client_id: {e}");
-                    self.send_text(incoming, google_store_error_message(&user_lang))
-                        .await;
-                    return;
-                }
-                let new_value = format!("{ts_str}|client_secret");
-                let _ = self
-                    .memory
-                    .store_fact(&incoming.sender_id, "pending_google", &new_value)
-                    .await;
-                self.send_text(incoming, google_step_client_secret_message(&user_lang))
-                    .await;
-            }
-            "client_secret" => {
-                // Delete the user's message (contains secret).
-                self.delete_user_message(incoming).await;
-
-                // Safety net: if user pastes full JSON here, extract just the secret.
-                let clean: String = if input.starts_with('{') {
-                    if let Some((_cid, csec)) = try_extract_json_credentials(input) {
-                        csec
-                    } else {
-                        input.chars().filter(|c| !c.is_whitespace()).collect()
+                    if let Err(e) = self
+                        .memory
+                        .store_fact(&incoming.sender_id, "_google_client_secret", &csec)
+                        .await
+                    {
+                        warn!("failed to store _google_client_secret: {e}");
+                        self.send_text(incoming, google_store_error_message(&user_lang))
+                            .await;
+                        return;
                     }
+
+                    let auth_url = google_auth_oauth::build_authorization_url(&cid);
+                    let new_value = format!("{ts_str}|auth_code");
+                    let _ = self
+                        .memory
+                        .store_fact(&incoming.sender_id, "pending_google", &new_value)
+                        .await;
+                    let msg = google_step_auth_code_message(&user_lang, &auth_url);
+                    self.send_text_plain(incoming, &msg).await;
                 } else {
-                    // Strip all whitespace (copy-paste artifacts).
-                    input.chars().filter(|c| !c.is_whitespace()).collect()
-                };
-                if let Err(e) = self
-                    .memory
-                    .store_fact(&incoming.sender_id, "_google_client_secret", &clean)
-                    .await
-                {
-                    warn!("failed to store _google_client_secret: {e}");
-                    self.send_text(incoming, google_store_error_message(&user_lang))
+                    // Not valid JSON credentials — ask again.
+                    self.send_text(incoming, google_invalid_json_message(&user_lang))
                         .await;
-                    return;
                 }
-
-                // Build OAuth URL using stored client_id.
-                let client_id = self
-                    .memory
-                    .get_fact(&incoming.sender_id, "_google_client_id")
-                    .await
-                    .ok()
-                    .flatten();
-
-                let Some(cid) = client_id else {
-                    warn!("missing _google_client_id for OAuth URL");
-                    cleanup_google_session(&self.memory, &incoming.sender_id).await;
-                    self.send_text(incoming, google_missing_data_message(&user_lang))
-                        .await;
-                    return;
-                };
-
-                let auth_url = google_auth_oauth::build_authorization_url(&cid);
-
-                let new_value = format!("{ts_str}|auth_code");
-                let _ = self
-                    .memory
-                    .store_fact(&incoming.sender_id, "pending_google", &new_value)
-                    .await;
-                let msg = google_step_auth_code_message(&user_lang, &auth_url);
-                // Use plain text to prevent Telegram Markdown from stripping
-                // underscores in OAuth URL parameters (client_id, response_type, etc.).
-                self.send_text_plain(incoming, &msg).await;
             }
             "auth_code" => {
                 // Delete the auth code message for security.
@@ -715,13 +640,7 @@ mod tests {
 
     #[test]
     fn test_pending_google_valid_steps() {
-        let steps = [
-            "project_id",
-            "setup_guide",
-            "client_secret",
-            "auth_code",
-            "email_fallback",
-        ];
+        let steps = ["project_id", "setup_guide", "auth_code", "email_fallback"];
         for step_name in &steps {
             let fact_value = format!("1709123456|{step_name}");
             let (_ts, step) = parse_google_step(&fact_value);
@@ -953,7 +872,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_step_transition_to_client_secret() {
+    async fn test_step_transition_to_auth_code() {
         let store = test_store().await;
         let sender = "trans_test2";
         let now = chrono::Utc::now().timestamp();
@@ -964,26 +883,6 @@ mod tests {
             .unwrap();
         store
             .store_fact(sender, "_google_client_id", "test-cid")
-            .await
-            .unwrap();
-        let new_value = format!("{now}|client_secret");
-        store
-            .store_fact(sender, "pending_google", &new_value)
-            .await
-            .unwrap();
-
-        let pending = store.get_fact(sender, "pending_google").await.unwrap();
-        assert!(pending.unwrap().ends_with("|client_secret"));
-    }
-
-    #[tokio::test]
-    async fn test_step_transition_to_auth_code() {
-        let store = test_store().await;
-        let sender = "trans_test3";
-        let now = chrono::Utc::now().timestamp();
-
-        store
-            .store_fact(sender, "pending_google", &format!("{now}|client_secret"))
             .await
             .unwrap();
         store
@@ -1033,7 +932,7 @@ mod tests {
             .unwrap();
 
         store
-            .store_fact(sender_b, "pending_google", "1709123456|client_secret")
+            .store_fact(sender_b, "pending_google", "1709123456|setup_guide")
             .await
             .unwrap();
         store
@@ -1053,7 +952,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(b_pending.contains("client_secret"));
+        assert!(b_pending.contains("setup_guide"));
     }
 
     // ===================================================================
