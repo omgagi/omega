@@ -150,8 +150,11 @@ impl WhatsAppChannel {
             .await
             .map_err(|e| OmegaError::Channel(format!("whatsapp bot build failed: {e}")))?;
 
-        // Store client reference immediately if already connected.
-        *client_handle.lock().await = Some(bot.client());
+        // Client reference is stored by the Connected event handler when
+        // the connection is actually established. Do NOT store it here —
+        // the bot hasn't connected yet and is_connected() must stay false
+        // until the handshake completes (otherwise the QR pairing flow
+        // is short-circuited with "already connected").
 
         // Run bot in background.
         let _handle = bot

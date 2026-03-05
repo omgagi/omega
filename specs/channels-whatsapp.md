@@ -149,7 +149,7 @@ pub struct WhatsAppChannel {
 
 | Method | Signature | Purpose |
 |--------|-----------|---------|
-| `build_and_run_bot` | `async fn(&self, tx: Sender<IncomingMessage>) -> Result<(), OmegaError>` | Builds the WhatsApp bot with event handler and runs it in background. Shared by `start()` and `restart_for_pairing()`. |
+| `build_and_run_bot` | `async fn(&self, tx: Sender<IncomingMessage>) -> Result<(), OmegaError>` | Builds the WhatsApp bot with event handler and runs it in background. Shared by `start()` and `restart_for_pairing()`. Does NOT store the client reference — that's done by the `Connected` event handler so `is_connected()` accurately reflects connection state. |
 
 ---
 
