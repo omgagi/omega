@@ -130,28 +130,17 @@ pub async fn run() -> anyhow::Result<()> {
         "Ask OMEGA to manage Gmail, Calendar, Drive, Docs..."
     };
 
-    let hint = console::Style::new()
-        .bold()
-        .apply_to("Space to select, Enter to pick one");
-    init_style::omega_info(&hint.to_string())?;
+    init_style::omega_note("Optional tools", "Set up integrations for OMEGA")?;
 
-    let selected_tools: Vec<&str> = cliclack::multiselect("Optional tools — select to set up")
+    let tool_choice: &str = cliclack::select("Optional tools")
         .item("google", "Google Workspace", google_hint)
-        .required(false)
+        .item("skip", "Skip", "Continue without setting up tools")
         .interact()?;
 
-    let selected_tools: Vec<&str> = if selected_tools.is_empty() {
-        let choice: &str = cliclack::select("Pick a tool to set up")
-            .item("google", "Google Workspace", google_hint)
-            .item("skip", "Skip", "Continue without setting up tools")
-            .interact()?;
-        if choice == "skip" {
-            Vec::new()
-        } else {
-            vec![choice]
-        }
+    let selected_tools: Vec<&str> = if tool_choice == "skip" {
+        Vec::new()
     } else {
-        selected_tools
+        vec![tool_choice]
     };
 
     let google_email = if selected_tools.contains(&"google") {
