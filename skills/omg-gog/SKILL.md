@@ -2,6 +2,7 @@
 name = "omg-gog"
 description = "Google Workspace CLI — Gmail, Calendar, Drive, Docs, Sheets, Slides, Forms, Chat, Tasks, Contacts and more."
 requires = ["omg-gog"]
+trigger = "email|gmail|calendar|drive|docs|sheets|slides|forms|chat|tasks|contacts|google|correo|calendario|agenda|contactos|kontakte|kalender|почта|календарь|контакты|e-mail|courrier|courriel|calendrier"
 ---
 
 # omega-google (omg-gog) — Functionalities Skill
