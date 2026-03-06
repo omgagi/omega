@@ -173,6 +173,7 @@ pub(super) async fn cleanup_google_session(memory: &Store, sender_id: &str) {
         "_google_project_id",
         "_google_client_id",
         "_google_client_secret",
+        "_google_refresh_token",
     ];
     for fact in &facts {
         let _ = memory.delete_fact(sender_id, fact).await;
@@ -390,6 +391,10 @@ mod tests {
             .store_fact(sender, "_google_client_secret", "csec")
             .await
             .unwrap();
+        store
+            .store_fact(sender, "_google_refresh_token", "1//0abc-refresh")
+            .await
+            .unwrap();
 
         cleanup_google_session(&store, sender).await;
 
@@ -410,6 +415,11 @@ mod tests {
             .is_none());
         assert!(store
             .get_fact(sender, "_google_client_secret")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(store
+            .get_fact(sender, "_google_refresh_token")
             .await
             .unwrap()
             .is_none());
