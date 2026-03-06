@@ -371,11 +371,6 @@ impl Gateway {
                 sync_omg_gog_credentials(client_id, client_secret).await;
 
                 cleanup_google_session(&self.memory, &incoming.sender_id).await;
-                // Also clean up _google_refresh_token if it exists (email_fallback path).
-                let _ = self
-                    .memory
-                    .delete_fact(&incoming.sender_id, "_google_refresh_token")
-                    .await;
                 self.audit_google(incoming, "complete").await;
                 let msg = google_step_complete_message(user_lang, email);
                 self.send_text(incoming, &msg).await;
