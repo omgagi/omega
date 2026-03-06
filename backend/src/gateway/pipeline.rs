@@ -222,8 +222,7 @@ impl Gateway {
         // WhatsApp has no command autocomplete menu. When a user asks what
         // OMEGA can do (in any language), return the /help output directly
         // instead of letting the AI improvise an incomplete capabilities list.
-        if incoming.channel == "whatsapp"
-            && kw_match(&clean_incoming.text.to_lowercase(), HELP_KW)
+        if incoming.channel == "whatsapp" && kw_match(&clean_incoming.text.to_lowercase(), HELP_KW)
         {
             let user_lang = self
                 .memory

@@ -189,6 +189,8 @@ impl ClaudeCodeProvider {
                 let data_dir = dir.parent().unwrap_or(dir);
                 let mut c = omega_sandbox::protected_command("claude", data_dir);
                 c.current_dir(dir);
+                // Expose stores dir so tools like omg-gog find credentials.
+                c.env("OMEGA_STORES_DIR", data_dir.join("stores"));
                 c
             }
             None => Command::new("claude"),
