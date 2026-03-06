@@ -6,6 +6,46 @@
 // Re-export setup guide message from its own module.
 pub(super) use super::google_auth_i18n_guide::google_step_setup_guide_message;
 
+/// Direct-channel notice shown only when the setup is triggered via messenger
+/// (Telegram / WhatsApp). Explains that this flow runs entirely between the
+/// messenger and OMEGA — no AI provider is involved.
+pub(super) fn google_direct_channel_notice(lang: &str) -> &'static str {
+    match lang {
+        "Spanish" => "\
+*IMPORTANTE:* Este proceso de configuracion se ejecuta directamente entre esta conversacion y el servidor de OMEGA. \
+Ningun proveedor de IA (Claude, GPT, etc.) participa ni tiene acceso a los datos que envies aqui. \
+Tus mensajes van directo a OMEGA y las respuestas vienen directo de OMEGA.\n\n",
+        "Portuguese" => "\
+*IMPORTANTE:* Este processo de configuracao e executado diretamente entre esta conversa e o servidor OMEGA. \
+Nenhum provedor de IA (Claude, GPT, etc.) participa ou tem acesso aos dados que voce enviar aqui. \
+Suas mensagens vao direto para o OMEGA e as respostas vem direto do OMEGA.\n\n",
+        "French" => "\
+*IMPORTANT :* Ce processus de configuration s'execute directement entre cette conversation et le serveur OMEGA. \
+Aucun fournisseur d'IA (Claude, GPT, etc.) ne participe ni n'a acces aux donnees que vous envoyez ici. \
+Vos messages vont directement a OMEGA et les reponses viennent directement d'OMEGA.\n\n",
+        "German" => "\
+*WICHTIG:* Dieser Einrichtungsprozess lauft direkt zwischen diesem Chat und dem OMEGA-Server. \
+Kein KI-Anbieter (Claude, GPT usw.) ist beteiligt oder hat Zugriff auf die Daten, die du hier sendest. \
+Deine Nachrichten gehen direkt an OMEGA und die Antworten kommen direkt von OMEGA.\n\n",
+        "Italian" => "\
+*IMPORTANTE:* Questo processo di configurazione viene eseguito direttamente tra questa conversazione e il server OMEGA. \
+Nessun fornitore di IA (Claude, GPT, ecc.) partecipa o ha accesso ai dati che invii qui. \
+I tuoi messaggi vanno direttamente a OMEGA e le risposte arrivano direttamente da OMEGA.\n\n",
+        "Dutch" => "\
+*BELANGRIJK:* Dit installatieproces verloopt rechtstreeks tussen dit gesprek en de OMEGA-server. \
+Geen enkele AI-provider (Claude, GPT, enz.) is betrokken of heeft toegang tot de gegevens die je hier verzendt. \
+Je berichten gaan rechtstreeks naar OMEGA en de antwoorden komen rechtstreeks van OMEGA.\n\n",
+        "Russian" => "\
+*ВАЖНО:* Этот процесс настройки выполняется напрямую между этим чатом и сервером OMEGA. \
+Ни один провайдер ИИ (Claude, GPT и т.д.) не участвует и не имеет доступа к данным, которые вы отправляете здесь. \
+Ваши сообщения идут напрямую в OMEGA, и ответы приходят напрямую от OMEGA.\n\n",
+        _ => "\
+*IMPORTANT:* This setup process runs directly between this chat and the OMEGA server. \
+No AI provider (Claude, GPT, etc.) is involved or has access to the data you send here. \
+Your messages go straight to OMEGA and responses come straight from OMEGA.\n\n",
+    }
+}
+
 /// Step 1: Welcome + ask for Project ID.
 /// Includes overwrite warning if `existing` is true.
 pub(super) fn google_step_project_id_message(lang: &str, existing: bool) -> String {
@@ -340,6 +380,18 @@ mod tests {
     // ===================================================================
 
     #[test]
+    fn test_direct_channel_notice_all_languages() {
+        for lang in ALL_LANGUAGES {
+            let msg = google_direct_channel_notice(lang);
+            assert!(!msg.is_empty(), "direct_channel_notice({lang}) must not be empty");
+            assert!(
+                msg.contains("OMEGA"),
+                "direct_channel_notice({lang}) must mention OMEGA"
+            );
+        }
+    }
+
+    #[test]
     fn test_project_id_message_all_languages() {
         for lang in ALL_LANGUAGES {
             let msg = google_step_project_id_message(lang, false);
@@ -457,6 +509,10 @@ mod tests {
     #[test]
     fn test_default_english_fallback() {
         let unknown_lang = "Klingon";
+        assert_eq!(
+            google_direct_channel_notice(unknown_lang),
+            google_direct_channel_notice("English"),
+        );
         assert_eq!(
             google_step_project_id_message(unknown_lang, false),
             google_step_project_id_message("English", false),

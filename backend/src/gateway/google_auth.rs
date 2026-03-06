@@ -67,6 +67,15 @@ impl Gateway {
 
         self.audit_google(incoming, "started").await;
 
+        // When running via messenger, prepend a clear notice that this flow
+        // is direct between the chat and OMEGA — no AI provider involved.
+        let is_messenger = incoming.channel == "telegram" || incoming.channel == "whatsapp";
+        let channel_notice = if is_messenger {
+            google_direct_channel_notice(&user_lang)
+        } else {
+            ""
+        };
+
         // If omg-gog credentials exist, skip manual entry and jump to auth_code.
         if let Some((cid, csec)) = read_omg_gog_credentials() {
             let _ = self
@@ -83,7 +92,8 @@ impl Gateway {
                 .memory
                 .store_fact(&incoming.sender_id, "pending_google", &fact_value)
                 .await;
-            let msg = google_step_auth_code_message(&user_lang, &auth_url);
+            let base_msg = google_step_auth_code_message(&user_lang, &auth_url);
+            let msg = format!("{channel_notice}{base_msg}");
             self.send_text_plain(incoming, &msg).await;
             return;
         }
@@ -94,7 +104,8 @@ impl Gateway {
             .join("google.json");
         let google_exists = tokio::fs::try_exists(&stores_path).await.unwrap_or(false);
 
-        let msg = google_step_project_id_message(&user_lang, google_exists);
+        let base_msg = google_step_project_id_message(&user_lang, google_exists);
+        let msg = format!("{channel_notice}{base_msg}");
         self.send_text(incoming, &msg).await;
     }
 
