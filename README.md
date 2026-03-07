@@ -2,21 +2,69 @@
 
 **Your AI, your server, your rules.**
 
-A personal AI agent infrastructure written in Rust. Omega connects to messaging platforms, delegates reasoning to Claude Code, and acts autonomously on your behalf. Single binary, no Docker, no cloud dependency.
+A personal AI agent infrastructure written in Rust. Single binary. No Docker. No cloud dependency. Omega connects to your messaging platforms, delegates reasoning to Claude Code, and acts autonomously on your behalf — scheduling tasks, building software, learning from mistakes, and closing its own loops.
 
-## What Makes Omega Different
+```
+curl -fsSL https://raw.githubusercontent.com/omgagi/omega/main/install.sh | bash
+```
 
-- **Autonomous, not assistive** -- Omega executes tasks, schedules follow-ups, and closes its own loops. It doesn't wait to be asked twice.
-- **Powered by Claude Code** -- Uses Anthropic's Claude Code CLI as the AI engine. Claude handles reasoning, tool execution, and agentic workflows out of the box. Additional providers (Anthropic API, OpenAI, Ollama, OpenRouter, Gemini) are available in the codebase for future use.
-- **Smart model routing** -- Every message is classified by complexity. Simple tasks use Sonnet; complex work is decomposed into steps and executed by Opus. Automatic, no user intervention.
-- **Real memory** -- SQLite-backed conversations, facts, summaries, and FTS5 semantic search. Omega learns who you are across sessions.
-- **OS-level sandbox** -- Seatbelt (macOS) / Landlock (Linux) filesystem enforcement. Not just prompt-based -- three layers of protection.
-- **Skill system** -- Extensible skills loaded from `~/.omega/skills/*/SKILL.md` with trigger-based MCP server activation.
-- **Project system** -- Domain contexts loaded from `~/.omega/projects/*/ROLE.md` with per-project heartbeats, skills, and session isolation.
-- **Reward-based learning** -- Detects its own mistakes, fixes them immediately, stores outcomes and lessons so they never repeat.
-- **Multi-language** -- Full i18n for 8 languages: English, Spanish, Portuguese, French, German, Italian, Dutch, Russian.
-- **Quantitative trading** -- External [`omega-trader`](https://github.com/omgagi/omega-trader) CLI with Kalman filter, HMM regime detection, Kelly sizing, IBKR TWS integration.
-- **Runs locally** -- Your messages never touch third-party servers beyond the AI provider.
+One command. Works on macOS and Linux (x86_64 and ARM64). Runs the setup wizard automatically.
+
+---
+
+## Why Omega
+
+Most AI tools wait for you to ask. Omega doesn't.
+
+**Autonomous, not assistive.** Omega executes tasks, schedules follow-ups, monitors your projects on a heartbeat, detects its own mistakes, and learns from them — permanently. It doesn't wait to be asked twice.
+
+**Powered by Claude Code.** Omega uses Anthropic's Claude Code CLI as its AI engine — the same agentic tool developers use daily. Claude handles reasoning, tool execution, file operations, and multi-step workflows out of the box. No API keys to configure. Install `claude`, authenticate once, and Omega inherits the full power of Claude's agent capabilities.
+
+**Runs on your machine.** Your messages never touch third-party servers beyond the AI provider. Your data stays in a local SQLite database. Your config stays on disk. No telemetry, no cloud sync, no account required.
+
+---
+
+## What It Does
+
+### Smart Model Routing
+Every message is classified by complexity in real-time. Simple tasks (greetings, reminders, lookups) are handled by Sonnet — fast and cheap. Complex work (multi-file code changes, deep research, sequential dependencies) is automatically decomposed into steps and executed by Opus with progress updates. No configuration needed.
+
+### Real Memory
+SQLite-backed conversations, user facts, summaries, and FTS5 semantic search. Omega remembers who you are, what you've told it, and what happened in past conversations — across sessions, across channels.
+
+### Reward-Based Learning
+Omega evaluates its own responses. Helpful? Stored as a positive outcome. Redundant or wrong? Stored as a negative outcome with a lesson. Lessons persist as long-term behavioral rules that shape future responses. The agent improves by using itself.
+
+### Task Scheduling
+Natural language scheduling with UTC-aware timezone conversion. Reminders are delivered as messages. Action tasks invoke the AI with full tool access — Omega executes autonomously and reports the result. Supports one-time, daily, weekly, monthly, and yearly recurrence. Quiet hours deferral. Duplicate detection.
+
+### Multi-Agent Build Pipeline
+Ask Omega to build something and it orchestrates a full software development pipeline: Analyst, Architect, Test Writer, Developer, QA, Reviewer, Delivery — seven specialized agents executing in sequence with file-mediated handoffs. QA failures loop back to the developer (max 3 rounds). Reviewer failures are fatal. The pipeline is defined in TOML, not code — swap agents, change retry limits, or reorder phases without touching Rust.
+
+### Heartbeat Monitoring
+Clock-aligned periodic check-ins. Define a checklist of things to monitor (servers, deployments, metrics, anything). Omega classifies items by domain, executes related groups in parallel via Opus, and only sends you alerts when something needs attention. Per-project heartbeats supported.
+
+### Skill System
+Extensible capabilities loaded from `~/.omega/skills/*/SKILL.md`. Each skill is a markdown file with TOML frontmatter that teaches the AI a new domain — trading, DevOps, data analysis, anything. Skills with MCP server definitions get automatic tool activation. The AI uses semantic intent matching to pick the right skill for each request.
+
+### Project System
+Domain contexts loaded from `~/.omega/projects/*/ROLE.md`. Each project gets its own session, its own heartbeat, its own lessons, and its own scheduled tasks. Switch between projects without losing context. Project-specific learning never leaks into general context, but general lessons always flow into project context.
+
+### OS-Level Sandbox
+Not just prompt-based protection. Omega enforces filesystem security at three layers:
+1. **Code-level** — blocklist checks before any file operation
+2. **OS-level** — Seatbelt (macOS) / Landlock (Linux) kernel enforcement
+3. **Prompt-level** — workspace CLAUDE.md restricts AI behavior
+
+Protected: `~/.omega/data/memory.db`, `~/.omega/config.toml`. The AI subprocess cannot read or write these files even if instructed to.
+
+### Multi-Language
+Full i18n for 8 languages: English, Spanish, Portuguese, French, German, Italian, Dutch, Russian. All commands, confirmations, error messages, and system prompts are localized.
+
+### Multi-Channel
+Talk to Omega from Telegram or WhatsApp. Voice messages are transcribed. Photos are processed. Cross-channel identity resolution links your accounts automatically via fuzzy name matching.
+
+---
 
 ## Architecture
 
@@ -34,8 +82,8 @@ You (Telegram / WhatsApp)
   |  Audit     |      Memory (SQLite)         | Markers  |
   +-----------+      Facts, Summaries         +---------+
         |             Scheduled Tasks          SCHEDULE:
-        v             Audit Log                SKILL_IMPROVE:
-  +----------+                                 PROJECT_ACTIVATE:
+        v             Audit Log                REWARD:
+  +----------+                                 LESSON:
   | Channels |                                 BUILD_PROPOSAL:
   | Telegram |                                 HEARTBEAT_ADD:
   | WhatsApp |                                 ...
@@ -47,105 +95,67 @@ Cargo workspace with 6 crates:
 | Crate | Purpose |
 |-------|---------|
 | `omega-core` | Types, traits, config, error handling, prompt sanitization |
-| `omega-providers` | Claude Code CLI provider (default) + additional backends via unified `Provider` trait. Agentic tool loop + MCP client |
-| `omega-channels` | Telegram (voice transcription, photo support) + WhatsApp (voice, images, groups, markdown) |
-| `omega-memory` | SQLite storage, conversation history, facts, scheduled tasks, sessions, outcomes, audit log |
-| `omega-skills` | Skill loader with TOML/YAML frontmatter, project system, trigger-based MCP server activation |
-| `omega-sandbox` | Seatbelt (macOS) / Landlock (Linux) filesystem enforcement with 3-level isolation |
+| `omega-providers` | Claude Code CLI + 5 additional backends (Anthropic, OpenAI, Ollama, OpenRouter, Gemini). Agentic tool loop + MCP client |
+| `omega-channels` | Telegram (voice, photo) + WhatsApp (voice, image, groups, markdown) |
+| `omega-memory` | SQLite storage — conversations, facts, summaries, scheduled tasks, sessions, outcomes, lessons, audit log |
+| `omega-skills` | Skill loader + project loader + MCP server activation |
+| `omega-sandbox` | Seatbelt (macOS) / Landlock (Linux) filesystem enforcement |
 
-## Quick Start
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/omgagi/omega/main/install.sh | bash
-```
-
-This downloads the latest release binary for your platform, installs it to `~/.local/bin/`, and runs `omega init` to walk you through setup.
-
-Or build from source:
-
-```bash
-cd backend && cargo +nightly build --release
-./target/release/omega init
-./target/release/omega start
-```
+---
 
 ## How It Works
 
-Every message flows through a deterministic pipeline:
+Every message flows through a deterministic 12-stage pipeline:
 
-1. **Dispatch** -- Concurrent per-sender. If you're already waiting for a response, new messages are buffered with an ack.
-2. **Auth** -- Only allowed user IDs get through.
-3. **Sanitize** -- Prompt injection patterns neutralized before reaching the AI (role tags, override phrases, zero-width bypasses).
-4. **Identity** -- Cross-channel user identity resolved via alias system. New users auto-detected with language detection.
-5. **Context** -- Conversation history + user facts + active project + skills injected into system prompt.
-6. **Keywords** -- 9 keyword categories gate conditional prompt sections, reducing token usage by ~55-70%.
-7. **Classify** -- Fast model (Sonnet) decides: simple task = direct response, complex work = step-by-step plan.
-8. **Route** -- Simple tasks handled by Sonnet. Complex tasks decomposed and executed by Opus with progress updates.
-9. **Markers** -- AI emits protocol markers (`SCHEDULE:`, `SKILL_IMPROVE:`, etc.) that the gateway processes and strips before delivery.
-10. **Store** -- Exchange saved, conversation updated, facts extracted.
-11. **Audit** -- Full interaction logged with model, tokens, processing time.
-12. **Respond** -- Clean message sent back to user.
+1. **Dispatch** — Concurrent per-sender. Same-sender messages are serialized; different users are fully parallel.
+2. **Auth** — Only allowed user IDs pass through.
+3. **Sanitize** — Prompt injection patterns neutralized (role tags, override phrases, zero-width bypasses).
+4. **Identity** — Cross-channel user identity resolved. New users auto-detected with language detection.
+5. **Context** — Conversation history + user facts + active project + skills injected into the system prompt.
+6. **Keywords** — 9 keyword categories gate conditional prompt sections, reducing token usage by ~55-70%.
+7. **Classify** — Sonnet decides: simple task = direct response, complex work = step-by-step plan.
+8. **Route** — Simple tasks handled by Sonnet. Complex tasks decomposed and executed by Opus.
+9. **Markers** — AI emits protocol markers that the gateway processes and strips before delivery.
+10. **Store** — Exchange saved, conversation updated, facts extracted.
+11. **Audit** — Full interaction logged with model, tokens, processing time.
+12. **Respond** — Clean message delivered to the user.
+
+### Token Efficiency
+
+| Optimization | Savings |
+|--------------|---------|
+| Session persistence (`--resume`) | ~90-99% tokens on continuation messages |
+| Keyword-gated prompt sections | ~55-70% fewer tokens per first message |
+| Keyword-gated DB queries | Skip expensive queries when not relevant |
+| Sonnet classification before Opus | Cheap routing, expensive model only when needed |
 
 ### Background Loops
 
-- **Scheduler** -- Polls every 60s for due tasks. Reminders are delivered as text; action tasks invoke the AI with full tool access and retry logic. Supports quiet hours deferral.
-- **Heartbeat** -- Clock-aligned periodic check-in. Classifies checklist items into domain groups, executes each group in parallel (Opus). Per-project heartbeats supported.
-- **Summarizer** -- Conversations idle for 2+ hours are automatically summarized with fact extraction and closed.
-- **CLAUDE.md maintenance** -- Background loop refreshes workspace CLAUDE.md every 24h, preserving dynamic content.
+- **Scheduler** — Polls every 60s. Reminders delivered as text; action tasks invoke the AI autonomously.
+- **Heartbeat** — Clock-aligned periodic check-ins with parallel domain execution.
+- **Summarizer** — Idle conversations auto-summarized with fact extraction.
+- **CLAUDE.md maintenance** — Workspace context refreshed every 24h.
 
 ### Marker Protocol
 
-The AI communicates with the gateway through protocol markers emitted in response text:
+The AI communicates structured commands through protocol markers embedded in response text. The gateway extracts, executes, and strips them before the user sees anything:
 
 | Marker | Purpose |
 |--------|---------|
-| `SCHEDULE: desc \| datetime \| repeat` | Schedule a reminder |
-| `SCHEDULE_ACTION: desc \| datetime \| repeat` | Schedule an autonomous action |
-| `PROJECT_ACTIVATE: name` | Activate a project context |
-| `PROJECT_DEACTIVATE` | Deactivate current project |
-| `LANG_SWITCH: language` | Switch conversation language |
-| `PERSONALITY: style` | Set behavior style |
-| `SKILL_IMPROVE: skill \| lesson` | Update skill with learned lesson |
-| `HEARTBEAT_ADD: item` | Add item to monitoring checklist |
-| `HEARTBEAT_REMOVE: item` | Remove item from checklist |
-| `HEARTBEAT_INTERVAL: minutes` | Change heartbeat frequency |
-| `BUG_REPORT: description` | Log a self-detected bug |
-| `BUILD_PROPOSAL: spec` | Propose a build for user confirmation |
-| `REWARD: outcome` | Store a reward outcome |
-| `LESSON: rule` | Store a learned behavioral rule |
-| `CANCEL_TASK: id` | Cancel a scheduled task |
-| `UPDATE_TASK: id \| changes` | Modify a scheduled task |
-| `FORGET_CONVERSATION` | Close current conversation |
-| `PURGE_FACTS` | Purge all user facts |
+| `SCHEDULE:` | Schedule a reminder |
+| `SCHEDULE_ACTION:` | Schedule an autonomous action |
+| `REWARD:` | Store a reward outcome |
+| `LESSON:` | Store a learned behavioral rule |
+| `PROJECT_ACTIVATE:` | Switch project context |
+| `HEARTBEAT_ADD:` | Add monitoring item |
+| `SKILL_IMPROVE:` | Update skill with learned lesson |
+| `BUILD_PROPOSAL:` | Propose a software build |
+| `BUG_REPORT:` | Log a self-detected bug |
+| + 12 more | Task updates, language, personality, cleanup |
 
-All markers are extracted, processed, and stripped before the response reaches the user. Anti-hallucination confirmations verify task creation against the actual database.
+All markers include anti-hallucination verification against the actual database.
 
-### Build Pipeline
-
-Topology-driven multi-phase builds orchestrated via Claude Code CLI agent mode:
-
-1. **Discovery** -- Brain agent analyzes the request, asks clarifying questions
-2. **ParseBrief** -- Analyst agent enriches the brief
-3. **Standard** -- Architect, test-writer, developer agents execute in sequence
-4. **CorrectiveLoop** -- QA agent validates, developer fixes issues
-5. **ParseSummary** -- Delivery agent generates build summary
-
-### Project Setup
-
-Interactive `/setup` command creates new projects with:
-- Multi-round Brain agent questioning (max 3 rounds)
-- HEARTBEAT.md generation for autonomous monitoring
-- ROLE.md generation with domain-specific instructions
-
-## Provider
-
-Omega uses **Claude Code CLI** as its AI engine — Anthropic's agentic coding tool running as a local subprocess. No API keys needed; just install and authenticate `claude` once.
-
-- Auto-resume on max_turns
-- MCP server injection for skill activation
-- Sonnet for fast tasks, Opus for complex work
-
-> **Future providers**: The codebase includes support for Anthropic API, OpenAI, Ollama, OpenRouter, and Gemini. These are not active by default and are reserved for future use.
+---
 
 ## Commands
 
@@ -166,9 +176,12 @@ Omega uses **Claude Code CLI** as its AI engine — Anthropic's agentic coding t
 | `/setup <desc>` | Create a new project interactively |
 | `/heartbeat` | Show heartbeat status |
 | `/learning` | Show reward outcomes and rules |
+| `/token` | Show estimated context token usage |
 | `/purge` | Purge all user facts |
 | `/whatsapp` | Start WhatsApp QR pairing |
 | `/help` | Show all commands |
+
+---
 
 ## HTTP API
 
@@ -178,15 +191,32 @@ Lightweight axum server for dashboard integration:
 |----------|--------|-------------|
 | `/api/health` | GET | Health check with uptime, channel status |
 | `/api/pair` | POST | Trigger WhatsApp pairing, returns QR as base64 PNG |
-| `/api/webhook` | POST | Inbound message injection (inject or forward mode) |
+| `/api/webhook` | POST | Inbound message injection (direct or AI mode) |
 
 Bearer token authentication with constant-time comparison.
 
-## Quantitative Trading
+---
 
-Trading is handled by the standalone [`omega-trader`](https://github.com/omgagi/omega-trader) binary, invoked via the `ibkr-trader` skill.
+## Installation
 
-## System Service
+### One-Line Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omgagi/omega/main/install.sh | bash
+```
+
+Downloads the latest release binary for your platform, installs to `~/.local/bin/`, and runs the interactive setup wizard.
+
+### Build from Source
+
+```bash
+git clone https://github.com/omgagi/omega
+cd omega/backend
+cargo +nightly build --release
+./target/release/omega init
+```
+
+### System Service
 
 ```bash
 omega service install    # macOS LaunchAgent or Linux systemd (auto-start, restart on crash)
@@ -194,17 +224,16 @@ omega service status     # Check if running
 omega service uninstall  # Remove
 ```
 
+---
+
 ## Configuration
 
-`config.toml` (gitignored):
+`config.toml` is generated by `omega init`. Minimal example:
 
 ```toml
 [omega]
 name = "Omega"
 data_dir = "~/.omega"
-
-[auth]
-enabled = true
 
 [provider]
 default = "claude-code"
@@ -212,61 +241,40 @@ default = "claude-code"
 [provider.claude-code]
 enabled = true
 max_turns = 15
-allowed_tools = ["Bash", "Read", "Write", "Edit"]
-
-[provider.ollama]
-enabled = true
-base_url = "http://localhost:11434"
-model = "llama3.1:8b"
 
 [channel.telegram]
 enabled = true
 bot_token = "YOUR_TOKEN"
 allowed_users = [123456789]
 
-[memory]
-db_path = "~/.omega/memory.db"
-max_context_messages = 50
-
 [heartbeat]
 enabled = true
 interval_minutes = 60
-active_start = "09:00"
-active_end = "23:00"
 
 [scheduler]
 enabled = true
-poll_interval_secs = 60
-
-[api]
-enabled = false
-host = "127.0.0.1"
-port = 3000
 ```
+
+---
 
 ## Requirements
 
-- Rust nightly (for WhatsApp dependency)
-- `claude` CLI installed and authenticated
-- Telegram bot token (from [@BotFather](https://t.me/BotFather))
+- macOS or Linux (x86_64 or ARM64)
+- `claude` CLI installed and authenticated ([install guide](https://docs.anthropic.com/en/docs/claude-code/overview))
+- Telegram bot token (from [@BotFather](https://t.me/BotFather)) and/or WhatsApp
 
-## Development
+---
 
-```bash
-cd backend
-cargo clippy --workspace     # Lint (zero warnings required)
-cargo test --workspace       # All tests must pass
-cargo fmt --check            # Formatting check
-cargo build --release        # Optimized binary
-```
-
-## Codebase Stats
+## Codebase
 
 - **154 functionalities** across 18 modules
 - **6 library crates** + 1 binary crate
-- **18 bot commands**, **21 protocol markers**, **9 keyword categories**
-- **8 languages** supported
+- **20 bot commands**, **21 protocol markers**, **9 keyword categories**
+- **6 AI providers**, **2 messaging channels**, **8 languages**
+- **13 database migrations**, **3 security layers**
 - Full inventory: [`docs/functionalities/FUNCTIONALITIES.md`](docs/functionalities/FUNCTIONALITIES.md)
+
+---
 
 ## License
 
