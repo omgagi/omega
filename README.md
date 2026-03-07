@@ -5,7 +5,7 @@
 A personal AI agent infrastructure written in Rust. Single binary. No Docker. No cloud dependency. Omega connects to your messaging platforms, delegates reasoning to Claude Code, and acts autonomously on your behalf — scheduling tasks, building software, learning from mistakes, and closing its own loops.
 
 ```
-curl -fsSL https://raw.githubusercontent.com/omgagi/omega/main/install.sh | bash
+curl -fsSL https://omgagi.ai/install.sh | bash
 ```
 
 One command. Works on macOS and Linux (x86_64 and ARM64). Runs the setup wizard automatically.
@@ -202,7 +202,7 @@ Bearer token authentication with constant-time comparison.
 ### One-Line Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/omgagi/omega/main/install.sh | bash
+curl -fsSL https://omgagi.ai/install.sh | bash
 ```
 
 Downloads the latest release binary for your platform, installs to `~/.local/bin/`, and runs the interactive setup wizard.
