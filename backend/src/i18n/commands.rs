@@ -13,6 +13,16 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             "Russian" => "/status   \u{2014} \u{0410}\u{043f}\u{0442}\u{0430}\u{0439}\u{043c}, \u{043f}\u{0440}\u{043e}\u{0432}\u{0430}\u{0439}\u{0434}\u{0435}\u{0440}, \u{0438}\u{043d}\u{0444}\u{043e}\u{0440}\u{043c}\u{0430}\u{0446}\u{0438}\u{044f} \u{043e} \u{0411}\u{0414}",
             _ => "/status   \u{2014} Uptime, provider, database info",
         },
+        "help_token" => match lang {
+            "Spanish" => "/token    \u{2014} Tokens de contexto en la sesi\u{00f3}n actual",
+            "Portuguese" => "/token    \u{2014} Tokens de contexto na sess\u{00e3}o atual",
+            "French" => "/token    \u{2014} Tokens de contexte dans la session actuelle",
+            "German" => "/token    \u{2014} Kontext-Tokens in der aktuellen Sitzung",
+            "Italian" => "/token    \u{2014} Token di contesto nella sessione corrente",
+            "Dutch" => "/token    \u{2014} Contexttokens in de huidige sessie",
+            "Russian" => "/token    \u{2014} \u{0422}\u{043e}\u{043a}\u{0435}\u{043d}\u{044b} \u{043a}\u{043e}\u{043d}\u{0442}\u{0435}\u{043a}\u{0441}\u{0442}\u{0430} \u{0432} \u{0442}\u{0435}\u{043a}\u{0443}\u{0449}\u{0435}\u{0439} \u{0441}\u{0435}\u{0441}\u{0441}\u{0438}\u{0438}",
+            _ => "/token    \u{2014} Context tokens in the current session",
+        },
         "help_memory" => match lang {
             "Spanish" => "/memory   \u{2014} Estad\u{00ed}sticas de conversaciones y datos",
             "Portuguese" => "/memory   \u{2014} Estat\u{00ed}sticas de conversas e fatos",

@@ -33,6 +33,33 @@ Database: 1.4 MB
 
 ---
 
+### `/token` — Context Token Usage
+
+**What It Does:** Shows the estimated context token usage in your current active conversation, including message count and approximate token count.
+
+**Response Example:**
+```
+Context Usage
+Messages: 12
+Estimated tokens: ~3,450
+```
+
+**Response Example (No Active Conversation):**
+```
+No active conversation.
+```
+
+**Understanding the Numbers:**
+- **Messages:** Total messages (user + assistant) in the current conversation
+- **Estimated tokens:** Approximate token count based on message content length (characters / 4)
+
+**Use Cases:**
+- Check how large your current conversation context has grown
+- Decide whether to `/forget` and start fresh before hitting context limits
+- Monitor token accumulation during long sessions
+
+---
+
 ### `/memory` — Your Memory Stats
 
 **What It Does:** Displays statistics about your personal memory stored in Omega, including the number of conversations, messages exchanged, and facts known about you.
@@ -392,6 +419,7 @@ No watchlist items. Configure ~/.omega/prompts/HEARTBEAT.md
 *OMEGA Ω* Commands
 
 /status     — Uptime, provider, database info
+/token      — Context tokens in the current session
 /memory     — Your conversation and facts stats
 /history    — Last 5 conversation summaries
 /facts      — List known facts about you

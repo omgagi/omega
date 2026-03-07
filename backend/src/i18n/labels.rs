@@ -195,6 +195,48 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             _ => "Language:",
         },
 
+        // --- Token command ---
+        "token_header" => match lang {
+            "Spanish" => "Uso de contexto",
+            "Portuguese" => "Uso de contexto",
+            "French" => "Utilisation du contexte",
+            "German" => "Kontextnutzung",
+            "Italian" => "Utilizzo contesto",
+            "Dutch" => "Contextgebruik",
+            "Russian" => "\u{0418}\u{0441}\u{043f}\u{043e}\u{043b}\u{044c}\u{0437}\u{043e}\u{0432}\u{0430}\u{043d}\u{0438}\u{0435} \u{043a}\u{043e}\u{043d}\u{0442}\u{0435}\u{043a}\u{0441}\u{0442}\u{0430}",
+            _ => "Context Usage",
+        },
+        "token_messages" => match lang {
+            "Spanish" => "Mensajes:",
+            "Portuguese" => "Mensagens:",
+            "French" => "Messages:",
+            "German" => "Nachrichten:",
+            "Italian" => "Messaggi:",
+            "Dutch" => "Berichten:",
+            "Russian" => "\u{0421}\u{043e}\u{043e}\u{0431}\u{0449}\u{0435}\u{043d}\u{0438}\u{044f}:",
+            _ => "Messages:",
+        },
+        "token_estimated" => match lang {
+            "Spanish" => "Tokens estimados:",
+            "Portuguese" => "Tokens estimados:",
+            "French" => "Tokens estim\u{00e9}s:",
+            "German" => "Gesch\u{00e4}tzte Tokens:",
+            "Italian" => "Token stimati:",
+            "Dutch" => "Geschatte tokens:",
+            "Russian" => "\u{041e}\u{0446}\u{0435}\u{043d}\u{043a}\u{0430} \u{0442}\u{043e}\u{043a}\u{0435}\u{043d}\u{043e}\u{0432}:",
+            _ => "Estimated tokens:",
+        },
+        "token_no_conversation" => match lang {
+            "Spanish" => "No hay conversaci\u{00f3}n activa.",
+            "Portuguese" => "Nenhuma conversa ativa.",
+            "French" => "Pas de conversation active.",
+            "German" => "Kein aktives Gespr\u{00e4}ch.",
+            "Italian" => "Nessuna conversazione attiva.",
+            "Dutch" => "Geen actief gesprek.",
+            "Russian" => "\u{041d}\u{0435}\u{0442} \u{0430}\u{043a}\u{0442}\u{0438}\u{0432}\u{043d}\u{043e}\u{0433}\u{043e} \u{0440}\u{0430}\u{0437}\u{0433}\u{043e}\u{0432}\u{043e}\u{0440}\u{0430}.",
+            _ => "No active conversation.",
+        },
+
         // --- Empty states ---
         "no_pending_tasks" => match lang {
             "Spanish" => "Sin tareas pendientes.",

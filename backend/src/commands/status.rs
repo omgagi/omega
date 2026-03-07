@@ -70,6 +70,34 @@ pub(super) async fn handle_history(
     }
 }
 
+pub(super) async fn handle_token(
+    store: &Store,
+    channel: &str,
+    sender_id: &str,
+    active_project: Option<&str>,
+    lang: &str,
+) -> String {
+    let project_key = active_project.unwrap_or("");
+    match store
+        .get_active_conversation_id(channel, sender_id, project_key)
+        .await
+    {
+        Ok(Some(conv_id)) => match store.get_conversation_token_estimate(&conv_id).await {
+            Ok((msg_count, estimated_tokens)) => {
+                format!(
+                    "{}\n{} {msg_count}\n{} ~{estimated_tokens}",
+                    i18n::t("token_header", lang),
+                    i18n::t("token_messages", lang),
+                    i18n::t("token_estimated", lang),
+                )
+            }
+            Err(e) => format!("Error: {e}"),
+        },
+        Ok(None) => i18n::t("token_no_conversation", lang).to_string(),
+        Err(e) => format!("Error: {e}"),
+    }
+}
+
 pub(super) async fn handle_facts(store: &Store, sender_id: &str, lang: &str) -> String {
     match store.get_facts(sender_id).await {
         Ok(facts) if facts.is_empty() => i18n::t("no_facts", lang).to_string(),
@@ -105,9 +133,11 @@ pub(super) fn handle_help(lang: &str) -> String {
          {}\n\
          {}\n\
          {}\n\
+         {}\n\
          {}",
         i18n::t("commands_header", lang),
         i18n::t("help_status", lang),
+        i18n::t("help_token", lang),
         i18n::t("help_memory", lang),
         i18n::t("help_history", lang),
         i18n::t("help_facts", lang),

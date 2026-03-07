@@ -1752,7 +1752,7 @@ dependencies = [
 
 [[package]]
 name = "omega"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1787,7 +1787,7 @@ dependencies = [
 
 [[package]]
 name = "omega-channels"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1814,7 +1814,7 @@ dependencies = [
 
 [[package]]
 name = "omega-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1830,7 +1830,7 @@ dependencies = [
 
 [[package]]
 name = "omega-memory"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1846,7 +1846,7 @@ dependencies = [
 
 [[package]]
 name = "omega-providers"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1862,7 +1862,7 @@ dependencies = [
 
 [[package]]
 name = "omega-sandbox"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "landlock",
@@ -1872,7 +1872,7 @@ dependencies = [
 
 [[package]]
 name = "omega-skills"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "omega-core",
  "serde",

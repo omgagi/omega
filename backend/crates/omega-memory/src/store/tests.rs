@@ -2080,3 +2080,131 @@ async fn test_search_messages_with_fts5_operators() {
         result.err()
     );
 }
+
+// --- /token command memory queries ---
+
+#[tokio::test]
+async fn test_get_active_conversation_id_none_when_empty() {
+    let store = test_store().await;
+    let result = store
+        .get_active_conversation_id("telegram", "user1", "")
+        .await
+        .unwrap();
+    assert!(
+        result.is_none(),
+        "should return None when no conversation exists"
+    );
+}
+
+#[tokio::test]
+async fn test_get_active_conversation_id_returns_active() {
+    let store = test_store().await;
+    let conv_id = store
+        .get_or_create_conversation("telegram", "user1", "")
+        .await
+        .unwrap();
+
+    let result = store
+        .get_active_conversation_id("telegram", "user1", "")
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        Some(conv_id),
+        "should return active conversation ID"
+    );
+}
+
+#[tokio::test]
+async fn test_get_active_conversation_id_project_scoped() {
+    let store = test_store().await;
+    let _conv_id = store
+        .get_or_create_conversation("telegram", "user1", "projectA")
+        .await
+        .unwrap();
+
+    // Different project should not find it.
+    let result = store
+        .get_active_conversation_id("telegram", "user1", "projectB")
+        .await
+        .unwrap();
+    assert!(
+        result.is_none(),
+        "should not find conversation from different project"
+    );
+
+    // Same project should find it.
+    let result = store
+        .get_active_conversation_id("telegram", "user1", "projectA")
+        .await
+        .unwrap();
+    assert!(
+        result.is_some(),
+        "should find conversation for same project"
+    );
+}
+
+#[tokio::test]
+async fn test_get_conversation_token_estimate_empty() {
+    let store = test_store().await;
+    let conv_id = store
+        .get_or_create_conversation("telegram", "user1", "")
+        .await
+        .unwrap();
+
+    let (msg_count, tokens) = store
+        .get_conversation_token_estimate(&conv_id)
+        .await
+        .unwrap();
+    assert_eq!(msg_count, 0, "empty conversation should have 0 messages");
+    assert_eq!(tokens, 0, "empty conversation should have 0 tokens");
+}
+
+#[tokio::test]
+async fn test_get_conversation_token_estimate_with_messages() {
+    let store = test_store().await;
+    let conv_id = store
+        .get_or_create_conversation("telegram", "user1", "")
+        .await
+        .unwrap();
+
+    // Store messages via store_exchange.
+    let incoming = IncomingMessage {
+        id: uuid::Uuid::new_v4(),
+        channel: "telegram".to_string(),
+        sender_id: "user1".to_string(),
+        sender_name: None,
+        text: "Hello world".to_string(), // 11 chars
+        timestamp: chrono::Utc::now(),
+        reply_to: None,
+        attachments: vec![],
+        reply_target: Some("chat1".to_string()),
+        is_group: false,
+        source: None,
+        platform_message_id: None,
+    };
+    let response = omega_core::message::OutgoingMessage {
+        text: "Hi there, how can I help?".to_string(), // 25 chars
+        metadata: omega_core::message::MessageMetadata {
+            provider_used: "test".to_string(),
+            tokens_used: None,
+            processing_time_ms: 0,
+            model: None,
+            session_id: None,
+        },
+        reply_target: None,
+        ..Default::default()
+    };
+    store
+        .store_exchange(&incoming, &response, "")
+        .await
+        .unwrap();
+
+    let (msg_count, tokens) = store
+        .get_conversation_token_estimate(&conv_id)
+        .await
+        .unwrap();
+    assert_eq!(msg_count, 2, "should have 2 messages (user + assistant)");
+    // Total chars = 11 + 25 = 36, tokens = 36 / 4 = 9
+    assert_eq!(tokens, 9, "should estimate 9 tokens (36 chars / 4)");
+}

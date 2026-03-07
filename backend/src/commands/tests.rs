@@ -74,6 +74,7 @@ fn test_parse_all_commands() {
         Command::parse("/learning"),
         Some(Command::Learning)
     ));
+    assert!(matches!(Command::parse("/token"), Some(Command::Token)));
     assert!(matches!(Command::parse("/setup"), Some(Command::Setup)));
     assert!(matches!(Command::parse("/google"), Some(Command::Google)));
     assert!(matches!(Command::parse("/help"), Some(Command::Help)));
@@ -618,5 +619,135 @@ async fn test_google_command_handle_fallback_returns_help() {
     assert!(
         result.contains("/google"),
         "help fallback for /google must mention /google: {result}"
+    );
+}
+
+// ===================================================================
+// REQ-TOKEN-001 (Must): /token command registration
+// ===================================================================
+
+#[test]
+fn test_parse_token_command() {
+    assert!(
+        matches!(Command::parse("/token"), Some(Command::Token)),
+        "/token must parse to Command::Token"
+    );
+}
+
+#[test]
+fn test_parse_token_command_with_botname_suffix() {
+    assert!(
+        matches!(Command::parse("/token@omega_bot"), Some(Command::Token)),
+        "/token@omega_bot must parse to Command::Token"
+    );
+}
+
+#[test]
+fn test_parse_tokenfoo_does_not_match() {
+    assert!(
+        Command::parse("/tokenfoo").is_none(),
+        "/tokenfoo must NOT match /token"
+    );
+}
+
+// ===================================================================
+// REQ-TOKEN-002 (Must): /token handler — no active conversation
+// ===================================================================
+
+#[tokio::test]
+async fn test_token_no_active_conversation() {
+    let store = test_store().await;
+    let result = status::handle_token(&store, "telegram", "user1", None, "English").await;
+    assert!(
+        result.contains("No active conversation"),
+        "should show no-conversation message: {result}"
+    );
+}
+
+// ===================================================================
+// REQ-TOKEN-002 (Must): /token handler — with messages
+// ===================================================================
+
+#[tokio::test]
+async fn test_token_with_active_conversation() {
+    use omega_core::message::{IncomingMessage, MessageMetadata, OutgoingMessage};
+
+    let store = test_store().await;
+    // store_exchange creates the conversation implicitly.
+    let incoming = IncomingMessage {
+        id: uuid::Uuid::new_v4(),
+        channel: "telegram".to_string(),
+        sender_id: "user1".to_string(),
+        sender_name: None,
+        text: "Hello, how are you?".to_string(),
+        timestamp: chrono::Utc::now(),
+        reply_to: None,
+        attachments: vec![],
+        reply_target: Some("chat1".to_string()),
+        is_group: false,
+        source: None,
+        platform_message_id: None,
+    };
+    let response = OutgoingMessage {
+        text: "I'm doing well, thanks for asking!".to_string(),
+        metadata: MessageMetadata {
+            provider_used: "test".to_string(),
+            tokens_used: None,
+            processing_time_ms: 0,
+            model: None,
+            session_id: None,
+        },
+        reply_target: None,
+        ..Default::default()
+    };
+    store
+        .store_exchange(&incoming, &response, "")
+        .await
+        .unwrap();
+
+    let result = status::handle_token(&store, "telegram", "user1", None, "English").await;
+    assert!(
+        result.contains("Context Usage"),
+        "should have header: {result}"
+    );
+    assert!(
+        result.contains("Messages:"),
+        "should show messages label: {result}"
+    );
+    assert!(
+        result.contains(" 2"),
+        "should show message count 2: {result}"
+    );
+    assert!(
+        result.contains("Estimated tokens:"),
+        "should show tokens label: {result}"
+    );
+    assert!(result.contains("~"), "should have ~ prefix: {result}");
+}
+
+// ===================================================================
+// REQ-TOKEN-005 (Must): i18n — localized output
+// ===================================================================
+
+#[tokio::test]
+async fn test_token_localized_spanish() {
+    let store = test_store().await;
+    let result = status::handle_token(&store, "telegram", "user1", None, "Spanish").await;
+    assert!(
+        result.contains("No hay conversación activa"),
+        "should show Spanish no-conversation: {result}"
+    );
+}
+
+// ===================================================================
+// REQ-TOKEN-006 (Must): help text includes /token
+// ===================================================================
+
+#[test]
+fn test_help_includes_token() {
+    let result = status::handle_help("English");
+    assert!(
+        result.contains("/token"),
+        "help must list /token command: {result}"
     );
 }

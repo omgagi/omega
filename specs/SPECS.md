@@ -100,6 +100,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 - [google-auth-architecture.md](google-auth-architecture.md) — Architecture design for Google auth: google_auth.rs state machine + google_auth_i18n.rs localized messages + google_auth_oauth.rs (OAuth URL, token exchange, email fetch), message deletion infrastructure (platform_message_id, Channel::delete_message), pipeline integration, credential file format, security model
 - [uninstall-requirements.md](uninstall-requirements.md) — omega uninstall CLI command: two-mode system removal (complete vs keep-config), service stop, data directory cleanup, symlink removal, branded interactive UX
 - [uninstall-architecture.md](uninstall-architecture.md) — Architecture design for uninstall command: uninstall.rs module, mode selection flow, artifact scanning, independent deletion steps with partial-failure tolerance, service.rs visibility changes, main.rs integration, security model
+- [token-command-requirements.md](token-command-requirements.md) — `/token` slash command: estimated context token usage in the current conversation session
 
 ### Release
 - [release-process.md](../docs/release-process.md) — Version bump, tagging, CI release pipeline, SHA256 checksums

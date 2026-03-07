@@ -30,6 +30,7 @@ pub enum Command {
     Project,
     Heartbeat,
     Learning,
+    Token,
     Setup,
     Google,
     Skills,
@@ -41,6 +42,7 @@ pub enum Command {
 | Command | Purpose |
 |---------|---------|
 | `Status` | System uptime, active provider, and database size |
+| `Token` | Estimated context token usage in the current conversation |
 | `Memory` | User-specific stats: conversations, messages, facts count |
 | `History` | Last 5 conversation summaries with timestamps |
 | `Facts` | List of known facts about the user |
@@ -88,6 +90,7 @@ pub enum Command {
 - `/project` → `Command::Project`
 - `/heartbeat` → `Command::Heartbeat`
 - `/learning` → `Command::Learning`
+- `/token` → `Command::Token`
 - `/setup` → `Command::Setup`
 - `/skills` → `Command::Skills`
 - `/whatsapp` or `/wa` → `Command::WhatsApp`

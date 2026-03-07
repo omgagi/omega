@@ -208,6 +208,54 @@ impl Store {
         Ok(rows)
     }
 
+    /// Find the active conversation ID for a sender + project WITHOUT creating one.
+    ///
+    /// Returns `Ok(None)` when no active conversation exists within the timeout window.
+    /// Unlike `get_or_create_conversation()`, this is purely read-only.
+    pub async fn get_active_conversation_id(
+        &self,
+        channel: &str,
+        sender_id: &str,
+        project: &str,
+    ) -> Result<Option<String>, OmegaError> {
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT id FROM conversations \
+             WHERE channel = ? AND sender_id = ? AND project = ? AND status = 'active' \
+             AND datetime(last_activity) > datetime('now', ? || ' minutes') \
+             ORDER BY last_activity DESC LIMIT 1",
+        )
+        .bind(channel)
+        .bind(sender_id)
+        .bind(project)
+        .bind(-CONVERSATION_TIMEOUT_MINUTES)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("query failed: {e}")))?;
+
+        Ok(row.map(|(id,)| id))
+    }
+
+    /// Get the message count and estimated token count for a conversation.
+    ///
+    /// Tokens are estimated as `total_chars / 4` (standard approximation).
+    /// Returns `(message_count, estimated_tokens)`.
+    pub async fn get_conversation_token_estimate(
+        &self,
+        conversation_id: &str,
+    ) -> Result<(i64, i64), OmegaError> {
+        let row: (i64, Option<i64>) = sqlx::query_as(
+            "SELECT COUNT(*), SUM(LENGTH(content)) FROM messages WHERE conversation_id = ?",
+        )
+        .bind(conversation_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| OmegaError::Memory(format!("query failed: {e}")))?;
+
+        let msg_count = row.0;
+        let total_chars = row.1.unwrap_or(0);
+        Ok((msg_count, total_chars / 4))
+    }
+
     /// Get memory statistics for a sender.
     pub async fn get_memory_stats(&self, sender_id: &str) -> Result<(i64, i64, i64), OmegaError> {
         let (conv_count,): (i64,) =

@@ -44,6 +44,7 @@ pub enum Command {
     WhatsApp,
     Heartbeat,
     Learning,
+    Token,
     Setup,
     Google,
     Help,
@@ -73,6 +74,7 @@ impl Command {
             "/whatsapp" => Some(Self::WhatsApp),
             "/heartbeat" => Some(Self::Heartbeat),
             "/learning" => Some(Self::Learning),
+            "/token" => Some(Self::Token),
             "/setup" => Some(Self::Setup),
             "/google" => Some(Self::Google),
             "/help" => Some(Self::Help),
@@ -140,6 +142,16 @@ pub async fn handle(cmd: Command, ctx: &CommandContext<'_>) -> String {
             ctx.active_project,
             &lang,
         ),
+        Command::Token => {
+            status::handle_token(
+                ctx.store,
+                ctx.channel,
+                ctx.sender_id,
+                ctx.active_project,
+                &lang,
+            )
+            .await
+        }
         Command::Learning => learning::handle_learning(ctx.store, ctx.sender_id, &lang).await,
         // Setup is intercepted early in pipeline.rs -- this arm is a fallback.
         Command::Setup => status::handle_help(&lang),
