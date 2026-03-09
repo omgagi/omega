@@ -64,6 +64,7 @@ fn test_all_keys_have_english_fallback() {
         "help_heartbeat",
         "help_google",
         "help_setup",
+        "build_confirm_prompt",
     ];
     for key in keys {
         let val = t(key, "English");

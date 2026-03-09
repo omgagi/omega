@@ -40,6 +40,8 @@ pub enum MarkerResult {
     BugReportFailed { description: String, reason: String },
     /// Project was activated via marker (triggers persona greeting).
     ProjectActivated { name: String },
+    /// Build proposal was stored (triggers confirmation prompt).
+    BuildProposalStored { description: String },
 }
 
 /// Check if two task descriptions are semantically similar using word overlap.

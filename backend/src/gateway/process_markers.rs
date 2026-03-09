@@ -182,6 +182,9 @@ impl Gateway {
                     "build proposal stored for {}: {}",
                     incoming.sender_id, description
                 );
+                marker_results.push(MarkerResult::BuildProposalStored {
+                    description: description.clone(),
+                });
             }
             *text = strip_build_proposal(text);
         }

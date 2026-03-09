@@ -245,10 +245,18 @@ impl Gateway {
             }
 
             // Send persona greeting for marker-activated projects.
+            // Send build confirmation prompt for build proposals.
             for r in &marker_results {
-                if let crate::task_confirmation::MarkerResult::ProjectActivated { name } = r {
-                    let greeting = crate::i18n::project_activated(&user_lang, name);
-                    self.send_text(incoming, &greeting).await;
+                match r {
+                    crate::task_confirmation::MarkerResult::ProjectActivated { name } => {
+                        let greeting = crate::i18n::project_activated(&user_lang, name);
+                        self.send_text(incoming, &greeting).await;
+                    }
+                    crate::task_confirmation::MarkerResult::BuildProposalStored { .. } => {
+                        let prompt = crate::i18n::t("build_confirm_prompt", &user_lang);
+                        self.send_text(incoming, prompt).await;
+                    }
+                    _ => {}
                 }
             }
 

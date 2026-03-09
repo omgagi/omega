@@ -380,6 +380,17 @@ pub(super) fn lookup(key: &str, lang: &str) -> Option<&'static str> {
             _ => "\u{2717} Failed to log bug",
         },
 
+        "build_confirm_prompt" => match lang {
+            "Spanish" => "\u{00bf}Quieres que lo construya?",
+            "Portuguese" => "Quer que eu construa isso?",
+            "French" => "Tu veux que je le construise?",
+            "German" => "Soll ich das bauen?",
+            "Italian" => "Vuoi che lo costruisca?",
+            "Dutch" => "Zal ik het bouwen?",
+            "Russian" => "\u{041f}\u{043e}\u{0441}\u{0442}\u{0440}\u{043e}\u{0438}\u{0442}\u{044c}?",
+            _ => "Want me to build it?",
+        },
+
         _ => return None,
     };
     Some(v)
