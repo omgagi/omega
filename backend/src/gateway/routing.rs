@@ -231,8 +231,12 @@ impl Gateway {
             h.abort();
         }
         if let Some(channel) = self.channels.get(&incoming.channel) {
-            if let Err(e) = channel.send(response).await {
-                error!("failed to send response via {}: {e}", incoming.channel);
+            // Skip sending if the response text is empty after marker stripping
+            // (e.g. BUILD_PROPOSAL was the only content). Telegram rejects empty messages.
+            if !response.text.trim().is_empty() {
+                if let Err(e) = channel.send(response).await {
+                    error!("failed to send response via {}: {e}", incoming.channel);
+                }
             }
 
             // Send task confirmation.
