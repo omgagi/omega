@@ -12,7 +12,7 @@ The heartbeat system performs periodic AI check-ins on a clock-aligned schedule.
 | 2 | next_clock_boundary() | Utility | `backend/src/gateway/heartbeat.rs:31` | Computes next clock-aligned boundary given current minute and interval | -- |
 | 3 | classify_heartbeat_groups() | Service | `backend/src/gateway/heartbeat.rs` | Fast Sonnet classification of checklist items into domain groups for parallel execution | Provider |
 | 4 | execute_heartbeat_group() | Service | `backend/src/gateway/heartbeat.rs` | Executes a single heartbeat domain group with Opus, processes markers | Provider |
-| 5 | is_nothing_to_report() | Utility | `backend/src/gateway/heartbeat.rs` | Detects "nothing to report" / HEARTBEAT_OK responses | -- |
+| 5 | HEARTBEAT_OK evaluation | Utility | `backend/src/gateway/heartbeat.rs` | Detects HEARTBEAT_OK marker in responses to determine suppression | -- |
 | 6 | Project heartbeats | Service | `backend/src/gateway/heartbeat.rs` | Filesystem-based discovery of project-specific HEARTBEAT.md files, executes each project heartbeat | load_projects, read_project_heartbeat_file |
 | 7 | build_enrichment() | Service | `backend/src/gateway/heartbeat_helpers.rs` | Builds enrichment context (lessons, outcomes, profile) for heartbeat execution | Store |
 | 8 | build_system_prompt() | Service | `backend/src/gateway/heartbeat_helpers.rs` | Builds system prompt for heartbeat execution | Prompts |

@@ -19,13 +19,13 @@
 | `mod.rs` | Struct Gateway, `new()`, `run()`, `dispatch_message()`, `shutdown()`, `send_text()`, tests |
 | `pipeline.rs` | `handle_message()`, resolves `active_project`, `/setup` intercept, `/google` intercept, `pending_google` session check, delegates to `handle_direct_response()` |
 | `pipeline_builds.rs` | Build confirmation handling: `handle_pending_build_confirmation()` — checks pending_build_request fact, TTL, confirm/cancel |
-| `prompt_builder.rs` | `build_system_prompt()` -- full prompt construction with conditional section injection |
+| `prompt_builder.rs` | `build_system_prompt()` -- full prompt construction with all sections always injected |
 | `routing.rs` | `classify_and_route()` (dead code), `execute_steps()` (dead code), `handle_direct_response()`, passes `active_project` to `process_markers()` |
 | `process_markers.rs` | `process_markers(incoming, text, active_project)`, `process_purge_facts()`, `process_improvement_markers()`, `send_task_confirmation()` |
 | `shared_markers.rs` | `process_task_and_learning_markers()` -- shared CANCEL_TASK, UPDATE_TASK, REWARD, LESSON processing (deduplicated across pipeline, action, heartbeat) |
 | `auth.rs` | `check_auth()`, `handle_whatsapp_qr()` (with on-demand dormant channel activation) |
 | `keywords.rs` | `kw_match()`, `is_build_confirmed()`, `is_build_cancelled()`, `build_cancelled_message()`, `is_valid_fact()`, setup i18n messages (8 languages), tests |
-| `keywords_data.rs` | Static keyword data arrays (`MAX_ACTION_RETRIES`, `SCHEDULING_KW`, `RECALL_KW`, `TASKS_KW`, `PROJECTS_KW`, `PROFILE_KW`, `OUTCOMES_KW`, `META_KW`, `BUILD_CONFIRM_KW`, `BUILD_CANCEL_KW`, `BUILD_CONFIRM_TTL_SECS`). Extracted for 500-line limit |
+| `keywords_data.rs` | Static keyword data arrays (`MAX_ACTION_RETRIES`, `HELP_KW`, `BUILD_CONFIRM_KW`, `BUILD_CANCEL_KW`, `BUILD_CONFIRM_TTL_SECS`). Context keyword arrays (SCHEDULING_KW, RECALL_KW, etc.) removed — all sections are now always injected. Extracted for 500-line limit |
 | `scheduler.rs` | Slim orchestrator: `scheduler_loop()` polls due tasks, delegates action execution to `scheduler_action.rs` |
 | `scheduler_action.rs` | Action task execution: `execute_action_task()`, system prompt enrichment, `ACTION_OUTCOME` parsing, marker processing, retry/failure |
 | `heartbeat.rs` | `heartbeat_loop()` (global + per-project), `classify_heartbeat_groups()`, `execute_heartbeat_group()` |
@@ -55,8 +55,8 @@ The gateway manages the asynchronous event loop that processes incoming messages
 
 ```
 Message → Auth → Sanitize → Command Check (/setup intercept) → Typing → pending_setup check → pending_build_request check →
-Keyword Detection (kw_match) → Conditional Prompt Compose (Identity+Soul+System+Builds always, scheduling/projects/meta if keywords match) →
-Context (build_context with ContextNeeds gating recall/tasks DB queries) → MCP Trigger Match →
+Prompt Compose (all sections always injected: Identity+Soul+System+Scheduling+Projects+Meta+Builds+Heartbeat) →
+Context (build_context with ContextNeeds defaulting to all true) → MCP Trigger Match →
 Session Check (strip heavy prompt if continuation) → DIRECT → Provider → Marker Processing (BUILD_PROPOSAL → pending_build_request) →
 Session Capture → Memory Store → Audit → Send
   [If pending_build_request confirmed: → 7-phase agent pipeline → Audit → Send]
@@ -100,7 +100,7 @@ pub struct Gateway {
 - `channel_config`: Per-channel settings (Telegram allowed_users list).
 - `heartbeat_config`: Periodic heartbeat check-in configuration (interval, active hours, channel, reply target).
 - `scheduler_config`: Scheduled task delivery configuration (enabled flag, poll interval).
-- `prompts`: Externalized prompts and welcome messages, loaded from `~/.omega/prompts/SYSTEM_PROMPT.md` and `~/.omega/prompts/WELCOME.toml` at startup. Falls back to hardcoded defaults if files are missing. The `Prompts` struct has 3 conditional sections — `scheduling`, `projects_rules`, `meta` — parsed from `## Scheduling`, `## Projects`, `## Meta` sections in `SYSTEM_PROMPT.md`. These are only injected when keyword detection triggers them (see Stage 4: Build Context).
+- `prompts`: Externalized prompts and welcome messages, loaded from `~/.omega/prompts/SYSTEM_PROMPT.md` and `~/.omega/prompts/WELCOME.toml` at startup. Falls back to hardcoded defaults if files are missing. The `Prompts` struct has 3 named sections — `scheduling`, `projects_rules`, `meta` — parsed from `## Scheduling`, `## Projects`, `## Meta` sections in `SYSTEM_PROMPT.md`. All sections are always injected into the system prompt (no keyword gating).
 - `model_fast`: Model identifier used for DIRECT/simple messages (e.g., `"claude-sonnet-4-6"`). Set from `ClaudeCodeConfig.model` at startup. Injected into `context.model` by `classify_and_route()` for direct-path messages.
 - `model_complex`: Model identifier used for multi-step/complex messages (e.g., `"claude-opus-4-6"`). Set from `ClaudeCodeConfig.model_complex` at startup. Injected into `context.model` by `classify_and_route()` for step-based execution.
 - `uptime`: Tracks server start time for uptime calculations in commands.
@@ -112,83 +112,42 @@ pub struct Gateway {
 - `config_path`: Path to `config.toml` — used for persisting runtime changes (e.g. heartbeat interval) via text-based patching.
 - `gateway_tx`: Stored gateway sender (`Mutex<Option<mpsc::Sender<IncomingMessage>>>`). Set in `run()` after creating the mpsc channel. Used by `handle_whatsapp_qr()` to start dormant channels on-demand — the sender is cloned and a forwarding task is spawned to route the newly started channel's messages into the main event loop.
 
-## Token-Efficient Prompt Architecture (Keyword-Gated Conditional Injection)
+## Prompt Architecture (All Sections Always Injected)
 
-The gateway reduces system prompt token overhead by ~55% for typical messages. Instead of injecting all prompt sections unconditionally, it detects keywords in the user's message and conditionally injects only the relevant sections.
-
-### Keyword Constants
-
-| Constant | Triggers | Example Keywords |
-|----------|----------|-----------------|
-| `SCHEDULING_KW` | Scheduling rules injection (`prompts.scheduling`) | "remind", "schedule", "alarm", "tomorrow", "cancel", "recurring", multilingual variants |
-| `RECALL_KW` | Semantic recall DB query (FTS5 related past messages) | "remember", "last time", "you said", "we discussed", multilingual variants |
-| `TASKS_KW` | Pending tasks DB query | "task", "reminder", "pending", "scheduled", "my tasks", multilingual variants |
-| `PROJECTS_KW` | Projects management rules injection (`prompts.projects_rules`) | "project", "activate", "deactivate", multilingual variants |
-| `PROFILE_KW` | User profile (facts) injection into prompt | "who am i", "my name", "about me", "my profile", "what do you know", multilingual variants |
-| `OUTCOMES_KW` | Recent reward outcomes injection | "how did i", "how am i doing", "reward", "outcome", "feedback", "performance", multilingual variants |
-| `META_KW` | Meta rules injection (`prompts.meta`) — skill improvement, bug reporting, WhatsApp, personality, purge | "skill", "improve", "bug", "whatsapp", "qr", "personality", "forget", "purge" |
-
-All keyword lists include multilingual variants (Spanish, Portuguese, French, German, Italian, Dutch, Russian) for the 8 supported languages.
+All context sections (scheduling, projects_rules, meta, heartbeat checklist) are always injected into the system prompt unconditionally. The keyword-gated conditional injection system was removed — there are no longer any keyword arrays (SCHEDULING_KW, RECALL_KW, TASKS_KW, PROJECTS_KW, META_KW, PROFILE_KW, OUTCOMES_KW) controlling section injection. `ContextNeeds` always uses its default (all fields `true`), so all DB queries (recall, pending tasks, profile, summaries, outcomes) are always executed.
 
 ### `fn kw_match(msg_lower: &str, keywords: &[&str]) -> bool` (keywords.rs)
 **Purpose:** Check if any keyword in the list is a substring of the lowercased message.
 
 **Logic:** `keywords.iter().any(|kw| msg_lower.contains(kw))` — simple substring match, no tokenization or word boundaries.
 
+**Usage:** Preserved for the WhatsApp help intercept (`HELP_KW`) and build confirmation/cancellation (`BUILD_CONFIRM_KW`, `BUILD_CANCEL_KW`). No longer used for context section gating.
+
 ### `ContextNeeds` Struct (from `omega_core::context`)
-**Purpose:** Gates expensive DB queries and prompt injection in `build_context()`. Fields:
-- `recall: bool` — Load semantic recall (FTS5 related past messages). Triggered by `RECALL_KW`.
-- `pending_tasks: bool` — Load and inject pending scheduled tasks. Triggered by `SCHEDULING_KW` or `TASKS_KW`.
-- `profile: bool` — Inject user facts into prompt. Triggered by `PROFILE_KW` or scheduling/recall/tasks (needs identity context). Facts are always loaded (onboarding/language), but only injected when `true`.
-- `summaries: bool` — Load and inject recent conversation summaries. Triggered by `RECALL_KW` (same gate as recall).
-- `outcomes: bool` — Load and inject recent reward outcomes. Triggered by `OUTCOMES_KW`.
+**Purpose:** Controls DB queries and prompt injection in `build_context()`. Fields:
+- `recall: bool` — Load semantic recall (FTS5 related past messages).
+- `pending_tasks: bool` — Load and inject pending scheduled tasks.
+- `profile: bool` — Inject user facts into prompt.
+- `summaries: bool` — Load and inject recent conversation summaries.
+- `outcomes: bool` — Load and inject recent reward outcomes.
 
-Default: all `true` (full context). The gateway sets them based on keyword detection before calling `build_context()`. Lessons are always loaded regardless of flags (tiny, high behavioral value).
+Default: all `true` (full context). The gateway always uses the default — all context is always loaded. Lessons are always loaded regardless of flags (tiny, high behavioral value).
 
-### Keyword Detection Logic (in `handle_message`)
-```rust
-let msg_lower = clean_incoming.text.to_lowercase();
-let needs_scheduling = kw_match(&msg_lower, SCHEDULING_KW);
-let needs_recall    = kw_match(&msg_lower, RECALL_KW);
-let needs_tasks     = needs_scheduling || kw_match(&msg_lower, TASKS_KW);
-let needs_projects  = kw_match(&msg_lower, PROJECTS_KW);
-let needs_meta      = kw_match(&msg_lower, META_KW);
-let needs_profile   = kw_match(&msg_lower, PROFILE_KW)
-    || needs_scheduling || needs_recall || needs_tasks;
-let needs_summaries = needs_recall;
-let needs_outcomes  = kw_match(&msg_lower, OUTCOMES_KW);
-```
-
-**Key rules:**
-- `needs_tasks` is `true` when either scheduling or task keywords match (scheduling implies task awareness).
-- `needs_projects` is keyword-only — gates project management rules (`prompts.projects_rules`). Active project ROLE.md and project awareness hint are always injected (not keyword-gated).
-- `needs_profile` cascades from scheduling/recall/tasks (identity context is useful for timezone, past context, and task ownership).
-- `needs_summaries` tracks `needs_recall` — summaries are past conversation context.
-- `needs_outcomes` is keyword-only (feedback/performance queries).
-- Lessons are always injected regardless of keywords (tiny, high behavioral value).
-- Core sections (Identity, Soul, System) are always injected regardless of keywords.
-- Provider name, current time, and platform hint are always injected.
-- Heartbeat interval is now only injected when heartbeat keywords match (moved inside the heartbeat keyword check block).
-
-### Prompt Composition (Conditional Sections)
+### Prompt Composition (All Sections)
 ```
 Always: Identity + Soul + System + provider info + time + platform hint + project awareness hint + active project ROLE.md + lessons
-If SCHEDULING_KW:  + prompts.scheduling
-If PROJECTS_KW:    + prompts.projects_rules (management rules only)
-If META_KW:        + prompts.meta
-If heartbeat KW:   + heartbeat checklist + heartbeat pulse
-If PROFILE_KW/scheduling/recall/tasks: + user profile (facts)
-If RECALL_KW:      + summaries + semantic recall
-If OUTCOMES_KW:    + recent outcomes
-If sandbox:        + sandbox constraint (unchanged)
+       + prompts.scheduling + prompts.projects_rules + prompts.meta
+       + heartbeat checklist + heartbeat pulse
+       + user profile (facts) + summaries + semantic recall + recent outcomes
+       + sandbox constraint (if applicable)
 ```
 
-### `Prompts` Struct Fields (Conditional Sections)
+### `Prompts` Struct Fields
 | Field | Parsed From | Injected When |
 |-------|------------|---------------|
-| `scheduling` | `## Scheduling` in SYSTEM_PROMPT.md | `SCHEDULING_KW` matches |
-| `projects_rules` | `## Projects` in SYSTEM_PROMPT.md | `PROJECTS_KW` matches |
-| `meta` | `## Meta` in SYSTEM_PROMPT.md | `META_KW` matches |
+| `scheduling` | `## Scheduling` in SYSTEM_PROMPT.md | Always |
+| `projects_rules` | `## Projects` in SYSTEM_PROMPT.md | Always |
+| `meta` | `## Meta` in SYSTEM_PROMPT.md | Always |
 
 ## Functions
 
@@ -554,7 +513,7 @@ If sandbox:        + sandbox constraint (unchanged)
 - Examples: `/uptime`, `/help`, `/status`.
 
 **Stage 3b: Platform Formatting Hint**
-- Platform-specific formatting hint is injected as part of the keyword-gated prompt composition (Stage 4b), always included:
+- Platform-specific formatting hint is injected as part of prompt composition (Stage 4b), always included:
   - **WhatsApp**: "Platform: WhatsApp. Avoid markdown tables and headers — use bold (*text*) and bullet lists instead."
   - **Telegram**: "Platform: Telegram. Markdown is supported (bold, italic, code blocks)."
   - Other channels: no hint injected.
@@ -567,23 +526,20 @@ If sandbox:        + sandbox constraint (unchanged)
   - Abort if channel send fails.
 - Store handle for later abort.
 
-**Stage 4b: Keyword-Gated Prompt Composition**
-*Note: This stage consolidates the former Stage 4b (Project Injection), 4c (Heartbeat Awareness), 4e (Heartbeat Pulse), and 4f (Sandbox Injection) into a unified keyword-gated prompt composition.*
-- Lowercase the user's message text once as `msg_lower`.
-- Run `kw_match()` against each keyword list to compute `needs_scheduling`, `needs_recall`, `needs_tasks`, `needs_projects`, `needs_meta`.
-- Compose the system prompt:
+**Stage 4b: Prompt Composition (All Sections Always Injected)**
+*Note: This stage consolidates the former Stage 4b (Project Injection), 4c (Heartbeat Awareness), 4e (Heartbeat Pulse), and 4f (Sandbox Injection) into a unified prompt composition.*
+- Compose the system prompt with all sections always injected:
   1. Always: `format!("{}\n\n{}\n\n{}", identity, soul, system)` + provider info + current time + platform hint + project awareness hint (~40-50 tokens listing available project names, or creation suggestion if none exist) + active project ROLE.md (always when a project is active).
-  2. Conditionally append `prompts.scheduling` (if `needs_scheduling`), `prompts.projects_rules` (if `needs_projects`), `prompts.meta` (if `needs_meta`).
-  3. Conditionally append heartbeat checklist, heartbeat pulse (unchanged from prior behavior).
-- Build `ContextNeeds { recall, pending_tasks, profile, summaries, outcomes }` to gate DB queries and prompt injection.
-- This architecture reduces average token overhead by ~55% for typical messages (e.g., "good morning" skips scheduling rules, task lists, project rules, and meta instructions).
+  2. Always append `prompts.scheduling`, `prompts.projects_rules`, `prompts.meta`.
+  3. Always append heartbeat checklist, heartbeat pulse.
+- `ContextNeeds` uses its default (all `true`) — all DB queries and prompt injection are always active.
 
 **Stage 5: Build Context from Memory**
 - Resolve `active_project` from the user's `active_project` fact.
 - Call `self.memory.build_context(&clean_incoming, &system_prompt, &context_needs, active_project.as_deref())` to build enriched context.
-- The `&context_needs` parameter gates expensive DB queries: semantic recall (FTS5) is skipped unless `needs_recall` is true, and pending tasks are skipped unless `needs_tasks` is true.
+- `ContextNeeds` defaults to all `true` — all DB queries (semantic recall, pending tasks, profile, summaries, outcomes) are always executed.
 - The `active_project` parameter scopes outcomes (filtered to project) and layers lessons (project-specific first, then general).
-- This includes recent conversation history, relevant facts (always loaded), and the keyword-composed system prompt.
+- This includes recent conversation history, relevant facts, and the fully-composed system prompt.
 - If error, abort typing task, send error message, and return.
 
 **Stage 5b: MCP Trigger Matching**
@@ -1306,7 +1262,7 @@ The response includes:
 ## Memory Integration
 
 ### Store Operations Used
-- **`build_context(&IncomingMessage, &str, &ContextNeeds) -> Result<Context>`:** Builds enriched context with history and facts, using the provided base system prompt. The `ContextNeeds` parameter gates expensive DB queries (semantic recall, pending tasks) — when a field is `false`, the corresponding query is skipped entirely.
+- **`build_context(&IncomingMessage, &str, &ContextNeeds) -> Result<Context>`:** Builds enriched context with history and facts, using the provided base system prompt. The `ContextNeeds` parameter gates DB queries (semantic recall, pending tasks) — the gateway always passes the default (all `true`), so all queries are always executed.
 - **`store_exchange(&IncomingMessage, &OutgoingMessage) -> Result<()>`:** Saves the message pair to conversation history.
 - **`store_fact(&sender_id, &key, &value) -> Result<()>`:** Stores an extracted fact about a user.
 - **`get_conversation_messages(&conversation_id) -> Result<Vec<(String, String)>>`:** Fetches all messages in a conversation.
@@ -1408,7 +1364,7 @@ All interactions are logged to SQLite with:
 19. Heartbeat loop skips API calls entirely when no checklist file (`~/.omega/prompts/HEARTBEAT.md`) is configured.
 20. Heartbeat prompt is enriched with user facts and recent conversation summaries from memory.
 21. HEARTBEAT_ADD:, HEARTBEAT_REMOVE:, and HEARTBEAT_INTERVAL: markers are stripped from the response before sending to the user. Adds are appended to `~/.omega/prompts/HEARTBEAT.md`; removes use case-insensitive partial matching and never remove comment lines. HEARTBEAT_INTERVAL: updates the shared `AtomicU64` interval (valid range: 1–1440 minutes) and sends a localized confirmation notification (via `i18n::heartbeat_interval_updated()`) to the owner via the heartbeat channel.
-22. The current heartbeat checklist is injected into the system prompt only when the user's message contains monitoring-related keywords ("heartbeat", "watchlist", "monitoring", "checklist"). This prevents token waste on unrelated conversations while ensuring OMEGA has awareness when the user asks about monitoring.
+22. The current heartbeat checklist is always injected into the system prompt, ensuring OMEGA always has awareness of monitoring items.
 23. Filesystem protection is always-on via `omega_sandbox::protected_command()` and `omega_sandbox::is_write_blocked()` — no configuration needed.
 24. After sending the text response, new image files created in the workspace by the provider are delivered via `channel.send_photo()` and then deleted from the workspace.
 26. Incoming image attachments are saved to `{data_dir}/workspace/inbox/` before the provider call (Stage 2a). Cleanup is guaranteed by `InboxGuard` (RAII Drop), regardless of early returns. Zero-byte attachments are rejected. Writes use `sync_all` for durability.
@@ -1425,10 +1381,10 @@ All interactions are logged to SQLite with:
 37. PURGE_FACTS preserves system fact keys (`welcomed`, `preferred_language`, `active_project`, `personality`) — same logic as `/purge` in `commands.rs`.
 38. CANCEL_TASK and UPDATE_TASK use multi-extraction (`extract_all_cancel_tasks()`, `extract_all_update_tasks()`) to process ALL markers in a single response, not just the first. Each marker pushes a `MarkerResult` (TaskCancelled/TaskCancelFailed/TaskUpdated/TaskUpdateFailed) for gateway confirmation display.
 39. The scheduler action loop also processes CANCEL_TASK and UPDATE_TASK markers from action task responses, using the same `extract_all_*` multi-extraction functions (with empty sender_id since action tasks run autonomously).
-40. Token-efficient prompt architecture: `Prompts.scheduling`, `Prompts.projects_rules`, and `Prompts.meta` are only injected when `kw_match()` detects relevant keywords in the user's message. `ContextNeeds` gates DB queries (recall, pending tasks, summaries, outcomes) and prompt injection (user profile) based on keyword detection. Active project instructions are keyword-gated. Heartbeat interval is only injected when heartbeat keywords match. Lessons are always injected (tiny, high value). Core sections (Identity, Soul, System) are always injected. Average token reduction is ~55-70% for typical messages.
+40. All prompt sections are always injected: `Prompts.scheduling`, `Prompts.projects_rules`, `Prompts.meta`, heartbeat checklist, heartbeat pulse, active project instructions. `ContextNeeds` defaults to all `true` — all DB queries (recall, pending tasks, summaries, outcomes, profile) are always executed. Keyword-gated conditional injection was removed. `kw_match()` is preserved only for WhatsApp help intercept and build confirmation/cancellation.
 41. REWARD markers (format: `REWARD: +1|domain|lesson`) are processed via multi-extraction. Score must be `-1`, `0`, or `+1`. Stored via `store_outcome()` with source `"conversation"` (regular messages) or `"heartbeat"` (heartbeat responses). Stripped from response before sending.
 42. LESSON markers (format: `LESSON: domain|rule`) are processed via multi-extraction. Stored via `store_lesson()` which upserts by `(sender_id, domain)` — existing rules are replaced and occurrences incremented. Stripped from response before sending.
-43. Outcomes and lessons are injected into the system prompt by `build_context()` (always, not keyword-gated). Outcomes use relative timestamps via `format_relative_time()`. Lessons show `[domain] rule`. Token budget: ~225-450 tokens for both.
+43. Outcomes and lessons are always injected into the system prompt by `build_context()`. Outcomes use relative timestamps via `format_relative_time()`. Lessons show `[domain] rule`. Token budget: ~225-450 tokens for both.
 
 ## Tests
 
@@ -1750,22 +1706,10 @@ Verifies that `has_purge_marker()` rejects partial matches like `PURGE_FACTS_EXT
 **Type:** Synchronous unit test (`#[test]`)
 Verifies that `strip_purge_marker()` removes `PURGE_FACTS` lines while preserving other content.
 
-### `test_kw_match_scheduling`
+### `test_kw_match_help_keywords`
 **Type:** Synchronous unit test (`#[test]`)
-Verifies that `kw_match()` matches scheduling keywords ("remind", "schedule", "alarm", "cancel") and rejects non-scheduling messages ("good morning", "how are you today").
+Verifies that `kw_match()` matches help keywords from `HELP_KW` (used for WhatsApp help intercept) and rejects non-help messages.
 
-### `test_kw_match_recall`
+### `test_kw_match_help_keywords_whatsapp`
 **Type:** Synchronous unit test (`#[test]`)
-Verifies that `kw_match()` matches recall keywords ("remember", "you told", "you mentioned") and rejects non-recall messages ("hello omega").
-
-### `test_kw_match_tasks`
-**Type:** Synchronous unit test (`#[test]`)
-Verifies that `kw_match()` matches task keywords ("tasks", "scheduled", "pending reminders") and rejects non-task messages.
-
-### `test_kw_match_projects`
-**Type:** Synchronous unit test (`#[test]`)
-Verifies that `kw_match()` matches project keywords ("activate", "deactivate", "project") and rejects non-project messages.
-
-### `test_kw_match_meta`
-**Type:** Synchronous unit test (`#[test]`)
-Verifies that `kw_match()` matches meta keywords ("skill", "improve", "bug", "whatsapp", "personality") and rejects non-meta messages.
+Verifies that `kw_match()` matches WhatsApp help keywords in the gateway integration tests.

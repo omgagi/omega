@@ -7,7 +7,6 @@
 use omega_core::message::IncomingMessage;
 use tracing::info;
 
-use super::keywords::*;
 use super::Gateway;
 use crate::i18n;
 
@@ -28,7 +27,7 @@ impl Gateway {
 
         let projects = &self.projects;
 
-        // Parse optional argument: `/context scheduling` simulates keyword activation.
+        // Parse optional argument: `/context full` shows the raw prompt.
         let arg = incoming
             .text
             .split_whitespace()
@@ -38,21 +37,8 @@ impl Gateway {
 
         let show_full = arg == "full";
 
-        // Determine which sections would activate.
-        let needs_scheduling = arg == "scheduling" || kw_match(&arg, SCHEDULING_KW);
-        let needs_projects = arg == "projects" || kw_match(&arg, PROJECTS_KW);
-        let needs_meta = arg == "meta" || kw_match(&arg, META_KW);
-
-        // Build the prompt exactly as the pipeline would.
-        let prompt = self.build_system_prompt(
-            incoming,
-            &arg,
-            active_project,
-            projects,
-            needs_scheduling,
-            needs_projects,
-            needs_meta,
-        );
+        // Build the prompt exactly as the pipeline would (all sections always injected).
+        let prompt = self.build_system_prompt(incoming, active_project, projects);
 
         if show_full {
             // Send the raw prompt (split if needed for Telegram's 4096 char limit).
@@ -63,7 +49,7 @@ impl Gateway {
             return;
         }
 
-        // Build structured summary.
+        // Build structured summary — all sections are always ON.
         let mut sections = Vec::new();
 
         let identity_chars = self.prompts.identity.len();
@@ -71,21 +57,18 @@ impl Gateway {
         let system_chars = self.prompts.system.len();
 
         let on = i18n::t("context_on", &lang);
-        let off = i18n::t("context_off", &lang);
 
         sections.push(format!("[{on}] Identity ({identity_chars} chars)"));
         sections.push(format!("[{on}] Soul ({soul_chars} chars)"));
         sections.push(format!("[{on}] System ({system_chars} chars)"));
 
-        let sched_status = if needs_scheduling { &on } else { &off };
         sections.push(format!(
-            "[{sched_status}] Scheduling ({} chars)",
+            "[{on}] Scheduling ({} chars)",
             self.prompts.scheduling.len()
         ));
 
-        let proj_status = if needs_projects { &on } else { &off };
         sections.push(format!(
-            "[{proj_status}] Project rules ({} chars)",
+            "[{on}] Project rules ({} chars)",
             self.prompts.projects_rules.len()
         ));
 
@@ -94,11 +77,7 @@ impl Gateway {
             self.prompts.builds.len()
         ));
 
-        let meta_status = if needs_meta { &on } else { &off };
-        sections.push(format!(
-            "[{meta_status}] Meta ({} chars)",
-            self.prompts.meta.len()
-        ));
+        sections.push(format!("[{on}] Meta ({} chars)", self.prompts.meta.len()));
 
         if let Some(project_name) = active_project {
             if let Some(proj) = projects.iter().find(|p| p.name == project_name) {

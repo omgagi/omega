@@ -308,41 +308,13 @@ impl Gateway {
             return;
         }
 
-        let msg_lower = clean_incoming.text.to_lowercase();
-        let needs_scheduling = kw_match(&msg_lower, SCHEDULING_KW);
-        let needs_recall = kw_match(&msg_lower, RECALL_KW);
-        let needs_tasks = needs_scheduling || kw_match(&msg_lower, TASKS_KW);
-        let needs_projects = kw_match(&msg_lower, PROJECTS_KW);
-        let needs_meta = kw_match(&msg_lower, META_KW);
-        let needs_profile = kw_match(&msg_lower, PROFILE_KW)
-            || needs_scheduling // timezone/location needed
-            || needs_recall // past context needs identity
-            || needs_tasks; // task context needs identity
-        let needs_summaries = needs_recall;
-        let needs_outcomes = kw_match(&msg_lower, OUTCOMES_KW);
+        // All context sections are always injected — no keyword gating.
+        // This eliminates false negatives (missed intent) from fragile keyword
+        // matching. The token cost is small; reliability wins.
+        let context_needs = ContextNeeds::default();
 
-        info!(
-            "[{}] prompt needs: scheduling={} recall={} tasks={} projects={} meta={} profile={} summaries={} outcomes={}",
-            incoming.channel,
-            needs_scheduling,
-            needs_recall,
-            needs_tasks,
-            needs_projects,
-            needs_meta,
-            needs_profile,
-            needs_summaries,
-            needs_outcomes,
-        );
-
-        let system_prompt = self.build_system_prompt(
-            &incoming,
-            &msg_lower,
-            active_project.as_deref(),
-            projects,
-            needs_scheduling,
-            needs_projects,
-            needs_meta,
-        );
+        let system_prompt =
+            self.build_system_prompt(&incoming, active_project.as_deref(), projects);
 
         info!(
             "[{}] system prompt: ~{} tokens ({} chars)",
@@ -350,14 +322,6 @@ impl Gateway {
             system_prompt.len() / 4,
             system_prompt.len()
         );
-
-        let context_needs = ContextNeeds {
-            recall: needs_recall,
-            pending_tasks: needs_tasks,
-            profile: needs_profile,
-            summaries: needs_summaries,
-            outcomes: needs_outcomes,
-        };
 
         let context = match self
             .memory
@@ -405,24 +369,19 @@ impl Gateway {
             {
                 context.session_id = Some(sid);
 
+                // Session continuation: inject all sections (lightweight refresh).
                 let mut minimal = format!(
                     "Current time: {}",
                     chrono::Local::now().format("%Y-%m-%d %H:%M %Z")
                 );
-                if needs_scheduling {
-                    minimal.push_str("\n\n");
-                    minimal.push_str(&self.prompts.scheduling);
-                }
-                if needs_projects {
-                    minimal.push_str("\n\n");
-                    minimal.push_str(&self.prompts.projects_rules);
-                }
+                minimal.push_str("\n\n");
+                minimal.push_str(&self.prompts.scheduling);
+                minimal.push_str("\n\n");
+                minimal.push_str(&self.prompts.projects_rules);
                 minimal.push_str("\n\n");
                 minimal.push_str(&self.prompts.builds);
-                if needs_meta {
-                    minimal.push_str("\n\n");
-                    minimal.push_str(&self.prompts.meta);
-                }
+                minimal.push_str("\n\n");
+                minimal.push_str(&self.prompts.meta);
 
                 // Project awareness (lightweight — name only, not ROLE.md).
                 // ROLE.md was injected in the first message of this session and

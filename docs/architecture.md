@@ -119,15 +119,15 @@ Send Telegram's "typing..." bubble. A background task re-sends it every 5 second
 
 This is where the gateway decides **what data** to load from SQLite:
 
-| Data | When loaded | Why conditional |
-|------|-------------|-----------------|
-| Conversation history (last N messages) | Always | Core context |
-| User facts (profile) | Always | Needed for onboarding + language |
-| Learned lessons | Always | Tiny, high behavioral value |
-| Outcomes (last 15 rewards) | If outcome keywords match | Token savings |
-| Pending tasks | If scheduling keywords match | Token savings |
-| Summaries (past conversations) | If recall keywords match | Token savings |
-| Semantic recall | If recall keywords match | Token savings |
+| Data | When loaded |
+|------|-------------|
+| Conversation history (last N messages) | Always |
+| User facts (profile) | Always |
+| Learned lessons | Always |
+| Outcomes (last 15 rewards) | Always |
+| Pending tasks | Always |
+| Summaries (past conversations) | Always |
+| Semantic recall | Always |
 
 ### 3.8 Compose System Prompt
 
@@ -142,13 +142,13 @@ The gateway **always builds** the full system prompt first (needed as fallback a
 | `## System` | First message only | Core rules, marker quick-reference |
 | Project awareness | Always (~40-50 tokens) | Available project names, creation/activation hints |
 | Active project ROLE.md | Always when a project is active | Full project instructions from `~/.omega/projects/<name>/ROLE.md` |
-| `## Scheduling` | If scheduling keywords match | Task/reminder rules |
-| `## Projects` | If project keywords match | Project management conventions |
-| `## Meta` | If meta keywords match | Skill improvement, heartbeat, WhatsApp |
+| `## Scheduling` | Always | Task/reminder rules |
+| `## Projects` | Always | Project management conventions |
+| `## Meta` | Always | Skill improvement, heartbeat, WhatsApp |
 
-The core sections (Identity + Soul + System) are sent **once** on the first message of a conversation. On subsequent messages within the same CLI session, they are completely replaced by a minimal context update (see 3.10 below). The conditional sections (Scheduling, Projects management, Meta) are keyword-gated on every message — included only when relevant keywords appear. Project awareness (~40-50 tokens) and active project ROLE.md are always injected regardless of keywords.
+The core sections (Identity + Soul + System) are sent **once** on the first message of a conversation. On subsequent messages within the same CLI session, they are completely replaced by a minimal context update (see 3.10 below). All other sections (Scheduling, Projects management, Meta, heartbeat checklist) are always injected on every message.
 
-**Token savings:** ~55-70% on first messages (conditional sections skipped), ~90-99% on continuations (entire prompt replaced).
+**Token savings:** ~90-99% on continuations (entire prompt replaced by minimal context update).
 
 ### 3.9 Skill & MCP Activation
 
@@ -166,9 +166,9 @@ If an active CLI session exists for this sender:
 - **Replace the entire system prompt** (identity + soul + system + everything) with a minimal context update:
   ```
   Current time: 2026-02-22 14:30 CET
-  [+ scheduling section, only if scheduling keywords match]
-  [+ projects section, only if project keywords match]
-  [+ meta section, only if meta keywords match]
+  [+ scheduling section]
+  [+ projects section]
+  [+ meta section]
   [+ project awareness hint, if projects exist]
   [+ active project ROLE.md, if a project is active]
   ```
@@ -321,7 +321,7 @@ The Claude Code CLI supports session continuity to avoid re-sending the full sys
 
 1. **First message:** Full context (system prompt + history + user message) with `session_id: None`. The CLI returns a `session_id` in its JSON response.
 
-2. **Subsequent messages:** Gateway sets `Context.session_id`. The provider passes `--resume <session_id>`. System prompt is replaced with a minimal context update (current time + keyword-gated sections only). History is cleared (already in the CLI session). **Token savings: ~90-99%.**
+2. **Subsequent messages:** Gateway sets `Context.session_id`. The provider passes `--resume <session_id>`. System prompt is replaced with a minimal context update (current time + all sections). History is cleared (already in the CLI session). **Token savings: ~90-99%.**
 
 3. **Invalidation:** Session ID is cleared on `/forget`, `FORGET_CONVERSATION` marker, idle timeout, or provider error. `/forget` clears the session for the current project only; a full sender reset clears all project sessions.
 
@@ -384,7 +384,7 @@ Four independent loops run alongside message processing:
 Polls `scheduled_tasks` table every 60 seconds. Delivers due **reminders** as channel messages. Executes due **action tasks** via a full provider call with tool/MCP access — the AI acts autonomously and reports the result.
 
 ### Heartbeat (`gateway/heartbeat.rs`)
-Clock-aligned periodic execution (default 30 min, fires at clean boundaries like :00/:30). Reads `~/.omega/prompts/HEARTBEAT.md` checklist, classifies items by domain, executes related groups in parallel via Opus. Processes response markers independently per group. Suppresses `HEARTBEAT_OK` when no meaningful content remains.
+Clock-aligned periodic execution (default 30 min, fires at clean boundaries like :00/:30). Reads `~/.omega/prompts/HEARTBEAT.md` checklist, classifies items by domain, executes related groups in parallel via Opus. Processes response markers independently per group. Suppresses responses when the AI emits the `HEARTBEAT_OK` marker.
 
 ### Summarizer (`gateway/summarizer.rs`)
 Finds idle conversations (no activity for configured duration), generates a summary via the AI, and closes them. Summaries are stored for future context recall.
@@ -400,7 +400,7 @@ OMEGA's reward-based learning system is project-aware. Every outcome (`REWARD:` 
 
 ### How `active_project` Flows Through the Pipeline
 
-1. **Keyword detection** resolves the user's `active_project` fact from the database
+1. **Pipeline** resolves the user's `active_project` fact from the database
 2. **Context building** passes `active_project` to `build_context()`, which loads project-scoped outcomes and lessons
 3. **System prompt** includes a `[Project: name]` badge when a project is active
 4. **Marker processing** passes `active_project` to `process_markers()`, which tags all emitted `REWARD:`, `LESSON:`, `SCHEDULE:`, and `SCHEDULE_ACTION:` markers with the project
@@ -625,8 +625,6 @@ The guard is reference-counted per directory: multiple concurrent builds share t
 | Optimization | Savings |
 |--------------|---------|
 | Session persistence (`--resume`) | ~90-99% tokens on continuation messages |
-| Keyword-gated prompt sections | ~55-70% fewer tokens per message |
-| Keyword-gated DB queries | Skip expensive queries when not relevant |
 | Sonnet classification before Opus | Cheap routing, expensive model only when needed |
 | Per-sender serialization | No race conditions, no duplicate provider calls |
 | Auto-resume on max_turns | Long tasks complete without user intervention |
@@ -640,25 +638,9 @@ To see all the phases working together, let's trace what happens when you send:
 
 > "Schedule for tomorrow to call Juan at 5pm"
 
-### 1. Keyword Detection (`gateway/keywords.rs`)
+### 1. Prompt Composition
 
-The message is lowercased and scanned against keyword arrays. Two hits:
-
-- `"schedule"` matches `SCHEDULING_KW`
-- `"tomorrow"` matches `SCHEDULING_KW`
-
-This triggers a cascade of flags:
-
-```
-needs_scheduling = true     ← "schedule" + "tomorrow" matched
-needs_tasks      = true     ← automatically true when needs_scheduling is true
-needs_profile    = true     ← automatically true when needs_scheduling is true
-                              (timezone/location needed for UTC conversion)
-```
-
-### 2. Prompt Injection — What Gets Appended
-
-Because `needs_scheduling = true`, the `## Scheduling` section from `SYSTEM_PROMPT.md` is appended to the system prompt. This teaches Claude **how** to create tasks:
+All system prompt sections are always injected — no keyword detection is needed. The `## Scheduling` section from `SYSTEM_PROMPT.md` is always present in the system prompt, teaching Claude **how** to create tasks:
 
 ```
 You have a built-in scheduler — an internal task queue stored in your own
@@ -678,13 +660,11 @@ Task awareness (MANDATORY): Before creating ANY new reminder, you MUST
 review the "User's scheduled tasks" section in your context...
 ```
 
-Without the scheduling keywords, this entire block is **not sent** — Claude doesn't even know the marker syntax exists. This is the core of the conditional injection: teach Claude capabilities only when they're relevant.
+### 2. Context Enrichment — What Gets Loaded from SQLite
 
-### 3. Context Enrichment — What Gets Loaded from SQLite
+All context is always loaded by `build_context()` (ContextNeeds defaults to all `true`):
 
-Because the keyword cascade set `needs_profile` and `needs_tasks`, `build_context()` loads additional data:
-
-**User profile** (because `needs_profile = true` — timezone needed for UTC conversion):
+**User profile** (always loaded — timezone needed for UTC conversion):
 ```
 User profile:
 - name: Daniel
@@ -692,7 +672,7 @@ User profile:
 - location: Portugal
 ```
 
-**Pending tasks** (because `needs_tasks = true` — Claude must check for duplicates before creating):
+**Pending tasks** (always loaded — Claude checks for duplicates before creating):
 ```
 User's scheduled tasks:
 - [a1b2c3d4] Daily standup reminder (due: 2026-02-24 09:00, daily)
@@ -705,7 +685,7 @@ Learned behavioral rules:
 - [scheduling] User prefers reminders 15 minutes before, not at the exact time
 ```
 
-### 4. What Claude Actually Sees
+### 3. What Claude Actually Sees
 
 The full assembled prompt sent to `claude -p`:
 
@@ -714,13 +694,15 @@ The full assembled prompt sent to `claude -p`:
 [Soul section]               ← first message only
 [System section]             ← first message only
 
-[Scheduling section]         ← INJECTED because "schedule" keyword matched
+[Scheduling section]         ← always injected
+[Projects section]           ← always injected
+[Meta section]               ← always injected
 
-User profile:                ← INJECTED because scheduling needs timezone
+User profile:                ← always injected
 - name: Daniel
 - timezone: Europe/Lisbon
 
-User's scheduled tasks:      ← INJECTED so Claude checks for duplicates
+User's scheduled tasks:      ← always injected
 - [a1b2c3d4] Daily standup reminder (due: 2026-02-24 09:00, daily)
 
 Learned behavioral rules:    ← always injected
@@ -732,7 +714,7 @@ IMPORTANT: Always respond in English.
 user: Schedule for tomorrow to call Juan at 5pm
 ```
 
-### 5. What Claude Responds (raw, before processing)
+### 4. What Claude Responds (raw, before processing)
 
 ```
 I'll set that up for you — a reminder to call Juan tomorrow at 5pm.
@@ -741,14 +723,14 @@ SCHEDULE: Call Juan | 2026-02-24T17:00:00Z | once
 REWARD: +1|scheduling|straightforward reminder request
 ```
 
-### 6. What the Gateway Does (marker processing)
+### 5. What the Gateway Does (marker processing)
 
 1. **Extract** `SCHEDULE:` → parse description, datetime, repeat → call `memory.create_task()` → insert row in `scheduled_tasks` table
 2. **Extract** `REWARD:` → parse score, domain, lesson → call `memory.store_outcome()` → insert row in `outcomes` table
 3. **Strip** both marker lines from the text
 4. **Run** `strip_all_remaining_markers()` safety net (catches anything missed)
 
-### 7. What You See on Telegram
+### 6. What You See on Telegram
 
 **Message 1** (the response):
 ```
@@ -760,18 +742,4 @@ I'll set that up for you — a reminder to call Juan tomorrow at 5pm.
 ✓ Reminder created: Call Juan — Feb 24 at 5:00 PM (once)
 ```
 
-The markers are invisible. The scheduling instructions were only injected because your message contained the right keywords. If you had said "hello, how are you?" — none of the scheduling section, profile data, or pending tasks would have been loaded or sent to Claude.
-
-### Comparison: What a Simple "Hello" Triggers
-
-For contrast, sending just "hello" matches **no** keyword arrays:
-
-```
-needs_scheduling = false
-needs_tasks      = false
-needs_profile    = false
-needs_recall     = false
-needs_outcomes   = false
-```
-
-Claude receives only the core sections (Identity + Soul + System) with no conditional sections, no profile, no tasks, no summaries. The prompt is ~55-70% smaller than the scheduling example above.
+The markers are invisible. All system prompt sections and context data are always present, so Claude always has full awareness of its capabilities regardless of message content.

@@ -1,4 +1,9 @@
-//! System prompt construction — builds the full prompt with conditional section injection.
+//! System prompt construction — always injects all context sections.
+//!
+//! Previous versions gated sections (scheduling, projects, meta, heartbeat)
+//! behind keyword matching on the user message. This caused false negatives
+//! (missed intent) and false positives (irrelevant context). All sections are
+//! now always injected — the token cost is small and reliability wins.
 
 use std::sync::atomic::Ordering;
 
@@ -8,17 +13,12 @@ use super::Gateway;
 use crate::markers::*;
 
 impl Gateway {
-    /// Build the system prompt with conditional section injection.
-    #[allow(clippy::too_many_arguments)]
+    /// Build the system prompt with all context sections always injected.
     pub(super) fn build_system_prompt(
         &self,
         incoming: &IncomingMessage,
-        msg_lower: &str,
         active_project: Option<&str>,
         projects: &[omega_skills::Project],
-        needs_scheduling: bool,
-        needs_projects: bool,
-        needs_meta: bool,
     ) -> String {
         let mut prompt = format!(
             "{}\n\n{}\n\n{}",
@@ -63,23 +63,16 @@ impl Gateway {
             );
         }
 
-        if needs_scheduling {
-            prompt.push_str("\n\n");
-            prompt.push_str(&self.prompts.scheduling);
-        }
-        if needs_projects {
-            prompt.push_str("\n\n");
-            prompt.push_str(&self.prompts.projects_rules);
-        }
+        prompt.push_str("\n\n");
+        prompt.push_str(&self.prompts.scheduling);
+        prompt.push_str("\n\n");
+        prompt.push_str(&self.prompts.projects_rules);
         prompt.push_str("\n\n");
         prompt.push_str(&self.prompts.builds);
-        if needs_meta {
-            prompt.push_str("\n\n");
-            prompt.push_str(&self.prompts.meta);
-        }
+        prompt.push_str("\n\n");
+        prompt.push_str(&self.prompts.meta);
 
         // Active project ROLE.md — always injected when a project is active
-        // (not gated by needs_projects — that gates management rules only)
         if let Some(project_name) = active_project {
             if let Some(proj) = projects.iter().find(|p| p.name == project_name) {
                 prompt.push_str(&format!(
@@ -115,25 +108,19 @@ impl Gateway {
         }
 
         if self.heartbeat_config.enabled {
-            let needs_heartbeat = ["heartbeat", "watchlist", "monitoring", "checklist"]
-                .iter()
-                .any(|kw| msg_lower.contains(kw));
-            if needs_heartbeat {
-                let checklist = match active_project {
-                    Some(proj) => read_project_heartbeat_file(proj),
-                    None => read_heartbeat_file(),
-                };
-                if let Some(checklist) = checklist {
-                    prompt.push_str(
-                        "\n\nCurrent heartbeat checklist (items monitored periodically):\n",
-                    );
-                    prompt.push_str(&checklist);
-                }
-                let mins = self.heartbeat_interval.load(Ordering::Relaxed);
-                prompt.push_str(&format!(
-                    "\n\nHeartbeat pulse: every {mins} minutes. You can report this when asked and change it with HEARTBEAT_INTERVAL: <1-1440>."
-                ));
+            let checklist = match active_project {
+                Some(proj) => read_project_heartbeat_file(proj),
+                None => read_heartbeat_file(),
+            };
+            if let Some(checklist) = checklist {
+                prompt
+                    .push_str("\n\nCurrent heartbeat checklist (items monitored periodically):\n");
+                prompt.push_str(&checklist);
             }
+            let mins = self.heartbeat_interval.load(Ordering::Relaxed);
+            prompt.push_str(&format!(
+                "\n\nHeartbeat pulse: every {mins} minutes. You can report this when asked and change it with HEARTBEAT_INTERVAL: <1-1440>."
+            ));
         }
 
         prompt

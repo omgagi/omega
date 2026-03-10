@@ -65,7 +65,7 @@ Trading: External `omega-trader` binary invoked via the `ibkr-trader` skill.
 
 #### Gateway
 
-`backend/src/gateway/` directory module -- orchestrates message pipeline from arrival through auth, context building, keyword-gated prompt composition, model routing (Sonnet for simple, Opus for complex), provider call, marker processing, and response delivery. See `docs/architecture.md` for the full pipeline and feature details.
+`backend/src/gateway/` directory module -- orchestrates message pipeline from arrival through auth, context building, prompt composition (all sections always injected), model routing (Sonnet for simple, Opus for complex), provider call, marker processing, and response delivery. See `docs/architecture.md` for the full pipeline and feature details.
 
 ---
 

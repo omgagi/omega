@@ -19,13 +19,13 @@ The gateway was modularized from a single `backend/src/gateway.rs` into `backend
 | `mod.rs` | Gateway struct, `new()`, `run()`, `dispatch_message()`, `shutdown()`, `send_text()` |
 | `pipeline.rs` | `handle_message()` -- full message processing pipeline, `/setup` intercept |
 | `pipeline_builds.rs` | Build confirmation handling: `handle_pending_build_confirmation()` — checks pending_build_request fact, TTL, confirm/cancel |
-| `prompt_builder.rs` | `build_system_prompt()` -- full prompt construction with conditional section injection |
+| `prompt_builder.rs` | `build_system_prompt()` -- full prompt construction with all sections always injected |
 | `routing.rs` | `classify_and_route()`, `execute_steps()`, `handle_direct_response()` |
 | `process_markers.rs` | `process_markers()`, `send_task_confirmation()` |
 | `shared_markers.rs` | Shared CANCEL_TASK, UPDATE_TASK, REWARD, LESSON processing (deduplicated) |
 | `auth.rs` | `check_auth()`, `handle_whatsapp_qr()` (with on-demand dormant channel activation) |
 | `keywords.rs` | `kw_match()`, `is_valid_fact()`, setup i18n messages |
-| `keywords_data.rs` | Static keyword arrays (extracted for 500-line limit) |
+| `keywords_data.rs` | Static keyword data arrays — `HELP_KW` (WhatsApp help intercept), `BUILD_CONFIRM_KW`, `BUILD_CANCEL_KW`, `BUILD_CONFIRM_TTL_SECS`, `MAX_ACTION_RETRIES` (extracted for 500-line limit) |
 | `scheduler.rs` | `scheduler_loop()` -- background task delivery |
 | `scheduler_action.rs` | Action task execution, retry/failure handling |
 | `heartbeat.rs` | `heartbeat_loop()` -- periodic AI check-ins (global + per-project) |
@@ -951,7 +951,7 @@ This is an optional markdown file at `~/.omega/prompts/HEARTBEAT.md`. When prese
 - Any errors in /var/log/syslog in the last hour?
 ```
 
-If the file does not exist or is empty, the heartbeat sends a generic health check prompt instead.
+If the file does not exist or is empty, the heartbeat cycle is skipped entirely (no API call).
 
 ### Active Hours
 
@@ -962,7 +962,7 @@ The `active_start` and `active_end` fields define a time window (in 24-hour `HH:
 
 ### HEARTBEAT_OK Suppression
 
-The suppression mechanism prevents notification fatigue. When everything is fine, you do not want a message every 30 minutes telling you so. The `HEARTBEAT_OK` keyword acts as a sentinel: the provider responds with it when there are no issues, and the gateway silently logs the result instead of forwarding it.
+The suppression mechanism prevents notification fatigue. When everything is fine, you do not want a message every 30 minutes telling you so. The `HEARTBEAT_OK` marker acts as a sentinel: the provider responds with it when there are no issues, and the gateway silently logs the result instead of forwarding it. If the AI does not emit `HEARTBEAT_OK`, the response is delivered to the user.
 
 ## Error Recovery & Resilience
 

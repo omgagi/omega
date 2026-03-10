@@ -12,7 +12,7 @@ The gateway is the central orchestrator. It owns the event loop, dispatches mess
 | 3 | Gateway::dispatch_message() | Method | backend/src/gateway/mod.rs:~100 | Per-sender buffering: if sender has active call, buffers messages and sends "Got it, I'll get to this next"; otherwise calls handle_message | handle_message |
 | 4 | Gateway::shutdown() | Method | backend/src/gateway/mod.rs:~140 | Graceful shutdown: summarizes all active conversations, stops channels | summarizer, channels |
 | 5 | handle_message() | Method | backend/src/gateway/pipeline.rs:~10 | 15-step pipeline: auth, sanitize, attachments, cross-channel identity, commands, typing, context, discovery, build confirmation, keywords, builds, system prompt, sessions, model routing, direct response | All gateway submodules |
-| 6 | build_system_prompt() | Method | backend/src/gateway/pipeline.rs:~200 | Conditional prompt assembly: always Identity+Soul+System+time; conditionally injects scheduling/projects/builds/meta sections based on keyword detection; always injects project awareness and active ROLE.md | Prompts, keywords |
+| 6 | build_system_prompt() | Method | backend/src/gateway/prompt_builder.rs | Full prompt assembly: all sections always injected (Identity+Soul+System+Scheduling+Projects+Builds+Meta+time+heartbeat); always injects project awareness and active ROLE.md | Prompts |
 | 7 | check_auth() | Function | backend/src/gateway/auth.rs:~5 | Per-channel auth: telegram by user ID, whatsapp by sender string; returns deny message if unauthorized | Config |
 | 8 | handle_whatsapp_qr() | Function | backend/src/gateway/auth.rs:~40 | QR pairing flow: gets WhatsApp channel, calls pairing_channels(), waits for QR/done events, sends QR as base64 PNG | WhatsApp channel |
 | 9 | handle_direct_response() | Method | backend/src/gateway/routing.rs:~100 | Spawns provider call as background task; delayed status messages (15s first, 120s intervals); session retry on failure; marker processing; memory storage; audit; workspace image delivery | Provider, markers, memory, audit |
@@ -27,7 +27,7 @@ The gateway is the central orchestrator. It owns the event loop, dispatches mess
 | 18 | claudemd_loop() | Function | backend/src/claudemd.rs:~50 | Every 24h: refreshes dynamic content section of workspace CLAUDE.md | Provider, filesystem |
 | 19 | start_api_server() | Function | backend/src/api.rs:~10 | Axum HTTP server: GET /api/health, POST /api/pair, GET /api/pair/status; Bearer token auth | WhatsApp channel |
 | 20 | kw_match() | Function | backend/src/gateway/keywords.rs:~10 | Keyword matching: checks if message contains any keyword from a list (case-insensitive substring) | -- |
-| 21 | SCHEDULING_KW / RECALL_KW / etc. | Constants | backend/src/gateway/keywords.rs:~20 | 9 keyword categories for conditional prompt injection, multilingual (8 languages), with typo tolerance | -- |
+| 21 | HELP_KW | Constant | backend/src/gateway/keywords_data.rs | Help keywords for WhatsApp help intercept (kw_match preserved for this use case) | -- |
 | 22 | is_valid_fact() | Function | backend/src/gateway/keywords.rs:~150 | Fact validation: rejects system keys, numeric keys, price values, pipe-delimited, oversized facts | config::SYSTEM_FACT_KEYS |
 | 23 | phase_message() | Function | backend/src/gateway/builds_parse.rs:~100 | Localized build phase messages for all 8 languages | -- |
 | 24 | send_text() | Method | backend/src/gateway/mod.rs | Sends a text message to the channel the incoming message came from | Channel |

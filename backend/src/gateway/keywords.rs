@@ -1,4 +1,4 @@
-//! Keyword matching functions for conditional prompt injection.
+//! Keyword matching functions for the gateway module.
 //!
 //! Static keyword data arrays live in `keywords_data.rs` (split for the
 //! 500-line-per-file rule). Re-exported here so the rest of the gateway
@@ -33,6 +33,9 @@ pub(super) fn build_cancelled_message(lang: &str) -> &'static str {
 }
 
 /// Check if any keyword in the list is contained in the lowercased message.
+///
+/// Used for the WhatsApp help intercept (HELP_KW) — the only remaining
+/// keyword-match gate in the pipeline.
 pub(super) fn kw_match(msg_lower: &str, keywords: &[&str]) -> bool {
     keywords.iter().any(|kw| msg_lower.contains(kw))
 }
@@ -269,106 +272,19 @@ mod tests {
         assert!(!is_valid_fact("personality", "direct, results-oriented"));
     }
 
-    // --- Keyword detection tests ---
+    // --- WhatsApp help keyword tests ---
 
     #[test]
-    fn test_kw_match_scheduling() {
-        assert!(kw_match("remind me tomorrow", SCHEDULING_KW));
-        assert!(kw_match("schedule a meeting", SCHEDULING_KW));
-        assert!(kw_match("set an alarm for 5pm", SCHEDULING_KW));
-        assert!(kw_match("cancel my reminder", SCHEDULING_KW));
-        assert!(!kw_match("good morning", SCHEDULING_KW));
-        assert!(!kw_match("how are you today", SCHEDULING_KW));
+    fn test_kw_match_help_keywords() {
+        assert!(kw_match("what commands do you have", HELP_KW));
+        assert!(kw_match("what can you do", HELP_KW));
+        assert!(kw_match("qué puedes hacer", HELP_KW));
+        assert!(kw_match("was kannst du", HELP_KW));
+        assert!(!kw_match("hello omega", HELP_KW));
+        assert!(!kw_match("good morning", HELP_KW));
     }
 
-    #[test]
-    fn test_kw_match_recall() {
-        assert!(kw_match("do you remember what we discussed", RECALL_KW));
-        assert!(kw_match("you told me last time", RECALL_KW));
-        assert!(kw_match("what did you mention yesterday", RECALL_KW));
-        assert!(!kw_match("hello omega", RECALL_KW));
-    }
-
-    #[test]
-    fn test_kw_match_tasks() {
-        assert!(kw_match("show my tasks", TASKS_KW));
-        assert!(kw_match("what's scheduled for today", TASKS_KW));
-        assert!(kw_match("any pending reminders", TASKS_KW));
-        assert!(!kw_match("good morning", TASKS_KW));
-    }
-
-    #[test]
-    fn test_kw_match_projects() {
-        assert!(kw_match("activate the trader project", PROJECTS_KW));
-        assert!(kw_match("deactivate project", PROJECTS_KW));
-        // es
-        assert!(kw_match("activar el proyecto trader", PROJECTS_KW));
-        assert!(kw_match("desactivar proyecto", PROJECTS_KW));
-        // pt
-        assert!(kw_match("ativar o projeto trader", PROJECTS_KW));
-        assert!(kw_match("desativar projeto", PROJECTS_KW));
-        // fr
-        assert!(kw_match("activer le projet trader", PROJECTS_KW));
-        assert!(kw_match("désactiver projet", PROJECTS_KW));
-        // de
-        assert!(kw_match("aktivieren das projekt trader", PROJECTS_KW));
-        assert!(kw_match("deaktivieren projekt", PROJECTS_KW));
-        // it
-        assert!(kw_match("attivare il progetto trader", PROJECTS_KW));
-        assert!(kw_match("disattivare progetto", PROJECTS_KW));
-        // nl
-        assert!(kw_match("activeren het project trader", PROJECTS_KW));
-        assert!(kw_match("deactiveren project", PROJECTS_KW));
-        // ru
-        assert!(kw_match("активировать проект trader", PROJECTS_KW));
-        assert!(kw_match("деактивировать проект", PROJECTS_KW));
-        // negative
-        assert!(!kw_match("hello there", PROJECTS_KW));
-    }
-
-    #[test]
-    fn test_kw_match_meta() {
-        assert!(kw_match("improve this skill", META_KW));
-        assert!(kw_match("report a bug", META_KW));
-        assert!(kw_match("set up whatsapp", META_KW));
-        assert!(kw_match("change my personality", META_KW));
-        assert!(!kw_match("good morning", META_KW));
-    }
-
-    #[test]
-    fn test_kw_match_profile() {
-        assert!(kw_match("who am i exactly", PROFILE_KW));
-        assert!(kw_match("tell me about me", PROFILE_KW));
-        assert!(kw_match("what do you know about me", PROFILE_KW));
-        assert!(kw_match("quién soy yo", PROFILE_KW));
-        assert!(kw_match("wer bin ich eigentlich", PROFILE_KW));
-        assert!(kw_match("кто я такой", PROFILE_KW));
-        assert!(!kw_match("good morning", PROFILE_KW));
-        assert!(!kw_match("hello omega", PROFILE_KW));
-    }
-
-    #[test]
-    fn test_kw_match_outcomes() {
-        assert!(kw_match("how did i do today", OUTCOMES_KW));
-        assert!(kw_match("how am i doing overall", OUTCOMES_KW));
-        assert!(kw_match("show my performance", OUTCOMES_KW));
-        assert!(kw_match("any feedback for me", OUTCOMES_KW));
-        assert!(kw_match("cómo lo hice hoy", OUTCOMES_KW));
-        assert!(kw_match("wie habe ich abgeschnitten", OUTCOMES_KW));
-        assert!(!kw_match("good morning", OUTCOMES_KW));
-        assert!(!kw_match("hello omega", OUTCOMES_KW));
-    }
-
-    #[test]
-    fn test_kw_match_multilingual() {
-        // Spanish — "recordar" and "alarma" trigger scheduling
-        assert!(kw_match("puedes recordar esto", SCHEDULING_KW));
-        assert!(kw_match("pon una alarma", SCHEDULING_KW));
-        assert!(kw_match("agendar una reunión", SCHEDULING_KW));
-        // Portuguese — "lembr" prefix matches "lembre", "lembrar", "lembrete"
-        assert!(kw_match("lembre-me amanhã", SCHEDULING_KW));
-        assert!(kw_match("lembro que você disse", RECALL_KW));
-    }
+    // --- Build confirm/cancel tests ---
 
     #[test]
     fn test_build_confirm_all_languages() {
@@ -411,14 +327,12 @@ mod tests {
 
     #[test]
     fn test_build_confirm_rejects_non_confirmations() {
-        // Rejections
         assert!(!is_build_confirmed("no"));
         assert!(!is_build_confirmed("nah"));
         assert!(!is_build_confirmed("cancel"));
         assert!(!is_build_confirmed("nein"));
         assert!(!is_build_confirmed("non"));
         assert!(!is_build_confirmed("нет"));
-        // Sentences (not exact match)
         assert!(!is_build_confirmed("yes please build it now"));
         assert!(!is_build_confirmed("build me a tool"));
         assert!(!is_build_confirmed(""));
@@ -489,8 +403,6 @@ mod tests {
     // REQ-BRAIN-012 (Should): SETUP_TTL_SECS constant
     // ===================================================================
 
-    // Requirement: REQ-BRAIN-012 (Should)
-    // Acceptance: Setup session TTL is 30 minutes (1800 seconds)
     #[test]
     fn test_setup_ttl_secs_value() {
         assert_eq!(
@@ -503,10 +415,6 @@ mod tests {
     // REQ-BRAIN-014 (Should): Localized setup messages -- all 8 languages
     // ===================================================================
 
-    // The 8 languages: English, Spanish, Portuguese, French, German, Italian, Dutch, Russian
-
-    // Requirement: REQ-BRAIN-014 (Should)
-    // Acceptance: setup_help_message has content for all 8 languages
     #[test]
     fn test_setup_help_message_all_languages() {
         let en = setup_help_message("English");
@@ -544,8 +452,6 @@ mod tests {
         assert!(ru.contains("/setup"), "Russian help must mention /setup");
     }
 
-    // Requirement: REQ-BRAIN-014 (Should)
-    // Acceptance: setup_help_message for unknown language defaults to English
     #[test]
     fn test_setup_help_message_default_english() {
         let unknown = setup_help_message("Klingon");
@@ -553,8 +459,6 @@ mod tests {
         assert_eq!(unknown, en, "Unknown language must default to English");
     }
 
-    // Requirement: REQ-BRAIN-014 (Should)
-    // Acceptance: setup_intro_message has content for all 8 languages
     #[test]
     fn test_setup_intro_message_all_languages() {
         let questions = "1. What type of business?\n2. What location?";
@@ -586,8 +490,6 @@ mod tests {
         assert!(ru.contains(questions));
     }
 
-    // Requirement: REQ-BRAIN-014 (Should)
-    // Acceptance: setup_followup_message includes round number and questions
     #[test]
     fn test_setup_followup_message_all_languages() {
         let questions = "1. More details about your clients?";
@@ -619,8 +521,6 @@ mod tests {
         assert!(ru.contains("2/3"));
     }
 
-    // Requirement: REQ-BRAIN-014 (Should)
-    // Acceptance: setup_proposal_message includes preview and confirmation prompt
     #[test]
     fn test_setup_proposal_message_all_languages() {
         let preview = "Project: realtor\nDomain: Real estate";
@@ -651,8 +551,6 @@ mod tests {
         assert!(ru.contains(preview));
     }
 
-    // Requirement: REQ-BRAIN-014 (Should)
-    // Acceptance: setup_complete_message includes project name in all 8 languages
     #[test]
     fn test_setup_complete_message_all_languages() {
         let project = "realtor";
@@ -675,8 +573,6 @@ mod tests {
         }
     }
 
-    // Requirement: REQ-BRAIN-014 (Should)
-    // Acceptance: setup_cancelled_message in all 8 languages
     #[test]
     fn test_setup_cancelled_message_all_languages() {
         assert!(
@@ -692,8 +588,6 @@ mod tests {
         assert!(!setup_cancelled_message("Russian").is_empty());
     }
 
-    // Requirement: REQ-BRAIN-014 (Should)
-    // Acceptance: setup_expired_message in all 8 languages
     #[test]
     fn test_setup_expired_message_all_languages() {
         let en = setup_expired_message("English");
@@ -710,7 +604,6 @@ mod tests {
         assert!(!setup_expired_message("Dutch").is_empty());
         assert!(!setup_expired_message("Russian").is_empty());
 
-        // All expired messages should mention /setup for re-invocation.
         for lang in [
             "English",
             "Spanish",
@@ -728,13 +621,8 @@ mod tests {
         }
     }
 
-    // Requirement: REQ-BRAIN-013 (Should)
-    // Acceptance: Setup confirmation/cancellation reuses BUILD_CONFIRM_KW / BUILD_CANCEL_KW
-    // These are already tested above. This test validates setup-specific usage.
     #[test]
     fn test_setup_confirmation_reuses_build_keywords() {
-        // The architecture specifies reusing is_build_confirmed / is_build_cancelled.
-        // Verify they work for the setup context.
         assert!(
             is_build_confirmed("yes"),
             "Setup confirmation must accept 'yes'"
@@ -753,8 +641,6 @@ mod tests {
         );
     }
 
-    // Requirement: REQ-BRAIN-013 (Should)
-    // Acceptance: Non-confirmation reply during approval is not confirm or cancel
     #[test]
     fn test_setup_modification_is_neither_confirm_nor_cancel() {
         let modification = "I want to add restaurant management too";
@@ -768,8 +654,6 @@ mod tests {
         );
     }
 
-    // Requirement: REQ-BRAIN-012 (Should)
-    // Acceptance: pending_setup is a system fact key (rejected by is_valid_fact)
     #[test]
     fn test_pending_setup_is_system_fact() {
         assert!(

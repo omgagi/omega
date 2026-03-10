@@ -447,9 +447,12 @@ async fn execute_heartbeat_group(
     .await;
 
     // Evaluate HEARTBEAT_OK: strip formatting, check if only HEARTBEAT_OK remains.
+    // No fallback phrase matching — the AI must use the HEARTBEAT_OK marker.
+    // If it writes verbose "nothing to report" without the marker, that content
+    // gets delivered to the user (which is fine — the AI had something to say).
     let cleaned: String = text.chars().filter(|c| *c != '*' && *c != '`').collect();
     let without_ok = cleaned.replace("HEARTBEAT_OK", "");
-    if without_ok.trim().is_empty() || is_nothing_to_report(&without_ok) {
+    if without_ok.trim().is_empty() {
         None
     } else {
         let text = text
@@ -457,29 +460,6 @@ async fn execute_heartbeat_group(
             .replace("HEARTBEAT_OK", "");
         Some((text.trim().to_string(), elapsed_ms))
     }
-}
-
-/// Fallback detection for "nothing to report" responses where the AI wrote
-/// a verbose explanation instead of emitting HEARTBEAT_OK.
-///
-/// Returns `true` if every line is either a suppression explanation or a
-/// "nothing to surface" conclusion — i.e., no actionable content for the user.
-fn is_nothing_to_report(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    // Must contain a "nothing to report" conclusion.
-    let has_clear_signal = lower.contains("nothing to surface")
-        || lower.contains("nothing to report")
-        || lower.contains("all items clear")
-        || lower.contains("all clear")
-        || lower.contains("no items require")
-        || lower.contains("no anomalies");
-    // Must not contain actionable content indicators.
-    let has_actionable = lower.contains("action needed")
-        || lower.contains("alert:")
-        || lower.contains("warning:")
-        || lower.contains("anomaly")
-        || lower.contains("requires attention");
-    has_clear_signal && !has_actionable
 }
 
 #[cfg(test)]
@@ -592,32 +572,5 @@ mod tests {
             elapsed.as_secs() < 2,
             "should wake up promptly, not after the full sleep"
         );
-    }
-
-    // --- is_nothing_to_report fallback detection ---
-
-    #[test]
-    fn test_nothing_to_report_suppressed_output() {
-        let text = "Active hours. One checklist item:\n\n\
-                     - Calisthenics accountability → Suppressed per standing rule.\n\n\
-                     All items clear, nothing to surface.";
-        assert!(is_nothing_to_report(text));
-    }
-
-    #[test]
-    fn test_nothing_to_report_no_anomalies() {
-        assert!(is_nothing_to_report("No anomalies. Nothing to report."));
-    }
-
-    #[test]
-    fn test_nothing_to_report_actionable_content() {
-        let text = "Alert: disk usage at 95%. Requires attention.";
-        assert!(!is_nothing_to_report(text));
-    }
-
-    #[test]
-    fn test_nothing_to_report_no_clear_signal() {
-        let text = "Checked all items. Everything looks good.";
-        assert!(!is_nothing_to_report(text));
     }
 }

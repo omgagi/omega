@@ -2,7 +2,7 @@
 
 ## Overview
 
-The central gateway orchestrates the full message pipeline from arrival through authentication, context building, keyword-gated prompt composition, model routing, provider call, marker processing, and response delivery. It also manages background tasks (summarizer, scheduler, heartbeat, CLAUDE.md maintenance).
+The central gateway orchestrates the full message pipeline from arrival through authentication, context building, prompt composition (all sections always injected), model routing, provider call, marker processing, and response delivery. It also manages background tasks (summarizer, scheduler, heartbeat, CLAUDE.md maintenance).
 
 ## Functionalities
 

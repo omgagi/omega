@@ -1,172 +1,16 @@
-//! Static keyword data arrays for conditional prompt injection.
+//! Static keyword data arrays for the gateway module.
 //!
 //! Extracted from `keywords.rs` to respect the 500-line-per-file rule.
 //! All arrays are `pub(super)` — consumed by `keywords.rs` functions and
 //! the broader gateway module.
+//!
+//! Note: Conditional prompt injection keyword arrays (SCHEDULING_KW, RECALL_KW,
+//! TASKS_KW, PROJECTS_KW, META_KW, PROFILE_KW, OUTCOMES_KW) were removed in
+//! the always-inject refactor. All context sections are now injected
+//! unconditionally — no keyword gating.
 
 /// Maximum number of retries for failed action tasks.
 pub(super) const MAX_ACTION_RETRIES: u32 = 3;
-
-// --- Keyword lists for conditional prompt injection ---
-
-/// Keywords that trigger the scheduling context section.
-pub(super) const SCHEDULING_KW: &[&str] = &[
-    "remind",
-    "schedule",
-    "alarm",
-    "timer",
-    "tomorrow",
-    "next week",
-    "daily",
-    "weekly",
-    "monthly",
-    "weekday",
-    "cancel",
-    "update task",
-    "recurring",
-    "every morning",
-    "every day",
-    "every evening",
-    "appointment",
-    "due",
-    "at noon",
-    "recuerda",
-    "recuérd",
-    "recordar",
-    "alarma",
-    "agendar",
-    "lembr",
-    "rappel",
-    "erinner",
-    "ricorda",
-    "herinner",
-];
-
-/// Keywords that trigger semantic recall (FTS5 related past messages).
-pub(super) const RECALL_KW: &[&str] = &[
-    "remember",
-    "last time",
-    "you said",
-    "earlier",
-    "before",
-    "we talked",
-    "we discussed",
-    "you told",
-    "you mentioned",
-    "yesterday",
-    "last week",
-    "recuerd",
-    "dijiste",
-    "lembr",
-    "você disse",
-    "souvien",
-    "erinnerst",
-    "ricord",
-    "herinner",
-];
-
-/// Keywords that trigger pending tasks injection.
-pub(super) const TASKS_KW: &[&str] = &[
-    "task",
-    "reminder",
-    "pending",
-    "scheduled",
-    "what's coming",
-    "what's scheduled",
-    "my tasks",
-    "my reminders",
-    "tarea",
-    "recordatorio",
-    "pendiente",
-    "tarefa",
-    "lembrete",
-    "tâche",
-    "aufgabe",
-    "compito",
-    "taak",
-];
-
-/// Keywords that trigger the projects context section.
-pub(super) const PROJECTS_KW: &[&str] = &[
-    "project",
-    "activate",
-    "deactivate",
-    // es
-    "proyecto",
-    "activar",
-    "desactivar",
-    // pt
-    "projeto",
-    "ativar",
-    "desativar",
-    // fr
-    "projet",
-    "activer",
-    "désactiver",
-    // de
-    "projekt",
-    "aktivieren",
-    "deaktivieren",
-    // it
-    "progetto",
-    "attivare",
-    "disattivare",
-    // nl
-    "projecten",
-    "activeren",
-    "deactiveren",
-    // ru
-    "проект",
-    "активировать",
-    "деактивировать",
-];
-
-/// Keywords that trigger user profile injection into the system prompt.
-pub(super) const PROFILE_KW: &[&str] = &[
-    "who am i",
-    "my name",
-    "about me",
-    "my profile",
-    "my facts",
-    "what do you know",
-    "quién soy",
-    "mi nombre",
-    "sobre mí",
-    "quem sou",
-    "meu nome",
-    "sobre mim",
-    "qui suis",
-    "mon nom",
-    "wer bin ich",
-    "mein name",
-    "chi sono",
-    "mio nome",
-    "wie ben ik",
-    "mijn naam",
-    "кто я",
-];
-
-/// Keywords that trigger recent outcomes injection.
-pub(super) const OUTCOMES_KW: &[&str] = &[
-    "how did i",
-    "how am i doing",
-    "reward",
-    "outcome",
-    "feedback",
-    "performance",
-    "cómo lo hice",
-    "resultado",
-    "como me saí",
-    "desempenho",
-    "comment j'ai",
-    "résultat",
-    "wie habe ich",
-    "ergebnis",
-    "come ho fatto",
-    "risultato",
-    "hoe deed ik",
-    "resultaat",
-];
 
 /// Simple confirmation words for build requests (lowercased).
 /// Safe because they are only checked during the 2-minute TTL window after
@@ -260,24 +104,6 @@ pub(super) const BUILD_CANCEL_KW: &[&str] = &[
 /// Maximum seconds a pending build request stays valid. After this, the user
 /// must re-trigger the build keyword.
 pub(super) const BUILD_CONFIRM_TTL_SECS: i64 = 120;
-
-/// Keywords that trigger the meta context section.
-pub(super) const META_KW: &[&str] = &[
-    "skill",
-    "improve",
-    "bug",
-    "limitation",
-    "whatsapp",
-    "qr",
-    "pair",
-    "google",
-    "gmail",
-    "calendar",
-    "drive",
-    "personality",
-    "forget",
-    "purge",
-];
 
 /// Keywords that trigger the help/commands intercept on WhatsApp.
 /// On Telegram, the autocomplete menu shows all commands natively.

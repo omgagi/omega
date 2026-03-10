@@ -20,7 +20,7 @@ Omega is a personal AI agent infrastructure written in Rust. This `specs/` direc
 
 ### Milestone 2: Binary (`backend/src/`)
 - [src-main-rs.md](src-main-rs.md) — Entry point, CLI parsing (Start/Status/Ask/Init/Setup/Pair/Service/Uninstall), root guard, provider/channel bootstrap
-- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 26-file directory module: orchestrator, pipeline, routing, process_markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, keywords_data, builds, builds_loop, builds_parse, builds_agents, builds_topology, builds_i18n, prompt_builder, shared_markers, pipeline_builds, setup, setup_response, google_auth, google_auth_i18n, tests
+- [src-gateway-rs.md](src-gateway-rs.md) — Gateway module (`backend/src/gateway/`) — 26-file directory module: orchestrator, pipeline, routing, process_markers, auth, scheduler, scheduler_action, heartbeat, heartbeat_helpers, summarizer, keywords, keywords_data (HELP_KW, build confirm/cancel), builds, builds_loop, builds_parse, builds_agents, builds_topology, builds_i18n, prompt_builder (all sections always injected), shared_markers, pipeline_builds, setup, setup_response, google_auth, google_auth_i18n, tests
 - [provider-builder.md](provider-builder.md) — Provider factory (`build_provider()`) — constructs providers from config, dual-model routing for Claude Code
 - [src-markers-rs.md](src-markers-rs.md) — Marker module (`backend/src/markers/`) — 5 source submodules + test directory (40+ functions, ~145 tests)
 - [src-task-confirmation-rs.md](src-task-confirmation-rs.md) — Task scheduling confirmation (anti-hallucination, duplicate detection, localized confirmation messages)
@@ -175,7 +175,7 @@ Webhook (ai):     POST /api/webhook → check_auth → resolve channel/target �
 Background:
   Scheduler: poll due_tasks → channel.send(reminder) → complete_task
              action tasks: provider.complete → parse ACTION_OUTCOME → audit_log → complete/fail_task → notify
-  Heartbeat: provider.complete(check-in) → process markers (REWARD/LESSON/SCHEDULE/...) → strip HEARTBEAT_OK → no content? suppress / has content? channel.send(alert)
+  Heartbeat: provider.complete(check-in) → process markers (REWARD/LESSON/SCHEDULE/...) → HEARTBEAT_OK? suppress / has content? channel.send(alert)
   Summarizer: find idle convos → summarize → close
   CLAUDE.md: ensure on startup → refresh every 24h (claude -p subprocess)
 ```

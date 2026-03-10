@@ -217,4 +217,4 @@ Beyond skill improvement, OMEGA monitors its own behavior for anomalies. The sel
 - Tools fail silently
 - Results don't add up
 
-The gateway injects all relevant context (user profile, pending tasks, conversation history, outcomes, lessons) directly into the system prompt via keyword-gated conditional injection. OMEGA does not need to query `~/.omega/data/memory.db` directly — the data is already in its prompt when relevant. For runtime diagnostics, OMEGA checks `~/.omega/logs/omega.log` instead.
+The gateway always injects all context (user profile, pending tasks, conversation history, outcomes, lessons) directly into the system prompt. OMEGA does not need to query `~/.omega/data/memory.db` directly — the data is always in its prompt. For runtime diagnostics, OMEGA checks `~/.omega/logs/omega.log` instead.
