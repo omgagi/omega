@@ -95,7 +95,7 @@ fn test_prompt_always_includes_all_sections() {
 
     // Core sections
     assert!(prompt.contains("OMEGA"));
-    assert!(prompt.contains("precise, warm"));
+    assert!(prompt.contains("Precise, warm"));
 
     // All conditional sections always injected
     assert!(
