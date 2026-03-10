@@ -25,7 +25,7 @@ impl Gateway {
             .flatten()
             .unwrap_or_else(|| "English".to_string());
 
-        let projects = &self.projects;
+        let projects = &omega_skills::load_projects(&self.data_dir);
 
         // Parse optional argument: `/context full` shows the raw prompt.
         let arg = incoming

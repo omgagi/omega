@@ -133,7 +133,10 @@ impl Gateway {
             .flatten();
 
         // --- 3a. COMMAND DISPATCH ---
-        let projects = &self.projects;
+        // Hot-reload projects from disk so newly added/removed projects are visible
+        // without restarting the gateway (consistent with process_markers.rs).
+        let fresh_projects = omega_skills::load_projects(&self.data_dir);
+        let projects = &fresh_projects;
         if let Some(cmd) = commands::Command::parse(&clean_incoming.text) {
             if matches!(cmd, commands::Command::Forget) {
                 let response = self
