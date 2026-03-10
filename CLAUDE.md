@@ -118,12 +118,14 @@ The best engine part is the one you can remove. Less is more — always opt for 
 
 6. **Prompt Sync**: When `prompts/SYSTEM_PROMPT.md` or `prompts/WELCOME.toml` is modified, delete the runtime copy (`rm -f ~/.omega/prompts/SYSTEM_PROMPT.md` / `rm -f ~/.omega/prompts/WELCOME.toml`) before rebuilding.
 
-7. **Output Filtering**: Redirect verbose output to `/tmp/` and filter:
+7. **Prompt Engineering Discipline**: `SYSTEM_PROMPT.md` is not code — it's the AI's brain instructions. Before modifying it: (1) read the gateway injection logic to understand which sections are always vs conditionally injected, (2) understand **why** each line exists and what behavior it teaches, (3) never remove marker names or implementation details from a rule unless you've confirmed they're taught in a section that is **always** present at runtime. Trimming for "clean architecture" can silently lobotomize the AI.
+
+8. **Output Filtering**: Redirect verbose output to `/tmp/` and filter:
    `command > /tmp/cmd_output.log 2>&1 && grep -iE "error|warn|fail|pass" /tmp/cmd_output.log | head -20`
 
-8. **Skill Frontmatter Integrity**: Every `SKILL.md` frontmatter **MUST** include `name`, `description`, and `requires`. The `trigger` field is only needed for skills that declare MCP servers (it gates MCP activation for HTTP providers). Non-MCP skills rely on semantic intent matching via the system prompt — the AI maps user intent to skills based on descriptions. After modifying a bundled skill, delete the runtime copy (`rm -f ~/.omega/skills/<name>/SKILL.md`) so the updated version gets redeployed.
+9. **Skill Frontmatter Integrity**: Every `SKILL.md` frontmatter **MUST** include `name`, `description`, and `requires`. The `trigger` field is only needed for skills that declare MCP servers (it gates MCP activation for HTTP providers). Non-MCP skills rely on semantic intent matching via the system prompt — the AI maps user intent to skills based on descriptions. After modifying a bundled skill, delete the runtime copy (`rm -f ~/.omega/skills/<name>/SKILL.md`) so the updated version gets redeployed.
 
-9. **Modularization**: No `.rs` file may exceed **500 lines** (excluding tests). `gateway/mod.rs` is orchestrator only — delegates to focused submodules. New domain logic goes in its own module from day one. Before adding >50 lines, check line count first.
+10. **Modularization**: No `.rs` file may exceed **500 lines** (excluding tests). `gateway/mod.rs` is orchestrator only — delegates to focused submodules. New domain logic goes in its own module from day one. Before adding >50 lines, check line count first.
 
 ## Architecture
 
